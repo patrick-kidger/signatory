@@ -1,0 +1,7 @@
+**/__pycache__/
+**/.ipynb_checkpoints/
+*.py[cod]
+.idea/
+.vs/
+dir_info.txt
+cmake-build-*/
