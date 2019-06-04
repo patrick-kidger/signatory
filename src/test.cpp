@@ -1,9 +1,9 @@
-#include "src/extension.hpp"
+#include "extension.hpp"
 #include <iostream>
 
 #include "test.hpp"
 
-torch::Tensor d_sigmoid(torch::Tensor z) {
-    auto s = torch::sigmoid(z);
+Tensor d_sigmoid(Tensor z) {
+    auto s = sigmoid(z);
     return (1 - s) * s;
 }
