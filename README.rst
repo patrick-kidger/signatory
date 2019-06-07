@@ -1,3 +1,3 @@
-Torchtest
+Signatory
 =========
-Test building an extension to PyTorch.
+For efficiently computing the signatures transform of a path.
