@@ -1,10 +1,10 @@
-#include "extension.hpp"  // to get the pybind11 stuff
+#include <torch/extension.h>  // to get the pybind11 stuff
 #include <fstream>  // std::ifstream
 #include <ios>      // std::streamsize
 #include <limits>   // std::numeric_limits
 #include <string>   // std::string, std::getline
 
-#include "signature.cpp"
+#include "signature.hpp"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     std::ifstream readme_file {"../README.rst"};
@@ -15,8 +15,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     std::string readme;
     std::getline(readme_file, readme);
     readme_file.close();
-    m.doc() = readme;
 
-    m.def("signature", &signatory::signature, "Computes the signature of a path.", py::arg("path"), py::arg("depth"),
-          py::arg("basepoint")=false, py::arg("stream")=false, py::arg("flatten")=true);
+    m.doc() = readme;
+    m.def("signature_channels",
+          &signatory::signature_channels,
+          "Computes the number of output channels from a signature call.");
+    m.def("signature",
+          &signatory::signature,
+          "Computes the signature of a path.");
 }

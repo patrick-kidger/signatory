@@ -2,7 +2,6 @@ import os
 import setuptools
 import torch.utils.cpp_extension as cpp
 
-
 name = 'signatory'
 
 with open('VERSION', 'r') as f:
@@ -30,5 +29,7 @@ setuptools.setup(name=name,
                  packages=[name],
                  ext_package=name,
                  package_dir={'': 'src'},
-                 ext_modules=[cpp.CppExtension(name='_impl', sources=['src/pytorchbind.cpp'])],
+                 ext_modules=[cpp.CppExtension(name='_impl',
+                                               sources=['src/pytorchbind.cpp',
+                                                        'src/signature.cpp'])],
                  cmdclass={'build_ext': cpp.BuildExtension})
