@@ -3,65 +3,24 @@
 #include <cstdint>    // int64_t
 #include <stdexcept>  // std::invalid_argument
 #include <string>     // std::string
-#include <tuple>      // std::tieZ
+#include <tuple>      // std::tie, std::tuple
 #include <utility>    // std::pair
 #include <vector>     // std::vector
 
 #include "signature.hpp"
 
 // TODO: write Chen method + test against iisignature for small batch sizes?
-// TODO: tests
+// TODO: more tests
 // TODO: numpy, tensorflow
 // TODO: CUDA
-// TODO: backprop!
-
-// TODO: make sure the forward pass doesn't register gradients internally
-// TODO: autograd failing when stream=True (in place operation)
+// TODO: update README
+// TODO: docstring in python
+// TODO: signature_channels has a mixed C++/Python docstring
+// TODO: handle warnings. (int64_t etc.)
 
 
 namespace signatory {
     namespace detail {
-        struct SigSpec {
-            // Encapsulates all the things that aren't tensors
-            SigSpec(torch::Tensor path, int depth, bool basepoint, bool stream, bool flatten) :
-                input_channels{path.size(0)},
-                input_stream_size{path.size(1)},
-                batch_size{path.size(2)},
-                output_channels{signature_channels(path.size(0), depth)},
-                output_stream_size{path.size(1) - (basepoint ? 0 : 1)},
-                depth{depth},
-                n_output_dims{stream ? 3 : 2},
-                basepoint{basepoint},
-                stream{stream},
-                flatten{flatten}
-            {
-                opts = torch::TensorOptions().dtype(path.dtype()).device(path.device());
-            };
-            int input_channels;
-            int input_stream_size;
-            int batch_size;
-            int output_channels;
-            int output_stream_size;
-            int depth;
-            int n_output_dims;
-            bool basepoint;
-            bool stream;
-            bool flatten;
-            torch::TensorOptions opts;
-        };
-        
-        
-        void checkargs(torch::Tensor path, int depth) {
-            if (path.ndimension() != 3) {
-                throw std::invalid_argument("path must be a 3-dimensional tensor, corresponding to (batch, channel, "
-                                            "stream) respectively.");
-            }
-            if (depth < 1) {
-                throw std::invalid_argument("depth must be an integer greater than or equal to one.");
-            }
-        }
-
-
         std::vector<torch::Tensor> slice_into_terms(torch::Tensor out, const SigSpec& sigspec) {
             int current_mem_pos{0};
             int current_length{sigspec.input_channels};
@@ -76,9 +35,20 @@ namespace signatory {
         }
 
 
+        void checkargs(torch::Tensor path, int depth) {
+            if (path.ndimension() != 3) {
+                throw std::invalid_argument("path must be a 3-dimensional tensor, corresponding to (batch, channel, "
+                                            "stream) respectively.");
+            }
+            if (depth < 1) {
+                throw std::invalid_argument("depth must be an integer greater than or equal to one.");
+            }
+        }
+
+
         std::pair<std::vector<torch::Tensor>, torch::Tensor> get_out_memory(const SigSpec& sigspec) {
             if (sigspec.stream && sigspec.flatten) {
-                torch::Tensor out = torch::empty({sigspec.output_channels, 
+                torch::Tensor out = torch::empty({sigspec.output_channels,
                                                   sigspec.output_stream_size,
                                                   sigspec.batch_size},
                                                  sigspec.opts);
@@ -96,63 +66,6 @@ namespace signatory {
                     current_length *= sigspec.input_channels;
                 }
                 return {out_vector, torch::Tensor {}};
-            }
-        }
-
-
-        void format_output(std::vector<torch::Tensor>& out_vector, torch::Tensor out, const SigSpec& sigspec) {
-            if (sigspec.stream) {
-                if (sigspec.flatten) {
-                    (std::vector<torch::Tensor> {out}).swap(out_vector);
-                }
-            }
-            else {
-                // If we're not returning a stream then we want to make a copy of the data before we return it. This
-                // is because in this case, we only want to return the set of elements which is at the very end of
-                // the stream dimension - but if we don't make a copy then we're still using the same underlying
-                // storage that was used for the whole thing, stream dimension included, and we can't free up that
-                // storage until we're no longer using any of it. So this takes a little extra time but saves a lot
-                // of memory.
-
-                if (sigspec.flatten) {
-                    torch::Tensor out_flattened = torch::empty({sigspec.output_channels,
-                                                                sigspec.batch_size},
-                                                               sigspec.opts);
-                    int current_mem_pos = 0;
-                    int current_length = sigspec.input_channels;
-                    torch::Tensor trimmed_tensor_element;
-                    for (auto tensor_element : out_vector) {
-                        trimmed_tensor_element = tensor_element.narrow(/*dim=*/1,
-                                                                       /*start=*/tensor_element.size(1) - 1,
-                                                                       /*len=*/1).squeeze(1);
-                        out_flattened.narrow(/*dim=*/0,
-                                             /*start=*/current_mem_pos,
-                                             /*len=*/current_length).copy_(trimmed_tensor_element);
-                        current_mem_pos += current_length;
-                        current_length *= sigspec.input_channels;
-                    }
-                    (std::vector<torch::Tensor> {out_flattened}).swap(out_vector);
-                }
-                else{
-                    torch::Tensor trimmed_tensor_element;
-                    for (auto& tensor_element : out_vector) {
-                        trimmed_tensor_element = tensor_element.narrow(/*dim=*/1,
-                                                                       /*start=*/tensor_element.size(1) - 1,
-                                                                       /*len=*/1).squeeze(1);
-                        tensor_element = trimmed_tensor_element.clone();
-                    }
-                }
-            }
-            for (auto tensor_element : out_vector) {
-                if (sigspec.stream) {
-                    // switch from (channel, stream, batch) used internally to (batch, channel, stream), which is its
-                    // interface.
-                    tensor_element.transpose_(1, 2).transpose_(0, 1);
-                }
-                else {
-                    // switch from (channel, batch) used internally to (batch, channel), which is its interface.
-                    tensor_element.transpose_(0, 1);
-                }
             }
         }
 
@@ -187,11 +100,7 @@ namespace signatory {
                               const SigSpec& sigspec) {
             torch::Tensor nth_term_view = nth_term.view({prev_term.size(0), sigspec.input_channels,
                                                          sigspec.output_stream_size, sigspec.batch_size});
-            // TODO: put back.
-             //torch::mul_out(nth_term_view, path_increments.unsqueeze(0), prev_term.unsqueeze(1));
-             nth_term_view.zero_();
-            nth_term_view += torch::mul(path_increments.unsqueeze(0), prev_term.unsqueeze(1));
-            // ~TODO
+            torch::mul_out(nth_term_view, path_increments.unsqueeze(0), prev_term.unsqueeze(1));
             // So torch::cumsum_out is excruciatingly slow.
             // I can't find anyone else running into that problem on the internet, but at least in this use case it's
             // ~20 times slower than my own code. (Which is admittedly specialised to the particular case of an
@@ -202,7 +111,69 @@ namespace signatory {
             }
         }
 
-        
+
+        std::vector<torch::Tensor> format_output(std::vector<torch::Tensor>& out_vector, torch::Tensor out,
+                                                 const SigSpec& sigspec) {
+            std::vector<torch::Tensor> formatted_out_vector;
+            if (sigspec.stream) {
+                if (sigspec.flatten) {
+                    formatted_out_vector.push_back(out);
+                }
+                else {
+                    formatted_out_vector = out_vector;
+                }
+            }
+            else {
+                // If we're not returning a stream then we want to make a copy of the data before we return it. This
+                // is because in this case, we only want to return the set of elements which is at the very end of
+                // the stream dimension - but if we don't make a copy then we're still using the same underlying
+                // storage that was used for the whole thing, stream dimension included, and we can't free up that
+                // storage until we're no longer using any of it. So this takes a little extra time but saves a lot
+                // of memory.
+
+                if (sigspec.flatten) {
+                    torch::Tensor out_flattened = torch::empty({sigspec.output_channels,
+                                                                sigspec.batch_size},
+                                                               sigspec.opts);
+                    int current_mem_pos = 0;
+                    int current_length = sigspec.input_channels;
+                    torch::Tensor trimmed_tensor_element;
+                    for (auto tensor_element : out_vector) {
+                        trimmed_tensor_element = tensor_element.narrow(/*dim=*/1,
+                                                                       /*start=*/tensor_element.size(1) - 1,
+                                                                       /*len=*/1).squeeze(1);
+                        out_flattened.narrow(/*dim=*/0,
+                                             /*start=*/current_mem_pos,
+                                             /*len=*/current_length).copy_(trimmed_tensor_element);
+                        current_mem_pos += current_length;
+                        current_length *= sigspec.input_channels;
+                    }
+                    formatted_out_vector.push_back(out_flattened);
+                }
+                else{
+                    for (auto tensor_element : out_vector) {
+                        formatted_out_vector.push_back(tensor_element.narrow(/*dim=*/1,
+                                                                             /*start=*/tensor_element.size(1) - 1,
+                                                                             /*len=*/1).squeeze(1).clone());
+                    }
+                }
+            }
+            for (auto& tensor_element : formatted_out_vector) {
+                if (sigspec.stream) {
+                    // switch from (channel, stream, batch) used internally to (batch, channel, stream), which is its
+                    // interface.
+                    tensor_element = tensor_element.transpose(1, 2).transpose(0, 1);
+                    // must not be in-place else the tensors in out_vector also get modified.
+                }
+                else {
+                    // switch from (channel, batch) used internally to (batch, channel), which is its interface.
+                    tensor_element = tensor_element.transpose(0, 1);
+                }
+            }
+            return formatted_out_vector;
+        }
+
+
         void checkargs_backward(const std::vector<torch::Tensor>& grad_out_vector, const SigSpec& sigspec) {
             std::string err = "Misconfigured call to backward. Error code: ";
             if (sigspec.depth < 1) {
@@ -258,40 +229,6 @@ namespace signatory {
 
         }
 
-
-        void format_output_backward(std::vector<torch::Tensor>& grad_out_vector, const SigSpec& sigspec) {
-            for (auto& tensor_element : grad_out_vector) {
-                if (sigspec.stream) {
-                    // switch to (channel, stream, batch) used internally from (batch, channel, stream), which is its
-                    // interface.
-                    tensor_element = tensor_element.transpose(0, 1).transpose(1, 2);
-                } else {
-                    // switch to (channel, batch) used internally from (batch, channel), which is its interface.
-                    tensor_element = tensor_element.transpose(0, 1);
-                }
-            }
-            if (sigspec.flatten) {
-                slice_into_terms(grad_out_vector[0], sigspec).swap(grad_out_vector);
-            }
-            if (!sigspec.stream) {
-                // TODO: do something more space efficient each time instead.
-                std::vector<torch::Tensor> grad_out_vector_replacement;
-                int input_channels = 1;
-                for (int i = 0; i < sigspec.depth; ++i) {
-                    input_channels *= sigspec.input_channels;
-                    torch::Tensor tensor_element = torch::zeros({input_channels,
-                                                                 sigspec.output_stream_size,
-                                                                 sigspec.batch_size},
-                                                                sigspec.opts);
-                    tensor_element.narrow(/*dim=*/1,
-                                          /*start=*/tensor_element.size(1) - 1,
-                                          /*len=*/1).squeeze(1).copy_(grad_out_vector[i]);
-                    grad_out_vector_replacement.push_back(tensor_element);
-                }
-                grad_out_vector_replacement.swap(grad_out_vector);
-            }
-        }
-
         // TODO: think about memory
         void compute_first_term_backward(torch::Tensor grad_nth_term, torch::Tensor grad_path, const SigSpec& sigspec) {
             if (sigspec.basepoint) {
@@ -342,7 +279,55 @@ namespace signatory {
             grad_path_increments += (grad_nth_term_view * prev_term.unsqueeze(1)).sum(/*dim=*/0);  // broadcasting
             grad_prev_term += (grad_nth_term_view * path_increments.unsqueeze(0)).sum(/*dim=*/1);  // broadcasting
         }
+
+
+        void format_output_backward(std::vector<torch::Tensor>& grad_out_vector, const SigSpec& sigspec) {
+            for (auto& tensor_element : grad_out_vector) {
+                if (sigspec.stream) {
+                    // switch to (channel, stream, batch) used internally from (batch, channel, stream), which is its
+                    // interface.
+                    tensor_element = tensor_element.transpose(0, 1).transpose(1, 2);
+                } else {
+                    // switch to (channel, batch) used internally from (batch, channel), which is its interface.
+                    tensor_element = tensor_element.transpose(0, 1);
+                }
+            }
+            if (sigspec.flatten) {
+                slice_into_terms(grad_out_vector[0], sigspec).swap(grad_out_vector);
+            }
+            if (!sigspec.stream) {
+                // TODO: do something more space efficient each time instead.
+                std::vector<torch::Tensor> grad_out_vector_replacement;
+                int input_channels = 1;
+                for (int i = 0; i < sigspec.depth; ++i) {
+                    input_channels *= sigspec.input_channels;
+                    torch::Tensor tensor_element = torch::zeros({input_channels,
+                                                                 sigspec.output_stream_size,
+                                                                 sigspec.batch_size},
+                                                                sigspec.opts);
+                    tensor_element.narrow(/*dim=*/1,
+                            /*start=*/tensor_element.size(1) - 1,
+                            /*len=*/1).squeeze(1).copy_(grad_out_vector[i]);
+                    grad_out_vector_replacement.push_back(tensor_element);
+                }
+                grad_out_vector_replacement.swap(grad_out_vector);
+            }
+        }
     }  // namespace signatory::detail
+
+
+    SigSpec::SigSpec(torch::Tensor path, int depth, bool basepoint, bool stream, bool flatten) :
+                     input_channels{path.size(0)},
+                     input_stream_size{path.size(1)},
+                     batch_size{path.size(2)},
+                     output_channels{signature_channels(path.size(0), depth)},
+                     output_stream_size{path.size(1) - (basepoint ? 0 : 1)},
+                     depth{depth},
+                     n_output_dims{stream ? 3 : 2},
+                     basepoint{basepoint},
+                     stream{stream},
+                     flatten{flatten}
+                     { opts = torch::TensorOptions().dtype(path.dtype()).device(path.device()); };
 
 
     int signature_channels(int input_channels, int depth) {
@@ -362,12 +347,14 @@ namespace signatory {
     }
 
 
-    // It'd be nice to return std::variant<torch::Tensor, std::vector<torch::Tensor>> here instead, based on whether
-    // 'flatten' is true or false respectively, rather than wrapping it into a vector like we actually do.
-    // Sadly we're targeting C++11 so instead it is the caller's responsibility to unwrap the single-element vector if
-    // they call this function with flatten=true.
-    std::pair<std::vector<torch::Tensor>, std::vector<torch::Tensor>> signature(torch::Tensor path, int depth, bool basepoint=false, bool stream=false,
-                                         bool flatten=true) {
+    std::tuple<std::vector<torch::Tensor>,  // it'd be nice to make this one
+                                            // std::variant<torch::Tensor, std::vector<torch::Tensor>> but we're
+                                            // targetting C++11. So it's the caller's responsibility to unwrap the
+                                            // single-element vector if flatten==True.
+               std::vector<torch::Tensor>,
+               torch::Tensor,
+               SigSpec>
+    signature_forward(torch::Tensor path, int depth, bool basepoint=false, bool stream=false, bool flatten=true) {
         detail::checkargs(path, depth);
         if (!path.is_floating_point()) {
             path = path.to(torch::kFloat32);
@@ -381,7 +368,7 @@ namespace signatory {
 
         std::vector<torch::Tensor> out_vector;
         torch::Tensor out;
-        detail::SigSpec sigspec {path, depth, basepoint, stream, flatten};
+        SigSpec sigspec{path, depth, basepoint, stream, flatten};
         std::tie(out_vector, out) = detail::get_out_memory(sigspec);
 
         detail::compute_first_term(out_vector[0], path, sigspec);
@@ -391,28 +378,19 @@ namespace signatory {
             detail::compute_nth_term(out_vector[n], out_vector[n - 1], path_increments, sigspec);
         }
 
-        // TODO: remove copy_vector
-        std::vector<torch::Tensor> copy_vector {out_vector};
-        detail::format_output(out_vector, out, sigspec);
-        return {out_vector, copy_vector};
+        std::vector<torch::Tensor> formatted_out_vector = detail::format_output(out_vector, out, sigspec);
+        return {formatted_out_vector, out_vector, path_increments, sigspec};
     }
 
 
-    // TODO: move to detail? register with signature forward, at least.
-    torch::Tensor signature_backward(std::vector<torch::Tensor> grad_out_vector, std::vector<torch::Tensor> out_vector,
-                                     torch::Tensor path, int depth,
-                                     bool basepoint=false, bool stream=false, bool flatten=true) {
+    // implemented manually for speed (in particular, autograd doesn't like the in-place operations we have to do in the
+    // forward pass for efficiency's sake.)
+    torch::Tensor signature_backward(std::vector<torch::Tensor> grad_out_vector,
+                                     std::vector<torch::Tensor> out_vector, torch::Tensor path_increments,
+                                     SigSpec sigspec, int depth, bool basepoint, bool stream, bool flatten) {
         for (auto& tensor_element : grad_out_vector) {
             tensor_element = tensor_element.clone();
         }
-        // TODO: remove this - capture from signature forward call in lambda instead.
-        if (path.type().scalarType() != torch::kFloat64) {
-            path = path.to(torch::kFloat32);
-        }
-        path = path.transpose(0, 1).transpose(1, 2);
-        detail::SigSpec sigspec {path, depth, basepoint, stream, flatten};
-        torch::Tensor path_increments = detail::compute_increments(path, sigspec);
-        //~TODO
 
         detail::checkargs_backward(grad_out_vector, sigspec);
         detail::format_output_backward(grad_out_vector, sigspec);
@@ -434,4 +412,4 @@ namespace signatory {
         grad_path = grad_path.transpose(1, 2).transpose(0, 1);  // convert back to the normal axis ordering
         return grad_path;
     }
-}  // namespace signatory
+};  // namespace signatory

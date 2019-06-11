@@ -1,19 +1,24 @@
+import random
 import signatory
 import torch
 import torch.autograd as autograd
 
 
-def gradcheck(depth=2, size=(1, 4, 3), basepoint=False, stream=False, flatten=True):
+def gradcheck(size=(1, 4, 3), depth=2, basepoint=False, stream=False, flatten=True):
     x = torch.rand(*size, requires_grad=True, dtype=torch.double)
-    # TODO: remove sig.sig
-    return autograd.gradcheck(signatory.sig.apply, (x, depth, basepoint, stream, flatten))
+    return autograd.gradcheck(signatory.signature, (x, depth, basepoint, stream, flatten))
 
 
 # Fails, and it's not clear why. However...
-def gradgradcheck(depth=2, size=(1, 4, 3), basepoint=False, stream=False, flatten=True):
+def gradgradcheck(size=(1, 4, 3), depth=2, basepoint=False, stream=False, flatten=True):
+    if flatten:
+        test_fn = signatory.signature
+    else:
+        def test_fn(*args):
+            result = signatory.signature(*args)
+            return random.choice(result)
     x = torch.rand(*size, requires_grad=True, dtype=torch.double)
-    # TODO: remove sig.sig
-    return autograd.gradgradcheck(signatory.sig.apply, (x, depth, basepoint, stream, flatten))
+    return autograd.gradgradcheck(test_fn, (x, depth, basepoint, stream, flatten))
 
 
 # ...this doesn't even manage to start at all, because of the fact that 'grad' and 'y' are both lists of torch.Tensors.
@@ -23,12 +28,12 @@ def gradgradcheck(depth=2, size=(1, 4, 3), basepoint=False, stream=False, flatte
 # torch.autograd.gradgradcheck even runs is a fluke, and the fact that it then fails is meaningless. Especially when
 # you consider that we haven't even written a custom double-backward function - double-backward is done automatically by
 # autograd in its usual 'tracing' manner, so it would be very surprising if it didn't give the correct results.
-def gradgradcheck2(depth=2, size=(1, 4, 3), basepoint=False, stream=False, flatten=True):
-    from signatory._impl import signature_backward
+def gradgradcheck2(size=(1, 4, 3), depth=2, basepoint=False, stream=False, flatten=True):
+    from signatory._impl import _signature_backward
     x = torch.rand(*size, dtype=torch.double)
-    y = signatory.sig.apply(x, depth, basepoint, stream, flatten)
+    y = signatory.signature(x, depth, basepoint, stream, flatten)
     if flatten:
         # if not flatten then it's already a list
         y = [y]
     grad = [torch.rand_like(yi).requires_grad_() for yi in y]
-    return autograd.gradcheck(signature_backward, (grad, y, x, depth, basepoint, stream, flatten))
+    return autograd.gradcheck(_signature_backward, (grad, y, x, depth, basepoint, stream, flatten))

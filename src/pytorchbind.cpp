@@ -16,15 +16,23 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     std::getline(readme_file, readme);
     readme_file.close();
 
-    // TODO: update docs
     m.doc() = readme;
+    py::class_<signatory::SigSpec>(m, "_SigSpec").def(py::init<torch::Tensor, int, bool, bool, bool>());
     m.def("signature_channels",
           &signatory::signature_channels,
-          "Computes the number of output channels from a signature call.");
-    m.def("signature",
-          &signatory::signature,
-          "Computes the signature of a path.");
-    m.def("signature_backward",
+          "Computes the number of output channels from a signature call.\n"
+          "\n"
+          "Arguments:\n"
+          "    int input_channels: The number of channels in the input; that is,\n"
+          "        the dimension of the space that the input path resides in.\n"
+          "    int depth: The depth of the signature that is being computed.\n"
+          "\n"
+          "Returns:\n"
+          "    An integer specifying the number of channels in the signature of the path.");
+    m.def("_signature_forward",
+          &signatory::signature_forward,
+          "Computes the forwards pass through a signature.");
+    m.def("_signature_backward",
           &signatory::signature_backward,
-          "Computes the backward pass.");
+          "Computes the backward pass through a signature.");
 }

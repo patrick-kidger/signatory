@@ -1,46 +1,33 @@
 import torch
+import torch.autograd as autograd
+from typing import Any, Union, List
 
 from signatory._impl import (signature_channels,
-                             signature as _signature)
+                             _signature_forward,
+                             _signature_backward)
 
 
-def signature(path: torch.Tensor, depth: int, basepoint: bool = False, stream: bool = False, flatten: bool = True):
-    result = _signature(path, depth, basepoint, stream, flatten)
-    if flatten:
-        result = result[0]
-    return result
-
-
-signature.__doc__ = _signature.__doc__
-
-
-
-
-
-# TODO: remove
-import torch.autograd as autograd
-from signatory._impl import signature_backward
-autograd.gradgradcheck
-
-class sig(autograd.Function):
+# It would be lovely to do all of this at the C++ level. (In particular sigspec is really a struct that has no
+# business being passed around at the Python level.) But unfortunately the documentation for how to create autograd
+# Functions in C++ is nonexistent. Presumably that means it's all still subject to change, so we're just going to stick
+# to the Python way of doings things for now.
+class SignatureFunction(autograd.Function):
     @staticmethod
-    def forward(ctx, path, depth, basepoint=False, stream=False, flatten=True):
-        out, original_out = _signature(path, depth, basepoint, stream, flatten)
-        ctx.save_for_backward(path, *original_out)
-        ctx.depth = depth
-        ctx.basepoint = basepoint
-        ctx.stream = stream
-        ctx.flatten = flatten
+    def forward(ctx: Any, path: torch.Tensor, depth: int, basepoint: bool = False, stream: bool = False,
+                flatten: bool = True) -> Union[torch.Tensor, List[torch.Tensor]]:
+        result, result_as_vector, path_increments, sigspec = _signature_forward(path, depth, basepoint, stream, flatten)
+        ctx._call_info = (result_as_vector, path_increments, sigspec, depth, basepoint, stream, flatten)
         if flatten:
-            # out is a list of a single tensor, so unpack it
-            out = out[0]
+            result = result[0]
         else:
-            # out is a list of several tensors, but apparently only tuples are allowed return values
-            out = tuple(out)
-        return out
+            result = tuple(result)  # okay to return tuples, not okay to return lists. For some reason.
+        return result
 
     @staticmethod
-    def backward(ctx, *grads):
-        path, *out = ctx.saved_tensors
-        out = signature_backward(list(grads), out, path, ctx.depth, ctx.basepoint, ctx.stream, ctx.flatten)
-        return out, None, None, None, None
+    def backward(ctx: Any, *grad_outputs: List[torch.Tensor]) -> torch.Tensor:
+        return _signature_backward(grad_outputs, *ctx._call_info), None, None, None, None
+
+
+def signature(path: torch.Tensor, depth: int, basepoint: bool = False, stream: bool = False,
+              flatten: bool = True) -> Union[torch.Tensor, List[torch.Tensor]]:
+    return SignatureFunction.apply(path, depth, basepoint, stream, flatten)

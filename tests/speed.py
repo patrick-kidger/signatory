@@ -5,18 +5,18 @@ import torch
 
 
 def speed(batch_size=1000, number=10, depth=3, stream=True):
-    me_x = torch.rand(batch_size, 10, 100)
-    him_x = torch.rand(batch_size, 100, 10)
+    signatory_x = torch.rand(batch_size, 10, 100)
+    iisignature_x = torch.rand(batch_size, 100, 10)
 
-    def me():
-        signatory.signature(me_x, depth, stream=stream)
+    def signatory_fn():
+        signatory.signature(signatory_x, depth, stream=stream)
 
-    def him():
-        for him_ix in him_x:
+    def iisignature_fn():
+        for him_ix in iisignature_x:
             iisignature.sig(him_ix, depth, 2 if stream else 0)
 
-    me = timeit.timeit(me, number=number)
-    him = timeit.timeit(him, number=number)
-    print("Me:  " + str(me))
-    print("Him: " + str(him))
-    print("Me/Him: " + str(me / him))
+    signatory_time = timeit.timeit(signatory_fn, number=number)
+    iisignature_time = timeit.timeit(iisignature_fn, number=number)
+    print("signatory:   " + str(signatory_time))
+    print("iisignature: " + str(iisignature_time))
+    print("ratio:       " + str(signatory_time / iisignature_time))

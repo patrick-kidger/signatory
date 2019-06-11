@@ -1,7 +1,8 @@
 import os
 import torch  # must be imported before anything from the implementation of the pytorch version of torchtest
 
-from .signature import signature, signature_channels, sig
+from .signature import (signature,
+                        signature_channels)
 
 
 with open(os.path.join(os.path.dirname(__file__), '..', '..', 'VERSION'), 'r') as f:
