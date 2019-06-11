@@ -16,6 +16,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     std::getline(readme_file, readme);
     readme_file.close();
 
+    // TODO: update docs
     m.doc() = readme;
     m.def("signature_channels",
           &signatory::signature_channels,
@@ -23,4 +24,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("signature",
           &signatory::signature,
           "Computes the signature of a path.");
+    m.def("signature_backward",
+          &signatory::signature_backward,
+          "Computes the backward pass.");
 }
