@@ -18,12 +18,15 @@ classifiers = ["Development Status :: 3 - Alpha",
                "Intended Audience :: Science/Research",
                "License :: OSI Approved :: Apache Software License",
                "Natural Language :: English",
-               "Operating System :: Unix",             # TODO: test for:
-                                                       #   Operating System :: Microsoft :: Windows
-                                                       #   or
-                                                       #   Operating System :: OS Independent
-               "Programming Language :: Python :: 3",  # TODO: test for:
-                                                       #   Programming Language :: Python :: 2
+               "Operating System :: Unix",               # TODO: test for:
+                                                         #   Operating System :: Microsoft :: Windows
+                                                         #   or
+                                                         #   Operating System :: OS Independent
+               "Programming Language :: Python :: 3",
+               "Programming Language :: Python :: 3.5",
+               "Programming Language :: Python :: 3.6",
+               "Programming Language :: Python :: 3.7",  # TODO: test for:
+                                                         #   Programming Language :: Python :: 2
                "Programming Language :: Python :: Implementation :: CPython",
                "Topic :: Scientific/Engineering :: Artificial Intelligence",
                "Topic :: Scientific/Engineering :: Information Analysis",
