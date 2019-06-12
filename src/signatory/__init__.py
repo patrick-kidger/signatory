@@ -1,13 +1,8 @@
-import os
-import torch  # must be imported before anything from the implementation of the pytorch version of torchtest
+import torch  # must be imported before anything from signatory
+del torch
 
 from .signature import (signature,
                         signature_channels)
 
 
-with open(os.path.join(os.path.dirname(__file__), '..', '..', 'VERSION'), 'r') as f:
-    __version__ = f.read()
-
-del torch
-del os
-del f
+__version__ = "0.1"

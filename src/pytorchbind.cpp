@@ -7,11 +7,10 @@
 #include "signature.hpp"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    std::ifstream readme_file {"../README.rst"};
-    // skip first two lines
+    std::ifstream readme_file {"../README.md"};
+    // skip first line
     readme_file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-    readme_file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-    // read the third line
+    // read the second line
     std::string readme;
     std::getline(readme_file, readme);
     readme_file.close();

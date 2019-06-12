@@ -3,5 +3,8 @@
 *.py[cod]
 .idea/
 .vs/
-dir_info.txt
-cmake-build-*/
+build/
+dist/
+*.egg_info/
+*.egg
+*.so
