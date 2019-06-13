@@ -11,7 +11,7 @@ In brief: the signature of a path determines the path essentially uniquely, and 
 
 Installation
 ------------
-::
+.. code-block:: bash
 
     git clone https://github.com/patrick-kidger/signatory.git
     cd signatory
@@ -37,7 +37,8 @@ This embedding was selected for ``signatory`` because signature calculations for
 
 Citation
 --------
-If you found this library useful in your research, please consider citing::
+If you found this library useful in your research, please consider citing
+.. code-block:: bibtex
 
     @article{deepsignatures,
         title={{Deep Signatures}},

@@ -1,4 +1,4 @@
-:: include:: title.rst
+.. include:: title.rst
 
 .. toctree::
     :maxdepth: 2
