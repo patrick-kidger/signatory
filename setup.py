@@ -18,7 +18,6 @@ with io.open(os.path.join(here, 'README.rst'), 'r', encoding='utf-8') as f:
 with io.open(os.path.join(here, 'docs', 'pages', 'description.rst'), 'r', encoding='utf-8') as f:
     description = f.read()
 
-
 setuptools.setup(name=metadata.project,
                  version=metadata.version,
                  author=metadata.author,
