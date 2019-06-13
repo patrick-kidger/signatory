@@ -1,5 +1,3 @@
-# GitHub doesn't support .. include::, so here we are.
-
 import io
 
 
