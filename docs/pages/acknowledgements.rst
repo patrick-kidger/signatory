@@ -1,3 +1,5 @@
+.. currentmodule:: acknowledgements
+
 Acknowledgements
 ----------------
 The Python bindings for the C++ code were written with the aid of `pybind11 <https://github.com/pybind/pybind11>`_.

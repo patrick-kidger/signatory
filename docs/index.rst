@@ -1,20 +1,17 @@
-.. signatory documentation master file, created by
-   sphinx-quickstart on Thu Jun 13 19:28:17 2019.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
-Welcome to signatory's documentation!
-=====================================
+.. include:: /fragments/title.rst
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
+    :caption: Usage
+    :hidden:
 
+    /pages/installation
+    /pages/signatory
 
+.. toctree::
+    :caption: Extras
+    :hidden:
 
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+    /pages/info
+    /pages/faq
+    /pages/citation
+    /pages/acknowledgements

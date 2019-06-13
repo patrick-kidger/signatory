@@ -1,3 +1,5 @@
+.. currentmodule:: citation
+
 Citation
 --------
 If you found this library useful in your research, please consider citing

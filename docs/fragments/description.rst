@@ -1,0 +1,1 @@
+High-performance signature computations in PyTorch, on both CPU and GPU, accelerated via C++ extensions, including backpropagation.

@@ -1,3 +1,5 @@
+.. currentmodule:: installation
+
 Installation
 ------------
 Installing from source from GitHub is simple:
