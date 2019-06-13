@@ -13,10 +13,7 @@
 // TODO: more tests
 // TODO: numpy, tensorflow
 // TODO: CUDA
-// TODO: test on GPU
 // TODO: update README
-// TODO: docstring in python
-// TODO: signature_channels has a mixed C++/Python docstring
 // TODO: handle warnings. (int64_t etc.)
 // TODO: support torchscript? https://pytorch.org/tutorials/advanced/torch_script_custom_ops.html
 

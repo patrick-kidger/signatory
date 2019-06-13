@@ -22,12 +22,13 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
           "Computes the number of output channels from a signature call.\n"
           "\n"
           "Arguments:\n"
-          "    int input_channels: The number of channels in the input; that is,\n"
+          "    input_channels (int): The number of channels in the input; that is,\n"
           "        the dimension of the space that the input path resides in.\n"
-          "    int depth: The depth of the signature that is being computed.\n"
+          "    depth (int): The depth of the signature that is being computed.\n"
           "\n"
           "Returns:\n"
-          "    An integer specifying the number of channels in the signature of the path.");
+          "    An int specifying the number of channels in the signature of the path.",
+          py::arg("input_channels"), py::arg("depth"));
     m.def("_signature_forward",
           &signatory::signature_forward,
           "Computes the forwards pass through a signature.");

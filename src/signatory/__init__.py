@@ -1,8 +1,11 @@
 import torch  # must be imported before anything from signatory
-del torch
 
-from .signature import (signature,
-                        signature_channels)
+from .backend import (signature,
+                      signature_channels)
+from .modules import (Signature,
+                      Augment)
 
 
 __version__ = "0.1"
+
+del torch
