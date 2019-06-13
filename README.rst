@@ -1,22 +1,27 @@
-# Signatory
+Signatory
+---------
 High-performance signature computations in PyTorch, on both CPU and GPU, accelerated via C++ extensions, including backpropagation.
 
-## What is the signature transform?
+What is the signature transform?
+--------------------------------
 The 'signature transform' is a transformation that does a particularly good job extracting features from streams of data. See [here](https://arxiv.org/abs/1603.03788) for a primer on its use in machine learning, as a feature transformation. See [here](https://arxiv.org/abs/1905.08494) for a more in-depth look at building it into neural network models , as an arbitrary layer anywhere within a neural network. It's pretty cool.
 
 In brief: the signature of a path determines the path essentially uniquely, and does so in an efficient, computable way.  Furthermore, the signature is rich enough that every continuous function of the path may be approximated arbitrarily well by a linear function of its signature; it is what we call a ‘universal nonlinearity’. Now for various reasons this is a mathematical idealisation not borne out in practice (which is why we put them in a neural network and don't just use a simple linear model), but they still work very well!
 
-## Installation
+Installation
+------------
 ```bash
 git clone https://github.com/patrick-kidger/signatory.git
 cd signatory
 pip install .
 ```
 
-## Documentation
+Documentation
+-------------
+The documentation is available [here](https://signatory.readthedocs.io).
 
-
-## FAQ
+FAQ
+---
 *What's the difference between `signatory` and [`iisignature`](https://github.com/bottler/iisignature)?*
 
 The main difference is that `iisignature` is NumPy-based and CPU-only; I believe it was written primarily with mathematical research in mind. Meanwhile `signatory` is for PyTorch and may also run on the GPU; it is targeted towards machine learning applications.
@@ -30,7 +35,8 @@ The signature transform is defined on paths; given a stream of data we must deci
 This embedding was selected for `signatory` because signature calculations for this embedding may be done much more rapidly (with provably fewer scalar multiplications); empirically it runs 3-4 times faster on the CPU than `iisignature` on reasonably sized batches. (`signatory` is optimised for batched operations, using batches to be [cache-friendly](https://stackoverflow.com/questions/16699247/what-is-a-cache-friendly-code).)
 
 
-## Citation
+Citation
+--------
 If you found this library useful in your research, please consider citing:
 ```
 @article{deepsignatures,
@@ -42,7 +48,8 @@ If you found this library useful in your research, please consider citing:
 ```
 which this project was a spin-off from.
 
-## Acknowledgements
+Acknowledgements
+----------------
 The Python bindings for the C++ code were written with the aid of [pybind11](https://github.com/pybind/pybind11).
 
 For NumPy-based CPU-only signature calculations, you may also be interested in the [`iisignature`](https://github.com/bottler/iisignature) package, which was a source of inspiration for signatory.

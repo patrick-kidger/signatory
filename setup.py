@@ -38,13 +38,13 @@ ext_modules = [cpp.CppExtension(name='_impl', sources=['src/pytorchbind.cpp', 's
 
 here = os.path.abspath(os.path.dirname(__file__))
 
-with io.open(os.path.join(here, 'README.md'), 'r', encoding='utf-8') as f:
+with io.open(os.path.join(here, 'README.rst'), 'r', encoding='utf-8') as f:
     readme = f.read()
 
-if readme.split('\n', maxsplit=1)[0].strip()[1:].strip().lower() != name:
-    raise SystemExit('Name in README.md does not match given name.')
+if readme.split('\n', maxsplit=1)[0].strip().lower() != name:
+    raise SystemExit('Name in README.rst does not match given name.')
 
-description = readme.split('\n', maxsplit=2)[1]
+description = readme.split('\n', maxsplit=3)[2]
 
 
 top_python_package = os.path.join(here, 'src', name)
@@ -80,7 +80,6 @@ setuptools.setup(name=name,
                  maintainer_email=author_email,
                  description=description,
                  long_description=readme,
-                 long_description_content_type="text/markdown",
                  url=url,
                  license=license,
                  keywords=keywords,
