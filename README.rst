@@ -43,6 +43,7 @@ This embedding was selected for ``signatory`` because signature calculations for
 Citation
 --------
 If you found this library useful in your research, please consider citing
+
 .. code-block:: bibtex
 
     @article{deepsignatures,
