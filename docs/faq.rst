@@ -1,12 +1,12 @@
 FAQ
 ---
-* *What's the difference between ``signatory`` and |iisignature|_?*
+* What's the difference between ``signatory`` and |iisignature|_?
 
 The main difference is that ``iisignature`` is NumPy-based and CPU-only; I believe it was written primarily with mathematical research in mind. Meanwhile ``signatory`` is for PyTorch and may also run on the GPU; it is targeted towards machine learning applications.
 
 The two packages also use different embeddings from streams of data into path space; see the next question.
 
-* *I get different results when I use the |iisignature|_ package?*
+* I get different results when I use the |iisignature|_ package?
 
 The signature transform is defined on paths; given a stream of data we must decide how to embed it into a path. ``iisignature`` uses a piecewise linear embedding, whilst ``signatory`` uses a piecewise constant embedding. From a data science point of view, both are equally arbitrary, so as long as you pick one and stick with it shouldn't matter.
 

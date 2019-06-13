@@ -1,4 +1,4 @@
-# Yes, there are much cleverer ways of generating documentation...
+# GitHub doesn't support .. include::, so here we are.
 
 import io
 

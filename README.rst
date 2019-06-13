@@ -11,6 +11,8 @@ In brief: the signature of a path determines the path essentially uniquely, and 
 
 Installation
 ------------
+Installing from source from GitHub is simple:
+
 .. code-block:: bash
 
     git clone https://github.com/patrick-kidger/signatory.git
