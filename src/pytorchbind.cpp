@@ -8,7 +8,7 @@
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     py::class_<signatory::SigSpec>(m, "_SigSpec").def(py::init<torch::Tensor, int, bool, bool, bool>());
-    m.def("signature_channels",
+    m.def("_signature_channels",
           &signatory::signature_channels,
           "Computes the number of output channels from a signature call.");
     m.def("_signature_forward",
