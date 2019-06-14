@@ -17,6 +17,8 @@ extensions = ['sphinx.ext.napoleon', 'sphinx.ext.autodoc']
 autodoc_mock_imports = ['torch', '{}._impl'.format(metadata.project)]
 napoleon_use_admonition_for_examples = True
 
+master_doc = 'index'
+
 # if necessary
 # pip install sphinx_rtd_theme
 html_theme = 'sphinx_rtd_theme'
