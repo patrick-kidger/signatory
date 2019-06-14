@@ -1,8 +1,12 @@
 import os
 import sys
+import types
 
 sys.path.extend([os.path.abspath('..'),       # import metadata
                  os.path.abspath('../src')])  # import signatory
+torch_module = types.ModuleType()
+torch_module.Tensor = None
+sys.modules['torch'] = torch_module
 
 import metadata
 
@@ -14,7 +18,7 @@ release = metadata.version
 
 extensions = ['sphinx.ext.napoleon', 'sphinx.ext.autodoc']
 
-autodoc_mock_imports = ['torch', '{}._impl'.format(metadata.project)]
+autodoc_mock_imports = ['{}._impl'.format(metadata.project)]
 napoleon_use_admonition_for_examples = True
 
 master_doc = 'index'
