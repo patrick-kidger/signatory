@@ -4,7 +4,7 @@ import types
 
 sys.path.extend([os.path.abspath('..'),       # import metadata
                  os.path.abspath('../src')])  # import signatory
-torch_module = types.ModuleType()
+torch_module = types.ModuleType('torch')
 torch_module.Tensor = None
 sys.modules['torch'] = torch_module
 
