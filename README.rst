@@ -28,6 +28,8 @@ Alternatively install via ``git``:
     cd signatory
     pip install .
 
+Requires `PyTorch <http://pytorch.org/>`__. Tested with version 1.0.1.
+
 Documentation
 -------------
 The documentation is available `here <https://signatory.readthedocs.io>`__.

@@ -10,13 +10,15 @@
 #include "signature.hpp"
 
 // TODO: write Chen method + test against iisignature for small batch sizes?
-// TODO: more tests
+// TODO: more tests: forward correctness
 // TODO: numpy, tensorflow
 // TODO: CUDA
-// TODO: update README
 // TODO: handle warnings. (int64_t etc.)
 // TODO: support torchscript? https://pytorch.org/tutorials/advanced/torch_script_custom_ops.html
-
+// TODO: do something more space efficient for stream=False backward
+// TODO: think about memory/time for backwards
+// TODO: concatenating onto an already existing signature
+// TODO: check that the right things are being put in the sdist/bdist
 
 namespace signatory {
     namespace detail {
@@ -228,7 +230,7 @@ namespace signatory {
 
         }
 
-        // TODO: think about memory
+
         void compute_first_term_backward(torch::Tensor grad_nth_term, torch::Tensor grad_path, const SigSpec& sigspec) {
             if (sigspec.basepoint) {
                 grad_path += grad_nth_term;
@@ -295,7 +297,6 @@ namespace signatory {
                 slice_into_terms(grad_out_vector[0], sigspec).swap(grad_out_vector);
             }
             if (!sigspec.stream) {
-                // TODO: do something more space efficient each time instead.
                 std::vector<torch::Tensor> grad_out_vector_replacement;
                 int input_channels = 1;
                 for (int i = 0; i < sigspec.depth; ++i) {
