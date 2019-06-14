@@ -8,8 +8,8 @@ import unittest
 class TestGrad(unittest.TestCase):
     @staticmethod
     def gradcheck(size=(1, 4, 3), depth=2, basepoint=False, stream=False, flatten=True):
-        x = torch.rand(*size, requires_grad=True, dtype=torch.double)
-        return autograd.gradcheck(signatory.signature, (x, depth, basepoint, stream, flatten))
+        path = torch.rand(*size, requires_grad=True, dtype=torch.double)
+        return autograd.gradcheck(signatory.signature, (path, depth, basepoint, stream, flatten))
 
     def test_gradcheck(self):
         for basepoint in (True, False):

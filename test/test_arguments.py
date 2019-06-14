@@ -4,15 +4,25 @@ import unittest
 
 
 class TestArguments(unittest.TestCase):
+    def test_single_axis(self):
+        for basepoint in (True, False):
+            for stream in (True, False):
+                for flatten in (True, False):
+                    signatory.signature(torch.rand((1, 4, 4)), 2, basepoint, stream, flatten)
+                    signatory.signature(torch.rand((4, 1, 4)), 2, basepoint, stream, flatten)
+                    signatory.signature(torch.rand((4, 4, 1)), 2, basepoint, stream, flatten)
+                    signatory.signature(torch.rand((1, 1, 1)), 2, basepoint, stream, flatten)
+
     def test_arguments(self):
         for basepoint in (True, False):
             for stream in (True, False):
                 for flatten in (True, False):
                     for _ in range(5):
                         size = torch.randint(low=1, high=10, size=(3,))
+                        path = torch.rand(tuple(size))
                         depth = int(torch.randint(low=1, high=4, size=(1,)))
                         try:
-                            signatory.signature(size, depth, basepoint, stream, flatten)
+                            signatory.signature(path, depth, basepoint, stream, flatten)
                         except Exception:
                             print("Failed with basepoint={basepoint}, stream={stream}, flatten={flatten}, size={size}, "
                                   "depth={depth}".format(basepoint=basepoint, stream=stream, flatten=flatten, size=size,

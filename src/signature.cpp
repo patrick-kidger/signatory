@@ -36,7 +36,7 @@ namespace signatory {
         }
 
 
-        void checkargs(torch::Tensor path, int depth) {
+        void checkargs(torch::Tensor path, int depth, bool basepoint) {
             if (path.ndimension() != 3) {
                 throw std::invalid_argument("path must be a 3-dimensional tensor, corresponding to (batch, channel, "
                                             "stream) respectively.");
@@ -140,9 +140,10 @@ namespace signatory {
                     int current_length = sigspec.input_channels;
                     torch::Tensor trimmed_tensor_element;
                     for (auto tensor_element : out_vector) {
+                        int len = tensor_element.size(1) == 0 ? 0 : 1;
                         trimmed_tensor_element = tensor_element.narrow(/*dim=*/1,
                                                                        /*start=*/tensor_element.size(1) - 1,
-                                                                       /*len=*/1).squeeze(1);
+                                                                       /*len=*/len).squeeze(1);
                         out_flattened.narrow(/*dim=*/0,
                                              /*start=*/current_mem_pos,
                                              /*len=*/current_length).copy_(trimmed_tensor_element);
@@ -153,9 +154,10 @@ namespace signatory {
                 }
                 else{
                     for (auto tensor_element : out_vector) {
+                        int len = tensor_element.size(1) == 0 ? 0 : 1;
                         formatted_out_vector.push_back(tensor_element.narrow(/*dim=*/1,
                                                                              /*start=*/tensor_element.size(1) - 1,
-                                                                             /*len=*/1).squeeze(1).clone());
+                                                                             /*len=*/len).squeeze(1).clone());
                     }
                 }
             }
@@ -305,9 +307,11 @@ namespace signatory {
                                                                  sigspec.output_stream_size,
                                                                  sigspec.batch_size},
                                                                 sigspec.opts);
+
+                    int len = tensor_element.size(1) == 0 ? 0 : 1;
                     tensor_element.narrow(/*dim=*/1,
                             /*start=*/tensor_element.size(1) - 1,
-                            /*len=*/1).squeeze(1).copy_(grad_out_vector[i]);
+                            /*len=*/len).squeeze(1).copy_(grad_out_vector[i]);
                     grad_out_vector_replacement.push_back(tensor_element);
                 }
                 grad_out_vector_replacement.swap(grad_out_vector);
@@ -355,7 +359,7 @@ namespace signatory {
                torch::Tensor,
                SigSpec>
     signature_forward(torch::Tensor path, int depth, bool basepoint=false, bool stream=false, bool flatten=true) {
-        detail::checkargs(path, depth);
+        detail::checkargs(path, depth, basepoint);
         if (!path.is_floating_point()) {
             path = path.to(torch::kFloat32);
         }

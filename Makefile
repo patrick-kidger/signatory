@@ -7,7 +7,7 @@ genreadme:
 
 # run setup.py
 setup:
-    python setup.py $@
+    python setup.py ${O}
 
 # run tests
 test:
