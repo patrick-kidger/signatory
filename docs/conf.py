@@ -1,27 +1,25 @@
 import os
 import sys
+import types
 
 
-# I've tried a bunch of other approaches and none of them build docs properly... to investigate.
-class torch:
+# I don't think any other approach can work in general: there's no way for something asking for e.g. torch.Tensor to
+# know if that's a class, module, function...
+class torch(types.ModuleType):
     class Tensor:
         pass
 
-    class autograd:
+    class autograd(types.ModuleType):
         class Function:
             pass
 
-    class nn:
+    class nn(types.ModuleType):
         class Module:
             pass
 
-        class functional:
-            class relu:
+        class functional(types.ModuleType):
+            def relu():
                 pass
-
-
-sys.path.extend([os.path.abspath('..'),       # import metadata
-                 os.path.abspath('../src')])  # import signatory
 
 
 sys.modules['torch'] = torch
@@ -29,6 +27,9 @@ sys.modules['torch.autograd'] = torch.autograd
 sys.modules['torch.nn'] = torch.nn
 sys.modules['torch.nn.functional'] = torch.nn.functional
 
+
+sys.path.extend([os.path.abspath('..'),       # import metadata
+                 os.path.abspath('../src')])  # import signatory
 import metadata
 
 
