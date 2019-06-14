@@ -2,7 +2,14 @@
 
 Installation
 ------------
-Installing from source from GitHub is simple:
+Install via ``pip``:
+
+.. code-block:: bash
+
+    pip install signatory
+
+
+Alternatively install via ``git``:
 
 .. code-block:: bash
 
