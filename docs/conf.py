@@ -1,27 +1,8 @@
 import os
 import sys
-import unittest.mock as mock
-
-
-# Just adding to autodoc_mock_imports results in mocks in the documentation
-class Mock(mock.MagicMock):
-    @classmethod
-    def __getattr__(cls, name):
-        return mock.MagicMock()
-
-
-class Tensor:
-    __qualname__ = 'torch.Tensor'
-
 
 sys.path.extend([os.path.abspath('..'),       # import metadata
                  os.path.abspath('../src')])  # import signatory
-torch_mock = Mock()
-torch_mock.Tensor = Tensor
-sys.modules['torch'] = torch_mock
-sys.modules['torch.autograd'] = Mock()
-sys.modules['torch.nn'] = Mock()
-sys.modules['torch.nn.functional'] = Mock()
 
 import metadata
 
@@ -33,7 +14,7 @@ release = metadata.version
 
 extensions = ['sphinx.ext.napoleon', 'sphinx.ext.autodoc']
 
-autodoc_mock_imports = ['{}._impl'.format(metadata.project)]
+autodoc_mock_imports = ['torch', '{}._impl'.format(metadata.project)]
 napoleon_use_admonition_for_examples = True
 
 master_doc = 'index'
