@@ -3,7 +3,6 @@ import os
 import setuptools
 import torch.utils.cpp_extension as cpp
 
-import genreadme  # builds README file
 import metadata
 
 

@@ -40,7 +40,7 @@ read_from_files(['./docs/fragments/title.rst', './docs/pages/info.rst', './docs/
 
 outs.append("Documentation\n"
             "-------------\n"
-            "The documentation is available `here <https://signatory.readthedocs.io>`_.")
+            "The documentation is available `here <https://signatory.readthedocs.io>`__.")
 
 read_from_files(['./docs/pages/faq.rst', './docs/pages/citation.rst', './docs/pages/acknowledgements.rst'])
 
