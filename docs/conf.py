@@ -14,7 +14,7 @@ release = metadata.version
 
 extensions = ['sphinx.ext.napoleon', 'sphinx.ext.autodoc']
 
-autodoc_mock_imports = ['{}._impl'.format(metadata.project)]
+autodoc_mock_imports = ['torch', '{}._impl'.format(metadata.project)]
 napoleon_use_admonition_for_examples = True
 
 # if necessary
