@@ -1,7 +1,7 @@
 *********
 Signatory
 *********
-.. include:: /fragments/description.rst
+High-performance signature computations in PyTorch, on both CPU and GPU, accelerated via C++ extensions, including backpropagation.
 
 What is the signature transform?
 --------------------------------
@@ -35,7 +35,7 @@ The main difference is that ``iisignature`` is NumPy-based and CPU-only. Meanwhi
 
 The signature transform is defined on paths; given a stream of data we must decide how to embed it into a path. ``iisignature`` uses a piecewise linear embedding, whilst ``signatory`` uses a piecewise constant embedding. From a data science point of view, both are equally arbitrary -- so as long as you pick one and stick with it then it shouldn't matter.
 
-This embedding was selected for ``signatory`` because signature calculations for this embedding may be done much more rapidly, with provably fewer scalar multiplications. Empirically it runs 3-4 times faster on the CPU than ``iisignature`` on reasonably sized batches. (```signatory`` is optimised for batched operations, using batches to be `cache-friendly <https://stackoverflow.com/questions/16699247/what-is-a-cache-friendly-code>`_.)
+This embedding was selected for ``signatory`` because signature calculations for this embedding may be done much more rapidly, with provably fewer scalar multiplications. Empirically it runs 3-4 times faster on the CPU than ``iisignature`` on reasonably sized batches. (``signatory`` is optimised for batched operations, using batches to be `cache-friendly <https://stackoverflow.com/questions/16699247/what-is-a-cache-friendly-code>`_.)
 
 Citation
 --------

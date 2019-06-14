@@ -5,7 +5,7 @@
     :hidden:
 
     /pages/installation
-    /pages/signatory
+    /pages/reference
 
 .. toctree::
     :caption: Extras
