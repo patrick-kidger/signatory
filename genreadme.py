@@ -27,6 +27,8 @@ def parse_file(filename):
                 out_line = parse_file(os.path.join(docdir, subfilename[1:]))
             else:
                 out_line = line
+            if ':ref:' in data:
+                raise RuntimeError('refs not supported')
             out_data.append(out_line)
     return ''.join(out_data)
 
