@@ -1,12 +1,27 @@
 import os
 import sys
-import types
+import unittest.mock as mock
+
+
+# Just adding to autodoc_mock_imports results in mocks in the documentation
+class Mock(mock.MagicMock):
+    @classmethod
+    def __getattr__(cls, name):
+        return mock.MagicMock()
+
+
+class Tensor:
+    __qualname__ = 'torch.Tensor'
+
 
 sys.path.extend([os.path.abspath('..'),       # import metadata
                  os.path.abspath('../src')])  # import signatory
-torch_module = types.ModuleType('torch')
-torch_module.Tensor = None
-sys.modules['torch'] = torch_module
+torch_mock = Mock()
+torch_mock.Tensor = Tensor
+sys.modules['torch'] = torch_mock
+sys.modules['torch.autograd'] = Mock()
+sys.modules['torch.nn'] = Mock()
+sys.modules['torch.nn.functional'] = Mock()
 
 import metadata
 
