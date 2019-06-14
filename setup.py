@@ -15,7 +15,7 @@ here = os.path.abspath(os.path.dirname(__file__))
 with io.open(os.path.join(here, 'README.rst'), 'r', encoding='utf-8') as f:
     readme = f.read()
 
-with io.open(os.path.join(here, 'docs', 'pages', 'description.rst'), 'r', encoding='utf-8') as f:
+with io.open(os.path.join(here, 'docs', 'fragments', 'description.rst'), 'r', encoding='utf-8') as f:
     description = f.read()
 
 setuptools.setup(name=metadata.project,
