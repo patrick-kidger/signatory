@@ -2,13 +2,13 @@
 
 Reference
 ---------
-At the heart of the package is the ``signatory.signature`` function:
+At the heart of the package is the :func:`signatory.signature` function:
 
 .. autofunction:: signatory.signature
 
 ----
 
-The ``signatory.signature`` function is conveniently wrapped into a ``torch.nn.Module``:
+The :func:`signatory.signature` function is conveniently wrapped into a :class:`torch.nn.Module`:
 
 .. autoclass:: signatory.Signature
 
@@ -20,6 +20,6 @@ The following function is provided as a convenience to count the number of chann
 
 ----
 
-Finally the following ``torch.nn.Module`` is provided as a convenience. As described in `Deep Signatures -- Bonnier et al. 2019 <https://arxiv.org/abs/1905.08494>`_, it is often advantageous to augment a path before taking the signature.
+Finally the following :class:`torch.nn.Module` is provided as a convenience. As described in `Deep Signatures -- Bonnier et al. 2019 <https://arxiv.org/abs/1905.08494>`_, it is often advantageous to augment a path before taking the signature.
 
 .. autoclass:: signatory.Augment

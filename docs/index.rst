@@ -1,3 +1,4 @@
+.. _signatory-label:
 .. include:: /fragments/title.rst
 
 .. toctree::

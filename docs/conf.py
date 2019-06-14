@@ -38,10 +38,11 @@ copyright = metadata.copyright
 author = metadata.author
 release = metadata.version
 
-extensions = ['sphinx.ext.napoleon', 'sphinx.ext.autodoc']
+extensions = ['sphinx.ext.napoleon', 'sphinx.ext.autodoc', 'sphinx.ext.intersphinx']
 
-autodoc_mock_imports = ['{}._impl'.format(metadata.project)]
 napoleon_use_admonition_for_examples = True
+autodoc_mock_imports = ['{}._impl'.format(metadata.project)]
+intersphinx_mapping = {'torch': ('https://pytorch.org/docs/latest/', None)}
 
 master_doc = 'index'
 

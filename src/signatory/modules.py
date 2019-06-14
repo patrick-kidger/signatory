@@ -8,18 +8,18 @@ from . import backend
 
 
 class Signature(nn.Module):
-    """Module wrapper around the signatory.signature function. See ``signatory.signature.__doc__``.
+    """Module wrapper around the signatory.signature function. See :func:`signatory.signature`.
 
     Arguments:
-        depth: as ``signatory.signature.__doc__``.
+        depth: as :func:`signatory.signature`.
 
-        basepoint: as ``signatory.signature.__doc__``.
+        basepoint: as :func:`signatory.signature`.
 
-        stream: as ``signatory.signature.__doc__``.
+        stream: as :func:`signatory.signature`.
 
-        flatten: as ``signatory.signature.__doc__``.
+        flatten: as :func:`signatory.signature`.
 
-    Called with a single argument ``path`` of type ``torch.Tensor``.
+    Called with a single argument :attr:`path` of type :class:`torch.Tensor`.
     """
 
     def __init__(self, depth: int, basepoint: bool = False, stream: bool = False, flatten: bool = True, **kwargs):
@@ -51,7 +51,7 @@ class Augment(nn.Module):
     The input path is expected to be a three-dimensional tensor, with dimensions :math:`(N, C, L)`, where
     :math:`N` is the batch size, :math:`C` denotes the number of channels, and :math:`L` is the length of the input
     sequence. Thus each batch element is interpreted as a stream of data :math:`(x_1, \ldots, x_L)`, where each
-    :math:`x_i \in \mathbb{R}^C`. (This is the same as ``torch.nn.Conv1D``, for example.)
+    :math:`x_i \in \mathbb{R}^C`. (This is the same as :class:`torch.nn.Conv1d`, for example.)
 
     Then this stream may be 'augmented' via some function
 
@@ -105,7 +105,7 @@ class Augment(nn.Module):
             before sweeping the feedforward neural network along it.
 
         dilation (int, optional): The spacing between input elements given to the feedforward neural network.
-            Defaults to 1. Harder to describe; see the equivalent argument for ``torch.nn.Conv1D``.
+            Defaults to 1. Harder to describe; see the equivalent argument for :class:`torch.nn.Conv1d`.
 
         bias (bool, optional): Defaults to True. Whether to use biases in the neural network.
 

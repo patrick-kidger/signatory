@@ -35,7 +35,7 @@ def signature(path: torch.Tensor, depth: int, basepoint: bool = False, stream: b
     The input :attr:`path` is expected to be a three-dimensional tensor, with dimensions :math:`(N, C, L)`, where
     :math:`N` is the batch size, :math:`C` denotes the number of channels, and :math:`L` is the length of the input
     sequence. Thus each batch element is interpreted as a stream of data :math:`(x_1, \ldots, x_L)`, where each
-    :math:`x_i \in \mathbb{R}^C`. (This is the same as ``torch.nn.Conv1D``, for example.)
+    :math:`x_i \in \mathbb{R}^C`. (This is the same as :class:`torch.nn.Conv1d`, for example.)
 
     If :attr:`basepoint` is True then an additional point :math:`x_0 = 0 \in \mathbb{R}^C` is prepended to the path.
 
@@ -52,7 +52,7 @@ def signature(path: torch.Tensor, depth: int, basepoint: bool = False, stream: b
     .. math::
         C + C^2 + \cdots + C^\text{depth}.
 
-    (This value may be computed via the ``signatory.signature_channels`` function.)
+    (This value may be computed via the :func:`signatory.signature_channels` function.)
 
     If :attr:`stream` is True then  the signatures of all intermediate paths :math:`(x_1, \ldots, x_j)`, for
     :math:`j=1, \ldots, L`, are also computed.
@@ -72,7 +72,7 @@ def signature(path: torch.Tensor, depth: int, basepoint: bool = False, stream: b
         as the stream dimension is now preserved. See also the 'Returns' section below.
 
     Arguments:
-        path (``torch.Tensor``): The input path to apply the signature transform to.
+        path (:class:`torch.Tensor`): The input path to apply the signature transform to.
 
         depth (int): The depth to truncate the signature at.
 
@@ -87,8 +87,8 @@ def signature(path: torch.Tensor, depth: int, basepoint: bool = False, stream: b
             signature transform.
 
     Returns:
-        A ``torch.Tensor`` or a tuple of ``torch.Tensor`` s.
-        Given an input ``torch.Tensor`` of shape :math:`(N, C, L)`, and input arguments :attr:`depth`,
+        A :class:`torch.Tensor` or a tuple of :class:`torch.Tensor` s.
+        Given an input :class:`torch.Tensor` of shape :math:`(N, C, L)`, and input arguments :attr:`depth`,
         :attr:`basepoint`, :attr:`stream`, :attr:`flatten`, then the return value is, in pseudocode:
 
         .. code-block:: python
@@ -124,7 +124,8 @@ def signature(path: torch.Tensor, depth: int, basepoint: bool = False, stream: b
     return _SignatureFunction.apply(path, depth, basepoint, stream, flatten)
 
 
-# A wrapper for the sake of understandable documentation
+# TODO
+# A wrapper for the sake of understandable documentation on signatures
 def signature_channels(input_channels: int, depth: int):
     """Computes the number of output channels from a signature call.
 
