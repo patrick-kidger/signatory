@@ -1,5 +1,6 @@
-.. _signatory-label:
 .. include:: /fragments/title.rst
+
+Hosted on `GitHub <https://github.com/patrick-kidger/signatory>`__.
 
 .. toctree::
     :caption: Usage
