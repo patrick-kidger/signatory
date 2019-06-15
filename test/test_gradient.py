@@ -11,17 +11,32 @@ class TestGrad(unittest.TestCase):
         path = torch.rand(*size, requires_grad=True, dtype=torch.double)
         return autograd.gradcheck(signatory.signature, (path, depth, basepoint, stream, flatten))
 
-    def test_gradcheck(self):
+    def test_gradcheck_edge(self):
+        for basepoint in (True, False):
+            for stream in (True, False):
+                for flatten in (True, False):
+                    for depth in (1, 2):
+                        for size in ((1, 1, 1), (1, 4, 4), (4, 1, 4), (4, 4, 1)):
+                            try:
+                                self.gradcheck(size, depth, basepoint, stream, flatten)
+                            except RuntimeError:
+                                self.fail("Failed with basepoint={basepoint}, stream={stream}, flatten={flatten}, "
+                                          "size={size}, depth={depth}".format(basepoint=basepoint, stream=stream,
+                                                                              flatten=flatten, size=size, depth=depth))
+
+    def test_gradcheck_random(self):
         for basepoint in (True, False):
             for stream in (True, False):
                 for flatten in (True, False):
                     for _ in range(5):
                         size = torch.randint(low=1, high=10, size=(3,))
                         depth = int(torch.randint(low=1, high=4, size=(1,)))
-                        self.assertTrue(self.gradcheck(size, depth, basepoint, stream, flatten),
-                                        "Failed with basepoint={basepoint}, stream={stream}, flatten={flatten}, "
-                                        "size={size}, depth={depth}".format(basepoint=basepoint, stream=stream,
-                                                                            flatten=flatten, size=size, depth=depth))
+                        try:
+                            self.gradcheck(size, depth, basepoint, stream, flatten)
+                        except RuntimeError:
+                            self.fail("Failed with basepoint={basepoint}, stream={stream}, flatten={flatten}, "
+                                      "size={size}, depth={depth}".format(basepoint=basepoint, stream=stream,
+                                                                          flatten=flatten, size=size, depth=depth))
 
     # Fails, and it's not clear why. However... (see next method)
     @staticmethod

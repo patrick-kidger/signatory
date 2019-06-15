@@ -1,16 +1,18 @@
 #ifndef TORCHTEST_SRC_SIGNATURE_HPP
 #define TORCHTEST_SRC_SIGNATURE_HPP
 
+#include <cstdint>    // int64_t
+
 
 namespace signatory{
     struct SigSpec {
         // Encapsulates all the things that aren't tensors
         SigSpec(torch::Tensor path, int depth, bool basepoint, bool stream, bool flatten);
-        int input_channels;
-        int input_stream_size;
-        int batch_size;
-        int output_channels;
-        int output_stream_size;
+        int64_t input_channels;
+        int64_t input_stream_size;
+        int64_t batch_size;
+        int64_t output_channels;
+        int64_t output_stream_size;
         int depth;
         int n_output_dims;
         bool basepoint;
@@ -19,7 +21,7 @@ namespace signatory{
         torch::TensorOptions opts;
     };
 
-    int signature_channels(int input_channels, int depth);
+    int64_t signature_channels(int64_t input_channels, int depth);
 
     std::tuple<std::vector<torch::Tensor>,
                std::vector<torch::Tensor>,

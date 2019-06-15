@@ -10,10 +10,9 @@
 #include "signature.hpp"
 
 // TODO: write Chen method + test against iisignature for small batch sizes?
-// TODO: more tests: forward correctness
+// TODO: more tests: forward correctness?
 // TODO: numpy, tensorflow
 // TODO: CUDA
-// TODO: handle warnings. (int64_t etc.)
 // TODO: support torchscript? https://pytorch.org/tutorials/advanced/torch_script_custom_ops.html
 // TODO: do something more space efficient for stream=False backward
 // TODO: think about memory/time for backwards
@@ -23,8 +22,8 @@
 namespace signatory {
     namespace detail {
         std::vector<torch::Tensor> slice_into_terms(torch::Tensor out, const SigSpec& sigspec) {
-            int current_mem_pos{0};
-            int current_length{sigspec.input_channels};
+            int64_t current_mem_pos = 0;
+            int64_t current_length{sigspec.input_channels};
             std::vector<torch::Tensor> out_vector;
             out_vector.reserve(sigspec.depth);
             for (int i = 0; i < sigspec.depth; ++i) {
@@ -41,6 +40,9 @@ namespace signatory {
                 throw std::invalid_argument("path must be a 3-dimensional tensor, corresponding to (batch, channel, "
                                             "stream) respectively.");
             }
+            if (path.size(0) == 0 || path.size(1) == 0 || path.size(2) == 0) {
+                throw std::invalid_argument("path cannot have dimensions of size zero.");
+            }
             if (depth < 1) {
                 throw std::invalid_argument("depth must be an integer greater than or equal to one.");
             }
@@ -56,7 +58,7 @@ namespace signatory {
                 return {slice_into_terms(out, sigspec), out};
             }
             else {
-                int current_length{sigspec.input_channels};
+                int64_t current_length{sigspec.input_channels};
                 std::vector<torch::Tensor> out_vector;
                 out_vector.reserve(sigspec.depth);
                 for (int i = 0; i < sigspec.depth; ++i) {
@@ -83,7 +85,7 @@ namespace signatory {
 
 
         torch::Tensor compute_increments(torch::Tensor path, const SigSpec& sigspec) {
-            int num_increments = sigspec.input_stream_size - 1;  // == path.size(1) - 1
+            int64_t num_increments {sigspec.input_stream_size - 1};  // == path.size(1) - 1
             if (sigspec.basepoint) {
                 torch::Tensor path_increments = path.clone();
                 path_increments.narrow(/*dim=*/1, /*start=*/1, /*len=*/num_increments) -=
@@ -133,31 +135,45 @@ namespace signatory {
                 // of memory.
 
                 if (sigspec.flatten) {
-                    torch::Tensor out_flattened = torch::empty({sigspec.output_channels,
-                                                                sigspec.batch_size},
-                                                               sigspec.opts);
-                    int current_mem_pos = 0;
-                    int current_length = sigspec.input_channels;
-                    torch::Tensor trimmed_tensor_element;
-                    for (auto tensor_element : out_vector) {
-                        int len = tensor_element.size(1) == 0 ? 0 : 1;
-                        trimmed_tensor_element = tensor_element.narrow(/*dim=*/1,
-                                                                       /*start=*/tensor_element.size(1) - 1,
-                                                                       /*len=*/len).squeeze(1);
-                        out_flattened.narrow(/*dim=*/0,
-                                             /*start=*/current_mem_pos,
-                                             /*len=*/current_length).copy_(trimmed_tensor_element);
-                        current_mem_pos += current_length;
-                        current_length *= sigspec.input_channels;
+                    if (!sigspec.basepoint && sigspec.input_stream_size == 1) {
+                        formatted_out_vector.push_back(torch::zeros({sigspec.output_channels,
+                                                                     sigspec.batch_size},
+                                                                    sigspec.opts));
                     }
-                    formatted_out_vector.push_back(out_flattened);
+                    else {
+                        torch::Tensor out_flattened = torch::empty({sigspec.output_channels,
+                                                                    sigspec.batch_size},
+                                                                   sigspec.opts);
+                        int64_t current_mem_pos = 0;
+                        int64_t current_length {sigspec.input_channels};
+                        torch::Tensor trimmed_tensor_element;
+                        for (auto tensor_element : out_vector) {
+                            trimmed_tensor_element = tensor_element.narrow(/*dim=*/1,
+                                    /*start=*/tensor_element.size(1) - 1,
+                                    /*len=*/1).squeeze(1);
+                            out_flattened.narrow(/*dim=*/0,
+                                    /*start=*/current_mem_pos,
+                                    /*len=*/current_length).copy_(trimmed_tensor_element);
+                            current_mem_pos += current_length;
+                            current_length *= sigspec.input_channels;
+                        }
+                        formatted_out_vector.push_back(out_flattened);
+                    }
                 }
-                else{
-                    for (auto tensor_element : out_vector) {
-                        int len = tensor_element.size(1) == 0 ? 0 : 1;
-                        formatted_out_vector.push_back(tensor_element.narrow(/*dim=*/1,
-                                                                             /*start=*/tensor_element.size(1) - 1,
-                                                                             /*len=*/len).squeeze(1).clone());
+                else {
+                    if (!sigspec.basepoint && sigspec.input_stream_size == 1) {
+                        for (auto tensor_element : out_vector) {
+                            formatted_out_vector.push_back(torch::zeros({tensor_element.size(0),
+                                                                         sigspec.batch_size},
+                                                                        sigspec.opts));
+                        }
+                    }
+                    else {
+                        for (auto tensor_element : out_vector) {
+                            formatted_out_vector.push_back(tensor_element.narrow(/*dim=*/1,
+                                    /*start=*/tensor_element.size(1) - 1,
+                                    /*len=*/1).squeeze(1).clone());
+                        }
                     }
                 }
             }
@@ -203,11 +219,11 @@ namespace signatory {
                 }
             }
             else {
-                if (grad_out_vector.size() != sigspec.depth) {
+                if (static_cast<int>(grad_out_vector.size()) != sigspec.depth) {
                     throw std::invalid_argument(err + "6");
                 }
-                int total_input_channels = 0;
-                int input_channels = 1;
+                int64_t total_input_channels = 0;
+                int64_t input_channels = 1;
                 for (int i = 0; i < sigspec.depth; ++i) {
                     torch::Tensor tensor_element = grad_out_vector[i];
                     input_channels *= sigspec.input_channels;
@@ -239,7 +255,7 @@ namespace signatory {
             }
             else {
                 torch::Tensor first_part {grad_path.narrow(/*dim=*/1, /*start=*/0, /*len=*/1)};
-                for (int i = 0; i < grad_nth_term.size(1); ++i) {
+                for (int64_t i = 0; i < grad_nth_term.size(1); ++i) {
                     first_part -= grad_nth_term.narrow(/*dim=*/1, /*start=*/i, /*len=*/1);
                 }
                 grad_path.narrow(/*dim=*/1, /*start=*/1, /*len=*/sigspec.input_stream_size - 1) += grad_nth_term;
@@ -248,7 +264,7 @@ namespace signatory {
 
 
         torch::Tensor compute_increments_backward(torch::Tensor grad_path_increments, const SigSpec& sigspec) {
-            int num_increments = sigspec.input_stream_size - 1;
+            int64_t num_increments {sigspec.input_stream_size - 1};
             if (sigspec.basepoint) {
                 torch::Tensor grad_path = grad_path_increments.clone();
                 grad_path.narrow(/*dim=*/1, /*start=*/0, /*len=*/num_increments)
@@ -273,7 +289,7 @@ namespace signatory {
                                        torch::Tensor prev_term,
                                        torch::Tensor path_increments,
                                        const SigSpec& sigspec) {
-            for (int i = sigspec.output_stream_size - 1; i >= 1; --i) {
+            for (int64_t i {sigspec.output_stream_size - 1}; i >= 1; --i) {
                 grad_nth_term.narrow(/*dim=*/1, /*start=*/i - 1, /*len=*/1) +=
                         grad_nth_term.narrow(/*dim=*/1, /*start=*/i, /*len=*/1);
             }
@@ -300,7 +316,7 @@ namespace signatory {
             }
             if (!sigspec.stream) {
                 std::vector<torch::Tensor> grad_out_vector_replacement;
-                int input_channels = 1;
+                int64_t input_channels {1};
                 for (int i = 0; i < sigspec.depth; ++i) {
                     input_channels *= sigspec.input_channels;
                     torch::Tensor tensor_element = torch::zeros({input_channels,
@@ -308,10 +324,11 @@ namespace signatory {
                                                                  sigspec.batch_size},
                                                                 sigspec.opts);
 
-                    int len = tensor_element.size(1) == 0 ? 0 : 1;
-                    tensor_element.narrow(/*dim=*/1,
-                            /*start=*/tensor_element.size(1) - 1,
-                            /*len=*/len).squeeze(1).copy_(grad_out_vector[i]);
+                    if (sigspec.output_stream_size != 0) {
+                        tensor_element.narrow(/*dim=*/1,
+                                              /*start=*/tensor_element.size(1) - 1,
+                                              /*len=*/1).squeeze(1).copy_(grad_out_vector[i]);
+                    }
                     grad_out_vector_replacement.push_back(tensor_element);
                 }
                 grad_out_vector_replacement.swap(grad_out_vector);
@@ -334,7 +351,7 @@ namespace signatory {
                      { opts = torch::TensorOptions().dtype(path.dtype()).device(path.device()); };
 
 
-    int signature_channels(int input_channels, int depth) {
+    int64_t signature_channels(int64_t input_channels, int depth) {
         if (input_channels < 1) {
             throw std::invalid_argument("input_channels must be at least 1");
         }
