@@ -13,7 +13,7 @@ In brief: the signature of a path determines the path essentially uniquely, and 
 
 Installation
 ------------
-Install via ``pip``
+Install via ``pip``:
 
 .. code-block:: bash
 
@@ -27,6 +27,8 @@ Alternatively install via ``git``:
     git clone https://github.com/patrick-kidger/signatory.git
     cd signatory
     pip install .
+
+Requires `PyTorch <http://pytorch.org/>`__. Tested with version 1.0.1.
 
 Documentation
 -------------

@@ -1,0 +1,9 @@
+0.1.1
+-----
+Bugfixes for edge cases.
+Some documentation fixes.
+Added tests.
+
+0.1.0
+-----
+Initial release!

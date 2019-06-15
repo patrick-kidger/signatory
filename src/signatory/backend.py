@@ -54,8 +54,9 @@ def signature(path: torch.Tensor, depth: int, basepoint: bool = False, stream: b
 
     (This value may be computed via the :func:`signatory.signature_channels` function.)
 
-    If :attr:`stream` is True then  the signatures of all intermediate paths :math:`(x_1, \ldots, x_j)`, for
-    :math:`j=1, \ldots, L`, are also computed.
+    If :attr:`stream` is True then  the signatures of all paths :math:`(x_1, \ldots, x_j)`, for :math:`j=2, \ldots, L`,
+    are computed. (Or :math:`(x_0, \ldots, x_j)`, for :math:`j=1, \ldots, L` if :attr:`basepoint` is True. In neither
+    case is the signature of the path of a single element computed, as that is just zero.)
 
     Examples:
         If :attr:`stream` is False and :attr:`flatten` is True then the returned tensor will have shape
@@ -96,7 +97,7 @@ def signature(path: torch.Tensor, depth: int, basepoint: bool = False, stream: b
             if flatten:
                 if stream:
                     if basepoint:
-                        return torch.Tensor of shape (N, C, L)
+                        return torch.Tensor of shape (N, C + C^2 + ... + C^(depth), L)
                     else:
                         return torch.Tensor of shape (N, C + C^2 + ... + C^(depth), L - 1)
                 else:
@@ -108,7 +109,7 @@ def signature(path: torch.Tensor, depth: int, basepoint: bool = False, stream: b
                         for i in range(1, depth + 1):
                             out.append(torch.Tensor of shape (N, C^i, L))
                         return tuple(out)
-                    else
+                    else:
                         out = []
                         for i in range(1, depth + 1):
                             out.append(torch.Tensor of shape (N, C^i, L - 1))

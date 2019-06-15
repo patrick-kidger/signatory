@@ -16,3 +16,5 @@ Alternatively install via ``git``:
     git clone https://github.com/patrick-kidger/signatory.git
     cd signatory
     pip install .
+
+Requires `PyTorch <http://pytorch.org/>`__. Tested with version 1.0.1.
