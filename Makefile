@@ -1,4 +1,4 @@
-.PHONY: genreadme setup test docs
+.PHONY: genreadme setup test docs publish
 .RECIPEPREFIX+=
 
 # generate the readme from the documentation
@@ -16,3 +16,7 @@ test:
 # make docs
 docs:
     sphinx-build -M html ./docs ./docs/_build
+
+# push to pypi
+publish:
+    twine upload dist/*

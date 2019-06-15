@@ -6,7 +6,7 @@ Install via ``pip``:
 
 .. code-block:: bash
 
-    pip install signatory
+    pip3 install signatory
 
 
 Alternatively install via ``git``:
