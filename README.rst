@@ -13,7 +13,7 @@ In brief: the signature of a path determines the path essentially uniquely, and 
 
 Installation
 ------------
-Install via ``pip``:
+Install via ``pip``
 
 .. code-block:: bash
 
