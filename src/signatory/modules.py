@@ -1,8 +1,11 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from typing import Any, Callable, Tuple, Union
 import warnings
+
+# noinspection PyUnreachableCode
+if False:
+    from typing import Any, Callable, Tuple, Union
 
 from . import backend
 

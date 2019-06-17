@@ -1,6 +1,9 @@
 import torch
 from torch import autograd
-from typing import Any, Tuple, Union
+
+# noinspection PyUnreachableCode
+if False:
+    from typing import Any, Tuple, Union
 
 from ._impl import (_signature_channels,
                     _signature_forward,
