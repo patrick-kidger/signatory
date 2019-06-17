@@ -28,7 +28,8 @@ sys.modules['torch.nn'] = torch.nn
 sys.modules['torch.nn.functional'] = torch.nn.functional
 
 
-sys.path.extend([os.path.abspath('..'),       # import metadata
+sys.path.extend([os.path.abspath('.'),        # import py2annotate
+                 os.path.abspath('..'),       # import metadata
                  os.path.abspath('../src')])  # import signatory
 import metadata
 
@@ -38,11 +39,11 @@ copyright = metadata.copyright
 author = metadata.author
 release = metadata.version
 
-extensions = ['sphinx.ext.napoleon', 'sphinx.ext.autodoc', 'sphinx.ext.intersphinx']
+extensions = ['sphinx.ext.napoleon', 'sphinx.ext.autodoc', 'py2annotate', 'sphinx.ext.intersphinx']
 
 napoleon_use_admonition_for_examples = True
 autodoc_mock_imports = ['{}._impl'.format(metadata.project)]
-intersphinx_mapping = {'torch': ('https://pytorch.org/docs/latest/', None)}
+intersphinx_mapping = {'torch': ('https://pytorch.org/docs/stable/', None)}
 
 master_doc = 'index'
 
