@@ -8,6 +8,7 @@ Hosted on `GitHub <https://github.com/patrick-kidger/signatory>`__.
 
     /pages/installation
     /pages/reference
+    /pages/examples
 
 .. toctree::
     :caption: Extras
