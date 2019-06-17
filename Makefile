@@ -42,7 +42,11 @@ prepublish:
 buildandtest:
     ( \
     set -e ;\
+<<<<<<< HEAD
     conda create --prefix=/tmp/signatory-$${O} -y python=$${O} ;\
+=======
+    conda create --prefix=/tmp/signatory-$${O} -y python=$${O};\
+>>>>>>> 25da8ddaf5170784653c8e00cb76028a5f0db16b
     conda activate /tmp/signatory-$${O} ;\
     conda install -y pytorch==1.0.1 -c pytorch ;\
     python setup.py bdist_wheel ;\
