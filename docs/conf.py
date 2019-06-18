@@ -28,8 +28,7 @@ sys.modules['torch.nn'] = torch.nn
 sys.modules['torch.nn.functional'] = torch.nn.functional
 
 
-sys.path.extend([os.path.abspath('.'),        # import py2annotate
-                 os.path.abspath('..'),       # import metadata
+sys.path.extend([os.path.abspath('..'),       # import metadata
                  os.path.abspath('../src')])  # import signatory
 import metadata
 
@@ -39,6 +38,7 @@ copyright = metadata.copyright
 author = metadata.author
 release = metadata.version
 
+# must have installed py2annotate in order generate docs
 extensions = ['sphinx.ext.napoleon', 'sphinx.ext.autodoc', 'py2annotate', 'sphinx.ext.intersphinx']
 
 napoleon_use_admonition_for_examples = True
