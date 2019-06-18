@@ -30,7 +30,7 @@ setuptools.setup(name=metadata.project,
                  keywords=metadata.keywords,
                  classifiers=metadata.classifiers,
                  zip_safe=False,
-                 python_requires=">=3.5",  # TODO: ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, <4"
+                 python_requires=metadata.python_requires,
                  packages=[metadata.project],
                  ext_package=metadata.project,
                  package_dir={'': 'src'},

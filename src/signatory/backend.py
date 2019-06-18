@@ -1,6 +1,9 @@
 import torch
-import torch.autograd as autograd
-from typing import Any, Tuple, Union
+from torch import autograd
+
+# noinspection PyUnreachableCode
+if False:
+    from typing import Any, Tuple, Union
 
 from ._impl import (_signature_channels,
                     _signature_forward,
@@ -13,8 +16,8 @@ from ._impl import (_signature_channels,
 # to the Python way of doings things for now.
 class _SignatureFunction(autograd.Function):
     @staticmethod
-    def forward(ctx: Any, path: torch.Tensor, depth: int, basepoint: bool = False, stream: bool = False,
-                flatten: bool = True) -> Union[torch.Tensor, Tuple[torch.Tensor]]:
+    def forward(ctx, path, depth, basepoint, stream, flatten):
+        # type: (Any, torch.Tensor, int, bool, bool, bool) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
         result, result_as_vector, path_increments, sigspec = _signature_forward(path, depth, basepoint, stream, flatten)
         ctx._call_info = (result_as_vector, path_increments, sigspec, depth, basepoint, stream, flatten)
         if flatten:
@@ -24,12 +27,13 @@ class _SignatureFunction(autograd.Function):
         return result
 
     @staticmethod
-    def backward(ctx: Any, *grad_outputs: Tuple[torch.Tensor]) -> torch.Tensor:
+    def backward(ctx, *grad_outputs):
+        # type: (Any, Tuple[torch.Tensor]) -> Tuple[torch.Tensor, None, None, None, None]
         return _signature_backward(grad_outputs, *ctx._call_info), None, None, None, None
 
 
-def signature(path: torch.Tensor, depth: int, basepoint: bool = False, stream: bool = False,
-              flatten: bool = True) -> Union[torch.Tensor, Tuple[torch.Tensor]]:
+def signature(path, depth, basepoint=False, stream=False, flatten=True):
+    # type: (torch.Tensor, int, bool, bool, bool) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
     r"""Applies the signature transform to a stream of data.
 
     The input :attr:`path` is expected to be a three-dimensional tensor, with dimensions :math:`(N, C, L)`, where
@@ -44,13 +48,13 @@ def signature(path: torch.Tensor, depth: int, basepoint: bool = False, stream: b
     tensors of shape
 
     .. math::
-        (C), (C, C), \ldots (C, \ldots, C),
+        (N, C), (N, C, C), \ldots (N, C, \ldots, C),
 
-    where the final tensor has :attr:`depth` many dimensions. If :attr:`flatten` is True then these are then flattened
-    down and concatenated to give a single tensor of shape
+    where the final tensor has :attr:`depth` many dimensions of size :math:`C`. If :attr:`flatten` is True then these
+    are then flattened down and concatenated to give a single tensor of shape
 
     .. math::
-        C + C^2 + \cdots + C^\text{depth}.
+        (N, C + C^2 + \cdots + C^\text{depth}).
 
     (This value may be computed via the :func:`signatory.signature_channels` function.)
 
@@ -125,14 +129,14 @@ def signature(path: torch.Tensor, depth: int, basepoint: bool = False, stream: b
     return _SignatureFunction.apply(path, depth, basepoint, stream, flatten)
 
 
-# TODO
-# A wrapper for the sake of understandable documentation on signatures
-def signature_channels(input_channels: int, depth: int):
+# A wrapper for the sake of consistent documentation on signatures
+def signature_channels(in_channels, depth):
+    # type: (int, int) -> int
     """Computes the number of output channels from a signature call.
 
     Arguments:
-        input_channels (int): The number of channels in the input; that is, the dimension of the space that the input
-            path resides in.
+        in_channels (int): The number of channels in the input; that is, the dimension of the space that the input path
+            resides in.
 
         depth (int): The depth of the signature that is being computed.
 
@@ -140,4 +144,4 @@ def signature_channels(input_channels: int, depth: int):
         An int specifying the number of channels in the signature of the path.
     """
 
-    return _signature_channels(input_channels, depth)
+    return _signature_channels(in_channels, depth)

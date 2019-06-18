@@ -1,8 +1,11 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from typing import Callable, Tuple, Union
+from torch import nn
+from torch.nn import functional as F
 import warnings
+
+# noinspection PyUnreachableCode
+if False:
+    from typing import Any, Callable, Tuple, Union
 
 from . import backend
 
@@ -22,7 +25,8 @@ class Signature(nn.Module):
     Called with a single argument :attr:`path` of type :class:`torch.Tensor`.
     """
 
-    def __init__(self, depth: int, basepoint: bool = False, stream: bool = False, flatten: bool = True, **kwargs):
+    def __init__(self, depth, basepoint=False, stream=False, flatten=True, **kwargs):
+        # type: (int, bool, bool, bool, **Any) -> None
         if not isinstance(depth, int) or depth < 1:
             raise ValueError('Depth must be an integer greater than or equal to one. Given {depth} of type '
                              '{tdepth}'.format(depth=depth, tdepth=type(depth)))
@@ -32,7 +36,8 @@ class Signature(nn.Module):
         self.stream = stream
         self.flatten = flatten
 
-    def forward(self, path: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor]]:
+    def forward(self, path):
+        # type: (torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
         if path.size(1) == 1:
             warnings.warn('{clsname} called on path with only one channel; the signature is now just the moments of the'
                           ' path, so there is no interesting information from cross terms.'
@@ -131,9 +136,20 @@ class Augment(nn.Module):
                 out_channel += 1
     """
 
-    def __init__(self, in_channels: int, layer_sizes: Tuple[int], kernel_size: int, stride: int = 1, padding: int = 0,
-                 dilation: int = 1, bias: bool = True, activation: Callable[[torch.Tensor], torch.Tensor] = F.relu,
-                 include_original: bool = True, include_time: bool = True, **kwargs):
+    def __init__(self,
+                 in_channels,            # type: int
+                 layer_sizes,            # type: Tuple[int, ...]
+                 kernel_size,            # type: int
+                 stride=1,               # type: int
+                 padding=0,              # type: int
+                 dilation=1,             # type: int
+                 bias=True,              # type: bool
+                 activation=F.relu,      # type: Callable[[torch.Tensor], torch.Tensor]
+                 include_original=True,  # type: bool
+                 include_time=True,      # type: bool
+                 **kwargs                # type: Any
+                 ):
+        # type: (...) -> None
         super(Augment, self).__init__(**kwargs)
 
         if isinstance(layer_sizes, int):
@@ -168,7 +184,8 @@ class Augment(nn.Module):
                                             bias=bias))
                 last_layer_channels = augment_channel
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x):
+        # type: (torch.Tensor) -> torch.Tensor
         if len(x.shape) != 3:
             raise RuntimeError('Argument x should have three dimensions, (batch, channnel, stream). Given shape'
                                '{shape} dimensions with {x}.'.format(shape=x.shape, x=x))

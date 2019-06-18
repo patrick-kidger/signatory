@@ -1,3 +1,9 @@
+0.1.2
+-----
+Added support for Python 2.7.
+New documentation: examples, and using py2annotate to generate type annotations.
+Added lots of testing with the very poor man's makefile-equivalent of CI.
+
 0.1.1
 -----
 Bugfixes for edge cases.

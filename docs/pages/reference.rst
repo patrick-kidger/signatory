@@ -20,6 +20,6 @@ The following function is provided as a convenience to count the number of chann
 
 ----
 
-Finally the following :class:`torch.nn.Module` is provided as a convenience. As described in `Deep Signatures -- Bonnier et al. 2019 <https://arxiv.org/abs/1905.08494>`_, it is often advantageous to augment a path before taking the signature.
+Finally the following :class:`torch.nn.Module` is provided as a convenience. As described in `Deep Signatures -- Bonnier et al. 2019 <https://arxiv.org/abs/1905.08494>`__, it is often advantageous to augment a path before taking the signature.
 
 .. autoclass:: signatory.Augment
