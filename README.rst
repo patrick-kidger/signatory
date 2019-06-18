@@ -13,11 +13,15 @@ In brief: the signature of a path determines the path essentially uniquely, and 
 
 Installation
 ------------
+Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7.
+
+Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.0.1, but will probably work with other versions as well.
+
 Install via ``pip``:
 
 .. code-block:: bash
 
-    pip3 install signatory
+    pip install signatory
 
 
 Alternatively install via ``git``:
@@ -27,8 +31,6 @@ Alternatively install via ``git``:
     git clone https://github.com/patrick-kidger/signatory.git
     cd signatory
     pip install .
-
-Requires `PyTorch <http://pytorch.org/>`__. Tested with version 1.0.1.
 
 Documentation
 -------------
