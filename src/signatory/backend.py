@@ -16,24 +16,23 @@ from ._impl import (_signature_channels,
 # to the Python way of doings things for now.
 class _SignatureFunction(autograd.Function):
     @staticmethod
-    def forward(ctx, path, depth, basepoint, stream, flatten):
-        # type: (Any, torch.Tensor, int, bool, bool, bool) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
-        result, result_as_vector, path_increments, sigspec = _signature_forward(path, depth, basepoint, stream, flatten)
-        ctx._call_info = (result_as_vector, path_increments, sigspec, depth, basepoint, stream, flatten)
-        if flatten:
-            result = result[0]
-        else:
-            result = tuple(result)  # okay to return tuples, not okay to return lists. For some reason.
+    def forward(ctx, path, depth, stream, basepoint, basepoint_value):
+        # type: (Any, torch.Tensor, int, bool, torch.Tensor, bool) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
+        result, backwards_info = _signature_forward(path, depth, stream, basepoint, basepoint_value)
+        ctx._backwards_info = backwards_info
+        ctx._basepoint = basepoint
         return result
 
     @staticmethod
-    def backward(ctx, *grad_outputs):
-        # type: (Any, Tuple[torch.Tensor]) -> Tuple[torch.Tensor, None, None, None, None]
-        return _signature_backward(grad_outputs, *ctx._call_info), None, None, None, None
+    @autograd.function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
+    def backward(ctx, grad_result):
+        # type: (Any, Tuple[torch.Tensor]) -> Tuple[torch.Tensor, None, None, None, Union[None, torch.Tensor]]
+        grad_path, grad_basepoint_value = _signature_backward(grad_result, ctx._backwards_info)
+        return grad_path, None, None, None, grad_basepoint_value
 
 
-def signature(path, depth, basepoint=False, stream=False, flatten=True):
-    # type: (torch.Tensor, int, bool, bool, bool) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
+def signature(path, depth, stream=False, basepoint=False):
+    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor]) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
     r"""Applies the signature transform to a stream of data.
 
     The input :attr:`path` is expected to be a three-dimensional tensor, with dimensions :math:`(N, C, L)`, where
@@ -42,6 +41,7 @@ def signature(path, depth, basepoint=False, stream=False, flatten=True):
     :math:`x_i \in \mathbb{R}^C`. (This is the same as :class:`torch.nn.Conv1d`, for example.)
 
     If :attr:`basepoint` is True then an additional point :math:`x_0 = 0 \in \mathbb{R}^C` is prepended to the path.
+    (Alternatively it can be a :class:`torch.Tensor1` specifying the point to prepend.)
 
     Each path is then lifted to a piecewise constant path :math:`X \colon [0, 1] \to \mathbb{R}^C`, and the signature
     transform of this path is then computed. This (by the definition of the signature transform) gives a sequence of
@@ -50,8 +50,8 @@ def signature(path, depth, basepoint=False, stream=False, flatten=True):
     .. math::
         (N, C), (N, C, C), \ldots (N, C, \ldots, C),
 
-    where the final tensor has :attr:`depth` many dimensions of size :math:`C`. If :attr:`flatten` is True then these
-    are then flattened down and concatenated to give a single tensor of shape
+    where the final tensor has :attr:`depth` many dimensions of size :math:`C`. These are then flattened down and
+    concatenated to give a single tensor of shape
 
     .. math::
         (N, C + C^2 + \cdots + C^\text{depth}).
@@ -63,12 +63,12 @@ def signature(path, depth, basepoint=False, stream=False, flatten=True):
     case is the signature of the path of a single element computed, as that is just zero.)
 
     Examples:
-        If :attr:`stream` is False and :attr:`flatten` is True then the returned tensor will have shape
+        If :attr:`stream` is False then the returned tensor will have shape
 
         .. math::
             (N, C + C^2 + \cdots + C^d).
 
-        If :attr:`basepoint` is True, :attr:`stream` is True and :attr:`flatten` is True then the returned tensor will
+        If :attr:`basepoint` is True and :attr:`stream` is True then the returned tensor will
         have shape
 
         .. math::
@@ -81,52 +81,47 @@ def signature(path, depth, basepoint=False, stream=False, flatten=True):
 
         depth (int): The depth to truncate the signature at.
 
-        basepoint (bool, optional): Defaults to False. If True, then the path will have an additional point prepended to
-            the start corresponding to the origin. If this is False then the signature transform is invariant to
-            translations of the path. (Which may or may not be desirable.)
-
         stream (bool, optional): Defaults to False. If False then the signature transform of the whole path is computed.
             If True then the signature of all intermediate paths are also computed.
 
-        flatten (bool, optional): Defaults to True. Whether to flatten the sequence of tensors resulting from the
-            signature transform.
+        basepoint (bool or :class:`torch.Tensor`, optional): Defaults to False. If True, then the path will have an
+            additional point prepended to the start corresponding to the origin. If this is False then the signature
+            transform is invariant to translations of the path. (Which may or may not be desirable.) Alternatively it
+            may be a :class:`torch.Tensor`, in which case it should have shape :math:`(N, C)`
 
     Returns:
         A :class:`torch.Tensor` or a tuple of :class:`torch.Tensor` s.
         Given an input :class:`torch.Tensor` of shape :math:`(N, C, L)`, and input arguments :attr:`depth`,
-        :attr:`basepoint`, :attr:`stream`, :attr:`flatten`, then the return value is, in pseudocode:
+        :attr:`basepoint`, :attr:`stream`, then the return value is, in pseudocode:
 
         .. code-block:: python
-
-            if flatten:
-                if stream:
-                    if basepoint:
-                        return torch.Tensor of shape (N, C + C^2 + ... + C^(depth), L)
-                    else:
-                        return torch.Tensor of shape (N, C + C^2 + ... + C^(depth), L - 1)
-                else:
-                    return torch.Tensor of shape (N, C + C^2 + ... + C^(depth))
-            else:
-                if stream:
-                    if basepoint:
-                        out = []
-                        for i in range(1, depth + 1):
-                            out.append(torch.Tensor of shape (N, C^i, L))
-                        return tuple(out)
-                    else:
-                        out = []
-                        for i in range(1, depth + 1):
-                            out.append(torch.Tensor of shape (N, C^i, L - 1))
-                        return tuple(out)
+            if stream:
+                if basepoint is True or isinstance(basepoint, torch.Tensor):
+                    out = []
+                    for i in range(1, depth + 1):
+                        out.append(torch.Tensor of shape (N, C^i, L))
+                    return tuple(out)
                 else:
                     out = []
                     for i in range(1, depth + 1):
-                        out.append(torch.Tensor of shape (N, C^i))
+                        out.append(torch.Tensor of shape (N, C^i, L - 1))
                     return tuple(out)
+            else:
+                out = []
+                for i in range(1, depth + 1):
+                    out.append(torch.Tensor of shape (N, C^i))
+                return tuple(out)
 
     """
 
-    return _SignatureFunction.apply(path, depth, basepoint, stream, flatten)
+    if basepoint is True:
+        basepoint_value = torch.zeros(path.shape[:2], dtype=path.dtype, device=path.device)
+    elif isinstance(basepoint, torch.Tensor):
+        basepoint_value = basepoint
+        basepoint = True
+    else:
+        basepoint_value = torch.Tensor()
+    return _SignatureFunction.apply(path, depth, stream, basepoint, basepoint_value)
 
 
 # A wrapper for the sake of consistent documentation on signatures

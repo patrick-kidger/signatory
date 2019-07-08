@@ -12,8 +12,8 @@ class TestSpeed(unittest.TestCase):
         if stream and backward:
             raise ValueError("iisignature does not support backpropagation for a full stream of data, so we can't "
                              "compare against them.")
-        signatory_x = torch.rand(batch_size, 10, 100, requires_grad=backward)
-        iisignature_x = torch.rand(batch_size, 100, 10).numpy()
+        signatory_x = torch.rand(batch_size, 100, 10, requires_grad=backward)
+        iisignature_x = signatory_x.detach().numpy()
 
         def signatory_fn():
             y = signatory.signature(signatory_x, depth, stream=stream)

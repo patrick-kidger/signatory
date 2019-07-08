@@ -6,6 +6,6 @@ from .modules import (Signature,
                       Augment)
 
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 
 del torch
