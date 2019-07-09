@@ -9,23 +9,18 @@
 #include "signature.hpp"
 
 
-// TODO: rename arguments to sensible things
-// TODO: Finish this
-// TODO: write extracting terms in the signature
-// TODO: more tests: forward correctness + custom basepoints
-// TODO: check on streams of length 1
+// TODO: more tests: backward correctness + custom basepoints + streams of length 1
 // TODO: numpy, tensorflow
-// TODO: CUDA
+// TODO: CUDA?
 // TODO: support torchscript? https://pytorch.org/tutorials/advanced/torch_script_custom_ops.html
 // TODO: concatenating onto an already existing signature. A class that takes data and spits out signatures?
 // TODO: check that the right things are being put in the sdist/bdist
-// TODO: support other dimensions just 'going along for the ride' (c.f. iisignature)
 // TODO: profile for memory leaks, just in case! (Being able to call .backward() twice would indicate a leak, I think)
-
-#define BACKWARDS_INFO_CAPSULE_NAME "signatory.BackwardsInfoCapsule"
 
 namespace signatory {
     namespace detail {
+        constexpr auto backwards_info_capsule_name = "signatory.BackwardsInfoCapsule";
+
         // Encapsulates all the things that aren't tensors
         struct SigSpec {
             SigSpec(torch::Tensor path, int depth, bool stream, bool basepoint) :
@@ -58,54 +53,60 @@ namespace signatory {
             bool basepoint;
         };
 
-        void slice_by_term(torch::Tensor tensor, std::vector<torch::Tensor>& tensor_vector, int tensor_dim,
-                           const SigSpec& sigspec) {
+        // Argument 'in' is assumed to be a tensor for which one dimension has size equal to sigspec.output_channels
+        // It is sliced up along that dimension, specified by 'dim', and the resulting tensors placed into 'out'.
+        // Each resulting tensor corresponds to one of the (tensor, not scalar) terms in the signature.
+        void slice_by_term(torch::Tensor in, std::vector<torch::Tensor>& out, int dim, const SigSpec& sigspec) {
             int64_t current_memory_pos = 0;
             int64_t current_memory_length = sigspec.input_channels;
             for (int i = 0; i < sigspec.depth; ++i) {
-                tensor_vector.push_back(tensor.narrow(/*dim=*/tensor_dim,
-                                                      /*start=*/current_memory_pos,
-                                                      /*len=*/current_memory_length));
+                out.push_back(in.narrow(/*dim=*/dim,
+                                        /*start=*/current_memory_pos,
+                                        /*len=*/current_memory_length));
                 current_memory_pos += current_memory_length;
                 current_memory_length *= sigspec.input_channels;
             }
         }
-        
-        void slice_at_stream(std::vector<torch::Tensor> arg_vector, std::vector<torch::Tensor>& ret_vector,
-                             int stream_index) {
-            for (auto arg_vector_elem : arg_vector) {
-                ret_vector.push_back(arg_vector_elem.narrow(/*dim=*/0, /*start=*/stream_index, /*len=*/1).squeeze(0));
+
+        // Argument 'in' is assumed to be a tensor for which its first dimension corresponds to the stream dimension.
+        // Its slices along a particular index of that dimension are put in 'out'.
+        void slice_at_stream(std::vector<torch::Tensor> in, std::vector<torch::Tensor>& out, int stream_index) {
+            for (auto elem : in) {
+                out.push_back(elem.narrow(/*dim=*/0, /*start=*/stream_index, /*len=*/1).squeeze(0));
             }
         }
-        
+
+        // Checks the arguments for the forwards pass
         void checkargs(torch::Tensor path, int depth, bool basepoint, torch::Tensor basepoint_value) {
             if (path.ndimension() != 3) {
-                throw std::invalid_argument("path must be a 3-dimensional tensor, corresponding to "
-                                            "(batch, stream, channel) respectively.");
+                throw std::invalid_argument("Argument 'path' must be a 3-dimensional tensor, with dimensions "
+                                            "corresponding to (batch, stream, channel) respectively.");
             }
             if (path.size(0) == 0 || path.size(2) == 0) {
-                throw std::invalid_argument("path cannot have dimensions of size zero.");
+                throw std::invalid_argument("Argument 'path' cannot have dimensions of size zero.");
             }
             if (path.size(1) < 2) {
-                throw std::invalid_argument("The stream dimension of path must be of size at least 2 to define a "
-                                            "path.");
+                throw std::invalid_argument("Argument 'path' must have stream dimension of size at least 2. (Need at "
+                                            "least this many points to define a path.)");
             }
             if (depth < 1) {
-                throw std::invalid_argument("depth must be an integer greater than or equal to one.");
+                throw std::invalid_argument("Argument 'depth' must be an integer greater than or equal to one.");
             }
             if (basepoint) {
                 if (basepoint_value.ndimension() != 2) {
-                    throw std::invalid_argument("basepoint must be a 2-dimensional tensor, corresponding to "
+                    throw std::invalid_argument("Argument 'basepoint' must be a 2-dimensional tensor, corresponding to "
                                                 "(batch, channel) respectively.");
                 }
                 // basepoint_value has dimensions (batch, channel)
                 // path has dimensions (batch, stream, channel)
                 if (basepoint_value.size(0) == path.size(0) || basepoint_value.size(1) == path.size(2)) {
-                    throw std::invalid_argument("basepoint and path must have dimensions of the same size.");
+                    throw std::invalid_argument("Arguments 'basepoint' and 'path' must have dimensions of the same "
+                                                "size.");
                 }
             }
         }
 
+        // Takes the path and basepoint and returns the path increments
         torch::Tensor compute_path_increments(torch::Tensor path, torch::Tensor basepoint_value,
                                               const SigSpec& sigspec) {
             int64_t num_increments {sigspec.input_stream_size - 1};
@@ -124,42 +125,48 @@ namespace signatory {
 
         // TODO: Handle exponentials in a cheaper way? It's a symmetric tensor so we can save ~n! amount of work...
         //       That's a lot of work.
-        void compute_exp(torch::Tensor inp, std::vector<torch::Tensor>& out_vector, const SigSpec& sigspec) {
-            out_vector[0].copy_(inp);
+        // Computes the exponential of the 'in' tensor. Each higher-order tensor is placed in 'out', which is assumed to
+        // already be populated with tensors whose memory is used for output of the exponential.
+        void compute_exp(torch::Tensor in, std::vector<torch::Tensor>& out, const SigSpec& sigspec) {
+            out[0].copy_(in);
             for (int i = 0; i < sigspec.depth - 1; ++i) {
-                torch::Tensor out_vector_view = out_vector[i + 1].view({inp.size(0),
-                                                                        out_vector[i].size(0),
-                                                                        sigspec.batch_size});
-                torch::mul_out(out_vector_view, out_vector[i].unsqueeze(0), inp.unsqueeze(1));
-                out_vector[i + 1] *= sigspec.reciprocals[i];
+                torch::Tensor view_out = out[i + 1].view({in.size(0), out[i].size(0), sigspec.batch_size});
+                torch::mul_out(view_out, out[i].unsqueeze(0), in.unsqueeze(1));
+                out[i + 1] *= sigspec.reciprocals[i];
             }
         }
 
+        // Computes the tensor product of two members of the tensor algebra.
+        // if div==True then it computes arg1 \otimes arg2 and returns the result in arg2.
+        // if div==False then it computes arg1 \otimes -arg2 and returns the result in arg1. (Note the change in sign
+        // and change in return parameter.)
+        template<bool div=false>
         void compute_mult(const std::vector<torch::Tensor>& arg1, std::vector<torch::Tensor>& arg2,
                           const SigSpec& sigspec) {
             for (int depth_to_calculate = sigspec.depth - 1; depth_to_calculate >= 0 ; --depth_to_calculate) {
-                torch::Tensor tensor_at_depth_to_calculate = arg2[depth_to_calculate];
+                torch::Tensor tensor_at_depth_to_calculate = (div ? arg1 : arg2)[depth_to_calculate];
                 for (int j = 0, k = depth_to_calculate - 1; j < depth_to_calculate; ++j, --k) {
                     // loop invariant:
                     // j + k = depth_to_calculate - 1
-                    // TODO
-//                    torch::Tensor out_view = tensor_at_depth_to_calculate.view({arg1[j].size(0),
-//                                                                                arg2[k].size(0),
-//                                                                                sigspec.batch_size});
-                    torch::Tensor out_view = tensor_at_depth_to_calculate.view({arg1[j].size(0),
+                    torch::Tensor view_out = tensor_at_depth_to_calculate.view({arg1[j].size(0),
                                                                                 arg2[k].size(0),
                                                                                 sigspec.batch_size});
-                    //~TODO
-                    torch::addcmul_out(/*out=*/out_view,
-                                       out_view,               // add this tensor
-                                       arg2[k].unsqueeze(0),   // to (this tensor
-                                       arg1[j].unsqueeze(1));  // times this tensor)
-                                       // TODO: try doing the factorial part of the exponential here?
+
+                    torch::addcmul_out(view_out,                         // Output.
+                                       view_out,                         // Add this tensor
+                                       arg2[k].unsqueeze(0),             // to (this tensor
+                                       arg1[j].unsqueeze(1),             // times this tensor
+                                       div && ((k % 2) == 0) ? -1 : 1);  // times this scalar).
+                    // Could also just do
+                    // view_out += arg2[k].unsqueeze(0) * arg1[j].unsqueeze(1)
+                    // but that definitely creates a large intermediate tensor for the product. In principle addcmul_out
+                    // could do something cleverer (possibly unlikely), so we use it anyway.
                 }
-                tensor_at_depth_to_calculate += arg1[depth_to_calculate];
+                tensor_at_depth_to_calculate += (div ? arg2 : arg1)[depth_to_calculate];
             }
         }
 
+        // Retains information needed for the backwards pass.
         struct BackwardsInfo{
             BackwardsInfo(torch::Tensor out, std::vector<torch::Tensor> out_vector, torch::Tensor path_increments,
                           SigSpec sigspec) :
@@ -175,34 +182,47 @@ namespace signatory {
             SigSpec sigspec;
         };
 
+        // Frees the memory consumed retaining information for the backwards pass. The BackwardsInfo object is wrapped
+        // into a PyCapsule.
         void BackwardsInfoCapsuleDestructor(PyObject* capsule) {
-            delete static_cast<BackwardsInfo*>(PyCapsule_GetPointer(capsule, BACKWARDS_INFO_CAPSULE_NAME));
+            delete static_cast<BackwardsInfo*>(PyCapsule_GetPointer(capsule, backwards_info_capsule_name));
         }
 
+        // Checks the arguments for the backwards pass. Only grad_out is really checked to make sure it is as expected
+        // The objects we get from the PyCapsule-wrapped BackwardsInfo object are just assumed to be correct.
         void checkargs_backward(torch::Tensor grad_out, const SigSpec& sigspec) {
             if (sigspec.stream) {
                 if (grad_out.ndimension() != 3) {
-                    throw std::invalid_argument("grad_out must be a 3-dimensional tensor, corresponding to "
-                                                "(batch, stream, channel) respectively.");
+                    throw std::invalid_argument("Argument 'grad_out' must be a 3-dimensional tensor, with dimensions "
+                                                "corresponding to (batch, stream, channel) respectively.");
                 }
                 if (grad_out.size(0) != sigspec.batch_size ||
                     grad_out.size(1) != sigspec.output_stream_size ||
                     grad_out.size(2) != sigspec.output_channels) {
-                    throw std::invalid_argument("grad_out has the wrong size.");
+                    throw std::invalid_argument("Argument 'grad_out' has the wrong size.");
                 }
             }
             else {
                 if (grad_out.ndimension() != 2) {
-                    throw std::invalid_argument("grad_out must be a 2-dimensional tensor, corresponding to "
-                                                "(batch, channel) respectively.");
+                    throw std::invalid_argument("Argument 'grad_out' must be a 2-dimensional tensor, with dimensions"
+                                                "corresponding to (batch, channel) respectively.");
                 }
                 if (grad_out.size(0) != sigspec.batch_size ||
                     grad_out.size(1) != sigspec.output_channels) {
-                    throw std::invalid_argument("grad_out has the wrong size.");
+                    throw std::invalid_argument("Argument 'grad_out' has the wrong size.");
                 }
             }
         }
 
+        // Computes the backward pass for the tensor product operation of two members of the tensor algebra.
+        // Note that both 'arg1' and 'arg2' should be the inputs that were used in the forward pass of the
+        // multiplication. In particular 'arg2' should _not_ be the result of the forward pass of the multiplication
+        // operation. (Recall that 'arg2' is also how the value is returned from the forward pass.)
+        // Argument 'grad_arg2' should have the gradient on 'arg2', and should not be used after this function has been
+        // called on it as in-place modifications occur to this argument.
+        // Argument 'grad_arg1' will have the gradients resulting from this operation accumulated on it. (So any
+        // existing gradient in this argument is preserved.) (Although I don't think this fact is used in the code
+        // below.)
         void compute_mult_backward(std::vector<torch::Tensor>& grad_arg1, std::vector<torch::Tensor>& grad_arg2,
                                    const std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
                                    const SigSpec& sigspec) {
@@ -212,35 +232,39 @@ namespace signatory {
                 for (int j = depth_to_calculate - 1, k = 0; j >= 0; --j, ++k) {
                     // loop invariant:
                     // j + k = depth_to_calculate - 1
-                    // TODO
-//                    torch::Tensor out_view = grad_tensor_at_depth_to_calculate.view({arg1[j].size(0),
-//                                                                                     arg2[k].size(0),
-//                                                                                     sigspec.batch_size});
                     torch::Tensor out_view = grad_tensor_at_depth_to_calculate.view({arg1[j].size(0),
                                                                                      arg2[k].size(0),
                                                                                      sigspec.batch_size});
-                    //~TODO
+                    // TODO: This is just a batch matrix-multiply where the batch dimension is last instead of first,
+                    //       so profile this against transposing and using that.
                     grad_arg1[j] += (out_view * arg2[k].unsqueeze(0)).sum(/*dim=*/1);
                     grad_arg2[k] += (out_view * arg1[j].unsqueeze(1)).sum(/*dim=*/0);
                 }
             }
         }
 
-        void compute_exp_backward(torch::Tensor grad_inp, std::vector<torch::Tensor>& grad_out_vector,
-                                  torch::Tensor inp, const std::vector<torch::Tensor>& out_vector,
+        // Computes the backwards pass through the exponential. 'in' should be the input to the forward pass of the
+        // exponential, but 'out' should be the result of the forward pass of the exponential. (I.e. what it holds
+        // after the function has been called - recall that the function operates with 'out' as an out-argument.)
+        // Argument 'grad_out' should have the gradient on the output of the forward pass, and should not be used after
+        // this function has been called on it as in-place modifications occur to this argument.
+        // Argument 'grad_in' will have the gradients resulting from this operation accumulated on it.
+        void compute_exp_backward(torch::Tensor grad_in, std::vector<torch::Tensor>& grad_out,
+                                  torch::Tensor in, const std::vector<torch::Tensor>& out,
                                   const SigSpec& sigspec) {
             for (int i = sigspec.depth - 2; i >= 0; --i) {
-                grad_out_vector[i + 1] *= sigspec.reciprocals[i];
-
-                torch::Tensor grad_out_vector_view = grad_out_vector[i + 1].view({inp.size(0),
-                                                                                  out_vector[i].size(0),
-                                                                                  sigspec.batch_size});
-                grad_out_vector[i] += (grad_out_vector_view * inp.unsqueeze(1)).sum(/*dim=*/0);
-                grad_inp += (grad_out_vector_view * out_vector[i].unsqueeze(0)).sum(/*dim=*/1);
+                grad_out[i + 1] *= sigspec.reciprocals[i];
+                torch::Tensor view_grad_out = grad_out[i + 1].view({in.size(0), out[i].size(0), sigspec.batch_size});
+                // TODO: This is just a batch matrix-multiply where the batch dimension is last instead of first,
+                //       so profile this against transposing and using that.
+                grad_out[i] += (view_grad_out * in.unsqueeze(1)).sum(/*dim=*/0);
+                grad_in += (view_grad_out * out[i].unsqueeze(0)).sum(/*dim=*/1);
             }
-            grad_inp += grad_out_vector[0];
+            grad_in += grad_out[0];
         }
 
+        // Computes the backward pass through the path increments operation.
+        // Returns the gradients for the original path, and for the basepoint.
         std::tuple<torch::Tensor, torch::Tensor>
         compute_path_increments_backward(torch::Tensor grad_path_increments, const SigSpec& sigspec) {
             int64_t num_increments{sigspec.input_stream_size - 1};
@@ -384,19 +408,20 @@ namespace signatory {
             out_with_transposes = out.transpose(0, 1);
         }
         return {out_with_transposes,
+                // TODO: look at reinterpret_steal
                 py::reinterpret_steal<py::object>(PyCapsule_New(new detail::BackwardsInfo{out,
                                                                                           out_vector,
                                                                                           path_increments,
                                                                                           sigspec},
-                                                                BACKWARDS_INFO_CAPSULE_NAME,
+                                                                detail::backwards_info_capsule_name,
                                                                 detail::BackwardsInfoCapsuleDestructor))};
     }
 
     std::tuple<torch::Tensor, torch::Tensor>
     signature_backward(torch::Tensor grad_out, py::object backwards_info_capsule) {
         // Unwrap the PyCapsule
-        auto backwards_info = static_cast<detail::BackwardsInfo*>(PyCapsule_GetPointer(backwards_info_capsule.ptr(),
-                                                                                       BACKWARDS_INFO_CAPSULE_NAME));
+        auto backwards_info = static_cast<detail::BackwardsInfo*>(
+                PyCapsule_GetPointer(backwards_info_capsule.ptr(), detail::backwards_info_capsule_name));
         torch::Tensor out = backwards_info->out;
         std::vector<torch::Tensor> out_vector = backwards_info->out_vector;
         torch::Tensor path_increments = backwards_info->path_increments;

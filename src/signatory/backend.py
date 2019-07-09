@@ -140,3 +140,33 @@ def signature_channels(in_channels, depth):
     """
 
     return _signature_channels(in_channels, depth)
+
+
+def extract_term(signature, in_channels, depth):
+    # type: (torch.Tensor, int, int) -> torch.Tensor
+    r"""Extracts a particular term from a signature.
+
+    The signature to depth :math:`d` of a batch of paths in :math:`\mathbb{R}^\text{C}` is a tensor with
+    :math:`C + C^2 + \cdots + C^d` channels. (See :function:`signatory.signature`.) This function extracts the
+    :attr:`depth` term of that, returning a tensor with just :math:`C^\text{depth}` channels.
+
+    This is really just here as a convenience function: if you want to extract multiple terms and care about speed then
+    it will be quicker to write your own function.
+
+    Arguments:
+        signature (:class:`torch.Tensor`): The signature to extract the term from. Should be the result of the
+            :function:`signatory.signature` function.
+
+        in_channels (int): The number of input channels :math:`C`.
+
+        depth (int): The depth of the term to be extracted from the signature.
+
+    Returns:
+        The :class:`torch.Tensor` corresponding to the :attr:`depth` term of the signature.
+    """
+
+    if depth == 1:
+        start = 0
+    else:
+        start = signature_channels(in_channels, depth - 1)
+    return signature.narrow(dim=2, start=start, length=in_channels ** depth)
