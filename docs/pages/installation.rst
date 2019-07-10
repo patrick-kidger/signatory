@@ -20,3 +20,5 @@ Alternatively install via ``git``:
     git clone https://github.com/patrick-kidger/signatory.git
     cd signatory
     pip install .
+
+Prebuilt wheels are not yet available - you'll have to have the relevant toolchain installed to compile C++. (If you're on Linux this is probably already the case.)

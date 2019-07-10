@@ -14,7 +14,7 @@
 // TODO: support torchscript? https://pytorch.org/tutorials/advanced/torch_script_custom_ops.html
 // TODO: concatenating onto an already existing signature. A class that takes data and spits out signatures?
 // TODO: check that the right things are being put in the sdist/bdist
-// TODO: profile for memory leaks, just in case! (Being able to call .backward() twice would indicate a leak, I think)
+// TODO: profile for memory leaks, just in case!
 
 namespace signatory {
     namespace detail {
@@ -33,14 +33,15 @@ namespace signatory {
                     batch_size{path.size(2)},
                     output_stream_size{path.size(0) - (basepoint ? 0 : 1)},
                     output_channels{signature_channels(path.size(1), depth)},
-                                                                              // if depth == 1 then we don't care here
-                                                                              // we just want to avoid throwing an error
-                    reciprocals{torch::ones({depth - 1}, opts) / torch::linspace(2, depth, depth == 1 ? 2 : depth - 1,
-                                                                                 opts)},
+                    reciprocals{torch::ones({depth - 1}, opts)},
                     n_output_dims{stream ? 3 : 2},
                     depth{depth},
                     basepoint{basepoint}
-            {};
+            {
+                if (depth > 1) {
+                    reciprocals /= torch::linspace(2, depth, depth - 1, opts);
+                }  // and reciprocals will be empty - of size 0 - if depth == 1.
+            };
 
             torch::TensorOptions opts;
             int64_t input_stream_size;
@@ -89,16 +90,26 @@ namespace signatory {
             }
         }
 
+        template<bool div>
+        int should_invert(int index) {  // small helper function for division
+            if (div) {
+                return (index % 2) == 0;
+            }
+            else {
+                return false;
+            }
+        }
+
         // Computes the tensor product of two members of the tensor algebra.
-        // if div==False then it computes arg1 \otimes arg2
-        // if div==True then it computes arg1 \otimes -arg2
-        // if rightret==False then it returns the result in arg1
-        // if rightret==True then it returns the result in arg2
+        // if div==false then it computes arg1 \otimes arg2
+        // if div==true then it computes arg1 \otimes -arg2
+        // if rightret==false then it returns the result in arg1
+        // if rightret==true then it returns the result in arg2
         template<bool rightret, bool div=false>
-        void compute_mult(const std::vector<torch::Tensor>& arg1, std::vector<torch::Tensor>& arg2,
+        void compute_mult(std::vector<torch::Tensor>& arg1, std::vector<torch::Tensor>& arg2,
                           const SigSpec& sigspec) {
             for (int depth_to_calculate = sigspec.depth - 1; depth_to_calculate >= 0 ; --depth_to_calculate) {
-                torch::Tensor tensor_at_depth_to_calculate = (rightret ? arg2 : arg12)[depth_to_calculate];
+                torch::Tensor tensor_at_depth_to_calculate = (rightret ? arg2 : arg1)[depth_to_calculate];
                 for (int j = 0, k = depth_to_calculate - 1; j < depth_to_calculate; ++j, --k) {
                     // loop invariant:
                     // j + k = depth_to_calculate - 1
@@ -106,17 +117,23 @@ namespace signatory {
                                                                                 arg2[k].size(0),
                                                                                 sigspec.batch_size});
 
-                    torch::addcmul_out(view_out,                         // Output.
-                                       view_out,                         // Add this tensor
-                                       arg2[k].unsqueeze(0),             // to (this tensor
-                                       arg1[j].unsqueeze(1),             // times this tensor
-                                       div && ((k % 2) == 0) ? -1 : 1);  // times this scalar).
+                    torch::addcmul_out(view_out,                                        // Output.
+                                       view_out,                                        // Add this tensor
+                                       arg2[k].unsqueeze(0),                            // to (this tensor
+                                       arg1[j].unsqueeze(1),                            // times this tensor
+                                       should_invert<div>(rightret ? j : k) ? -1 : 1);  // times this scalar).
                     // Could also just do
                     // view_out += arg2[k].unsqueeze(0) * arg1[j].unsqueeze(1)
                     // but that definitely creates a large intermediate tensor for the product. In principle addcmul_out
                     // could do something cleverer (possibly unlikely), so we use it anyway.
                 }
-                tensor_at_depth_to_calculate += (rightret ? arg1 : arg2)[depth_to_calculate];
+
+                if (should_invert<div>(depth_to_calculate)) {
+                    tensor_at_depth_to_calculate -= (rightret ? arg1 : arg2)[depth_to_calculate];
+                }
+                else {
+                    tensor_at_depth_to_calculate += (rightret ? arg1 : arg2)[depth_to_calculate];
+                }
             }
         }
 
@@ -147,7 +164,7 @@ namespace signatory {
                 }
                 // basepoint_value has dimensions (batch, channel)
                 // path has dimensions (batch, stream, channel)
-                if (basepoint_value.size(0) == path.size(0) || basepoint_value.size(1) == path.size(2)) {
+                if (basepoint_value.size(0) != path.size(0) || basepoint_value.size(1) != path.size(2)) {
                     throw std::invalid_argument("Arguments 'basepoint' and 'path' must have dimensions of the same "
                                                 "size.");
                 }
@@ -178,8 +195,8 @@ namespace signatory {
                 out{out},
                 out_vector{out_vector},
                 path_increments{path_increments},
-                sigspec{sigspec}
-                stream{stream};
+                sigspec{sigspec},
+                stream{stream}
             {};
 
             torch::Tensor out;
@@ -280,7 +297,7 @@ namespace signatory {
                 // first iteration is pulled out so that grad_in uses copy instead of += the first time around
                 grad_out[sigspec.depth - 1] *= sigspec.reciprocals[sigspec.depth - 2];
                 torch::Tensor view_grad_out = grad_out[sigspec.depth - 1].view({in.size(0),
-                                                                                out[i].size(0),
+                                                                                out[sigspec.depth - 2].size(0),
                                                                                 sigspec.batch_size});
                 grad_out[sigspec.depth - 2] += (view_grad_out * in.unsqueeze(1)).sum(/*dim=*/0);
                 grad_in.copy_((view_grad_out * out[sigspec.depth - 2].unsqueeze(0)).sum(/*dim=*/1));
@@ -309,7 +326,7 @@ namespace signatory {
                 torch::Tensor grad_path = grad_path_increments.clone();
                 grad_path.narrow(/*dim=*/0, /*start=*/0, /*len=*/num_increments)
                         -= grad_path_increments.narrow(/*dim=*/0, /*start=*/1, /*len=*/num_increments);
-                return {grad_path, -grad_path_increments.narrow(/*dim=*/0, /*start=*/0, /*len=*/1)};
+                return {grad_path, -grad_path_increments.narrow(/*dim=*/0, /*start=*/0, /*len=*/1).squeeze(0)};
             }
             else {
                 torch::Tensor grad_path = torch::empty({sigspec.input_stream_size,
@@ -328,7 +345,10 @@ namespace signatory {
         /* The templated implementations of forwards and backwards */
         /***********************************************************/
 
-        template<bool stream>
+        template<bool stream> // Honestly moving certain boolean arguments to templates might have gotten a little out
+                              // of hand. It's only a very minor performance improvement.
+                              // It started with wanting to make the 'div' argument of compute_mult a template argument
+                              // (because it's in a hot loop, not that it's still going to affect much), and, well...
         std::tuple<torch::Tensor, py::object>
         signature_forward_impl(torch::Tensor path, int depth, bool basepoint, torch::Tensor basepoint_value) {
             detail::checkargs(path, depth, basepoint, basepoint_value);
@@ -342,17 +362,31 @@ namespace signatory {
             if (!path.is_floating_point()) {
                 path = path.to(torch::kFloat32);
             }
+            if (basepoint) {
+                // (batch, channel) to (channel, batch)
+                basepoint_value = basepoint_value.transpose(0, 1);
+                basepoint_value = basepoint_value.to(path.dtype());
+            }
 
             detail::SigSpec sigspec{path, depth, stream, basepoint};
 
             torch::Tensor path_increments = detail::compute_path_increments(path, basepoint_value, sigspec);
 
             // We allocate memory for certain things upfront.
+            //
             // This is motivated by wanting to construct things in-place in 'out', to save a copy. (Which can actually
             // take quite a lot of time; signatures can get quite large!)
+            //
             // There is some asymmetry between the stream==true and the stream==false cases. This is because of the
             // fundamental difference that when stream==true we want to preserve intermediate results, whilst in the
             // stream==false case we would prefer to write over them.
+            //
+            // This basically means that in the stream==true case we're computing 'to the right', by continuing to
+            // put things in new memory that corresponds to later in the stream, where as in the stream==false case
+            // we're computing 'to the left', by computing the exponential of our current position in the stream, and
+            // multiplying it on to what we have so far.
+            //
+            // I am realising that sometimes necessary complexity is hard to explain.
 
             torch::Tensor out;                          // We create tensors for the memory.
             std::vector<torch::Tensor> out_vector;      // And slice up their corresponding storage into a vector of
@@ -403,8 +437,8 @@ namespace signatory {
             }
 
             // compute the first term
-            detail::compute_exp(path_increments.narrow(/*dim=*/0, /*start=*/0, /*len=*/1).squeeze(0), scratch_vector,
-                                sigspec);
+            detail::compute_exp(path_increments.narrow(/*dim=*/0, /*start=*/0, /*len=*/1).squeeze(0),
+                                stream ? scratch_vector : stream_vector, sigspec);
 
             for (int stream_index = 1; stream_index < sigspec.output_stream_size; ++stream_index) {
                 if (stream) {
@@ -441,7 +475,8 @@ namespace signatory {
                     py::reinterpret_steal<py::object>(PyCapsule_New(new detail::BackwardsInfo{out,
                                                                                               out_vector,
                                                                                               path_increments,
-                                                                                              sigspec},
+                                                                                              sigspec,
+                                                                                              stream},
                                                                     detail::backwards_info_capsule_name,
                                                                     detail::BackwardsInfoCapsuleDestructor))};
         }
@@ -530,7 +565,7 @@ namespace signatory {
                 detail::slice_at_stream(grad_out_vector, grad_prev_stream_vector, -1);
             }
             else {
-                torch::Tensor grad_scratch = torch::zeros({sigspec.output_channels,
+                torch::Tensor grad_scratch = torch::empty({sigspec.output_channels,
                                                            sigspec.batch_size},
                                                           sigspec.opts);
 
@@ -567,7 +602,7 @@ namespace signatory {
                 }
                 else {
                     // Recompute the value of stream_vector by dividing by the exponential of the path increment, which
-                    // conveniently we already need to know
+                    // conveniently we already know
                     detail::compute_mult</*rightret=*/false, /*div=*/true>(stream_vector, scratch_vector, sigspec);
 
                     // Set grad_next_stream_vector to grad_prev_stream_vector, and then we'll overwrite the contents of
@@ -606,6 +641,9 @@ namespace signatory {
                                                                                                  sigspec);
             // convert from (stream, channel, batch) to (batch, stream, channel)
             grad_path = grad_path.transpose(1, 2).transpose(0, 1);
+            if (sigspec.basepoint) {
+                grad_basepoint_value = grad_basepoint_value.transpose(0, 1);
+            }
             return {grad_path, grad_basepoint_value};
         }
     }  // namespace signatory::detail

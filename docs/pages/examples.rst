@@ -12,6 +12,7 @@ In principle a simple augment-signature-linear model is enough to achieve univer
 
     class SigNet(nn.Module):
         def __init__(self, in_channels, out_dimension, sig_depth):
+            super(SigNet, self).__init__()
             self.augment = signatory.Augment(in_channels=in_channels,
                                              layer_sizes=(),
                                              kernel_size=1,
@@ -22,13 +23,16 @@ In principle a simple augment-signature-linear model is enough to achieve univer
             # +1 because signatory.Augment is used to add time as well
             sig_channels = signatory.signature_channels(in_channels=in_channels + 1,
                                                         depth=sig_depth)
-            self.linear = torch.Linear(sig_channels,
-                                       out_dimension)
+            self.linear = torch.nn.Linear(sig_channels,
+                                          out_dimension)
 
         def forward(self, inp):
-            # inp is a three dimensional tensor of shape (batch, in_channels, stream)
+            # inp is a three dimensional tensor of shape (batch, stream, in_channels)
             x = self.augment(inp)
-            # x in a three dimensional tensor of shape (batch, in_channels + 1, stream),
+            if x.size(1) <= 1:
+                raise RuntimeError("Given an input with too short a stream to take the"
+                                   " signature")
+            # x in a three dimensional tensor of shape (batch, stream, in_channels + 1),
             # as time has been added as a value
             y = self.signature(x)
             # y is a two dimensional tensor of shape (batch, terms), corresponding to
@@ -47,6 +51,7 @@ Whilst in principle this exhibits universal approximation, adding some learnt tr
 
     class SigNet2(nn.Module):
         def __init__(self, in_channels, out_dimension, sig_depth):
+            super(SigNet2, self).__init__()
             self.augment = signatory.Augment(in_channels=in_channels,
                                              layer_sizes=(8, 8, 2),
                                              kernel_size=4,
@@ -58,13 +63,16 @@ Whilst in principle this exhibits universal approximation, adding some learnt tr
             # as well
             sig_channels = signatory.signature_channels(in_channels=in_channels + 3,
                                                         depth=sig_depth)
-            self.linear = torch.Linear(sig_channels,
-                                       out_dimension)
+            self.linear = torch.nn.Linear(sig_channels,
+                                          out_dimension)
 
         def forward(self, inp):
-            # inp is a three dimensional tensor of shape (batch, in_channels, stream)
+            # inp is a three dimensional tensor of shape (batch, stream, in_channels)
             x = self.augment(inp)
-            # x in a three dimensional tensor of shape (batch, in_channels + 3, stream)
+            if x.size(1) <= 1:
+                raise RuntimeError("Given an input with too short a stream to take the"
+                                   " signature")
+            # x in a three dimensional tensor of shape (batch, stream, in_channels + 3)
             y = self.signature(x)
             # y is a two dimensional tensor of shape (batch, sig_channels),
             # corresponding to the terms of the signature
@@ -82,6 +90,7 @@ The :class:`signatory.Signature` layer can be used multiple times. In this examp
 
     class SigNet3(nn.Module):
         def __init__(self, in_channels, out_dimension, sig_depth):
+            super(SigNet3, self).__init__()
             self.augment1 = signatory.Augment(in_channels=in_channels,
                                               layer_sizes=(8, 8, 4),
                                               kernel_size=4,
@@ -107,16 +116,22 @@ The :class:`signatory.Signature` layer can be used multiple times. In this examp
             # 4 because that's the final layer size in self.augment2
             sig_channels2 = signatory.signature_channels(in_channels=4,
                                                          depth=sig_depth)
-            self.linear = torch.Linear(sig_channels2, out_dimension)
+            self.linear = torch.nn.Linear(sig_channels2, out_dimension)
 
         def forward(self, inp):
-            # inp is a three dimensional tensor of shape (batch, in_channels, stream)
+            # inp is a three dimensional tensor of shape (batch, stream, in_channels)
             a = self.augment1(inp)
-            # a in a three dimensional tensor of shape (batch, in_channels + 5, stream)
+            if a.size(1) <= 1:
+                raise RuntimeError("Given an input with too short a stream to take the"
+                                   " signature")
+            # a in a three dimensional tensor of shape (batch, stream, in_channels + 5)
             b = self.signature1(a)
-            # b is a three dimensional tensor of shape (batch, sig_channels1, stream)
+            # b is a three dimensional tensor of shape (batch, stream, sig_channels1)
             c = self.augment2(b)
-            # c is a three dimensional tensor of shape (batch, 4, steam)
+            if c.size(1) <= 1:
+                raise RuntimeError("Given an input with too short a stream to take the"
+                                   " signature")
+            # c is a three dimensional tensor of shape (batch, stream, 4)
             d = self.signature2(c)
             # d is a two dimensional tensor of shape (batch, sig_channels2)
             e = self.linear(d)
