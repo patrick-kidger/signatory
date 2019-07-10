@@ -1,0 +1,2 @@
+class Function:
+    pass

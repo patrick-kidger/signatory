@@ -7,64 +7,48 @@ import unittest
 
 class TestGrad(unittest.TestCase):
     @staticmethod
-    def gradcheck(size=(1, 4, 3), depth=2, basepoint=False, stream=False, flatten=True):
+    def gradcheck(size=(1, 4, 3), depth=2, stream=False, basepoint=False):
         path = torch.rand(*size, requires_grad=True, dtype=torch.double)
-        return autograd.gradcheck(signatory.signature, (path, depth, basepoint, stream, flatten))
+        return autograd.gradcheck(signatory.signature, (path, depth, stream, basepoint))
 
     def test_gradcheck_edge(self):
-        for basepoint in (True, False):
-            for stream in (True, False):
-                for flatten in (True, False):
+        for stream in (True, False):
+            for size in ((1, 2, 1), (1, 4, 4), (4, 2, 4), (4, 4, 1)):
+                basepoint_size = (size[0], size[2])
+                for basepoint in (True,
+                                  False,
+                                  torch.rand(basepoint_size, requires_grad=True, dtype=torch.double),
+                                  torch.rand(basepoint_size, requires_grad=False, dtype=torch.double)):
                     for depth in (1, 2):
-                        for size in ((1, 1, 1), (1, 4, 4), (4, 1, 4), (4, 4, 1)):
-                            try:
-                                self.gradcheck(size, depth, basepoint, stream, flatten)
-                            except RuntimeError:
-                                self.fail("Failed with basepoint={basepoint}, stream={stream}, flatten={flatten}, "
-                                          "size={size}, depth={depth}".format(basepoint=basepoint, stream=stream,
-                                                                              flatten=flatten, size=size, depth=depth))
+                        try:
+                            self.gradcheck(size, depth, stream, basepoint)
+                        except RuntimeError:
+                            self.fail("Failed with stream={stream}, basepoint={basepoint}, size={size}, depth={depth}, "
+                                      "basepoint_size={basepoint_size}"
+                                      .format(stream=stream, basepoint=basepoint, size=size, depth=depth,
+                                              basepoint_size=basepoint_size))
 
     def test_gradcheck_random(self):
-        for basepoint in (True, False):
-            for stream in (True, False):
-                for flatten in (True, False):
-                    for _ in range(5):
-                        size = torch.randint(low=1, high=10, size=(3,))
-                        depth = int(torch.randint(low=1, high=4, size=(1,)))
-                        try:
-                            self.gradcheck(size, depth, basepoint, stream, flatten)
-                        except RuntimeError:
-                            self.fail("Failed with basepoint={basepoint}, stream={stream}, flatten={flatten}, "
-                                      "size={size}, depth={depth}".format(basepoint=basepoint, stream=stream,
-                                                                          flatten=flatten, size=size, depth=depth))
+        for stream in (True, False):
+            for _ in range(5):
+                for basepoint_ in (True, False, None):
+                    size = torch.randint(low=1, high=10, size=(3,))
+                    size[1] += 1  # stream dimension must be at least size 2
+                    basepoint_size = (size[0], size[2])
+                    if basepoint_ is None:
+                        basepoint_grad = random.choice([True, False])
+                        basepoint = torch.rand(basepoint_size, requires_grad=basepoint_grad, dtype=torch.double)
+                    else:
+                        basepoint_grad = None
+                        basepoint = basepoint_
+                    depth = int(torch.randint(low=1, high=4, size=(1,)))
+                    try:
+                        self.gradcheck(size, depth, stream, basepoint)
+                    except Exception:
+                        self.fail("Failed with stream={stream}, basepoint={basepoint}, size={size}, depth={depth}, "
+                                  "basepoint_size={basepoint_size}, basepoint_grad={basepoint_grad}"
+                                  .format(stream=stream, basepoint=basepoint, size=size, depth=depth,
+                                          basepoint_size=basepoint_size, basepoint_grad=basepoint_grad))
 
-    # Fails, and it's not clear why. However... (see next method)
-    @staticmethod
-    def gradgradcheck(size=(1, 4, 3), depth=2, basepoint=False, stream=False, flatten=True):
-        if flatten:
-            test_fn = signatory.signature
-        else:
-            def test_fn(*args):
-                result = signatory.signature(*args)
-                return random.choice(result)
-        x = torch.rand(*size, requires_grad=True, dtype=torch.double)
-        return autograd.gradgradcheck(test_fn, (x, depth, basepoint, stream, flatten))
-
-    # ...this doesn't even manage to start at all, because of the fact that 'grad' and 'y' are both lists of
-    # torch.Tensors. Looking at the source code for autograd.gradcheck, it's clear that they don't expect any nested
-    # data structures for input like this; all their code assumems that the inputs are just torch.Tensors.
-    # Since we need to have lists of Tensors as input to signature_backward, it seems plausible that the fact that their
-    # torch.autograd.gradgradcheck even runs is a fluke, and the fact that it then fails is meaningless. Especially when
-    # you consider that we haven't even written a custom double-backward function - double-backward is done
-    # automatically by autograd in its usual 'tracing' manner, so it would be very surprising if it didn't give the
-    # correct results.
-    @staticmethod
-    def gradgradcheck2(size=(1, 4, 3), depth=2, basepoint=False, stream=False, flatten=True):
-        from signatory._impl import _signature_backward
-        x = torch.rand(*size, dtype=torch.double)
-        y = signatory.signature(x, depth, basepoint, stream, flatten)
-        if flatten:
-            # if not flatten then it's already a list
-            y = [y]
-        grad = [torch.rand_like(yi).requires_grad_() for yi in y]
-        return autograd.gradcheck(_signature_backward, (grad, y, x, depth, basepoint, stream, flatten))
+    # We don't do gradgradcheck because our backwards function uses a whole bunch of in-place operations for memory
+    # efficiency, so it's not automatically differentiable. (And I'm not writing a custom double backward function...)

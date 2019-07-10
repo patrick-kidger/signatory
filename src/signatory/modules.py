@@ -20,13 +20,11 @@ class Signature(nn.Module):
 
         stream: as :func:`signatory.signature`.
 
-        flatten: as :func:`signatory.signature`.
-
     Called with a single argument :attr:`path` of type :class:`torch.Tensor`.
     """
 
-    def __init__(self, depth, basepoint=False, stream=False, flatten=True, **kwargs):
-        # type: (int, bool, bool, bool, **Any) -> None
+    def __init__(self, depth, basepoint=False, stream=False, **kwargs):
+        # type: (int, bool, bool, **Any) -> None
         if not isinstance(depth, int) or depth < 1:
             raise ValueError('Depth must be an integer greater than or equal to one. Given {depth} of type '
                              '{tdepth}'.format(depth=depth, tdepth=type(depth)))
@@ -34,28 +32,27 @@ class Signature(nn.Module):
         self.depth = depth
         self.basepoint = basepoint
         self.stream = stream
-        self.flatten = flatten
 
     def forward(self, path):
         # type: (torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
         if path.size(1) == 1:
-            warnings.warn('{clsname} called on path with only one channel; the signature is now just the moments of the'
-                          ' path, so there is no interesting information from cross terms.'
-                          .format(clsname=self.__class__.__name__))
-        return backend.signature(path, self.depth, self.basepoint, self.stream, self.flatten)
+            warnings.warn('{clsname} called on path with only one channel, so the signature is now just the moments of '
+                          'the path.'.format(clsname=self.__class__.__name__))
+        return backend.signature(path, self.depth, self.stream, self.basepoint)
 
     def extra_repr(self):
-        return 'depth={depth}'.format(depth=self.depth)
+        return 'depth={depth}, stream={stream}, basepoint={basepoint}'.format(depth=self.depth, stream=self.stream,
+                                                                              basepoint=str(self.basepoint)[:6])
 
 
 class Augment(nn.Module):
-    r"""Augmenting the stream before feeding it into a signature is crucial to obtain higher-order information in the
-    signature. One way to do this is in a data-dependent way is to apply a feedforward neural network to sections of the
-    stream, so as to obtain another stream; on this stream the signature is then applied.
+    r"""Augmenting the stream before feeding it into a signature is often useful; the hope is to obtain higher-order
+    information in the signature. One way to do this is in a data-dependent way is to apply a feedforward neural network
+    to sections of the stream, so as to obtain another stream; on this stream the signature is then applied.
 
-    The input path is expected to be a three-dimensional tensor, with dimensions :math:`(N, C, L)`, where
-    :math:`N` is the batch size, :math:`C` denotes the number of channels, and :math:`L` is the length of the input
-    sequence. Thus each batch element is interpreted as a stream of data :math:`(x_1, \ldots, x_L)`, where each
+    The input path is expected to be a three-dimensional tensor, with dimensions :math:`(N, L, C)`, where :math:`N` is
+    the batch size, :math:`L` is the length of the input sequence, and :math:`C` denotes the number of channels. Thus
+    each batch element is interpreted as a stream of data :math:`(x_1, \ldots, x_L)`, where each
     :math:`x_i \in \mathbb{R}^C`. (This is the same as :class:`torch.nn.Conv1d`, for example.)
 
     Then this stream may be 'augmented' via some function
@@ -68,7 +65,7 @@ class Augment(nn.Module):
     .. math::
         \left(\phi(x_1, ... x_k), \ldots, \phi(x_{n - k + 1}, \ldots, x_n)\right),
 
-    which is essentially a three-dimensional tensor with dimensions :math:`(N, \widehat{C}, L - k + 1)`.
+    which is essentially a three-dimensional tensor with dimensions :math:`(N, L - k + 1, \widehat{C})`.
 
     Thus this essentially operates as a one dimensional convolution, except that a whole network is swept across the
     input, rather than just a single convolutional layer.
@@ -81,11 +78,11 @@ class Augment(nn.Module):
         \left(\frac{i}{T}, x_i, \varphi(x_i, ... x_{k + i - 1})\right).
 
     where :math:`T` is a constant appropriately chosen so that the first entry moves between :math:`0` and :math:`1` as
-    :math:`i` varies. (Specifically, :math:`T = L - k + 1 + 2 \times \text{padding}`)
+    :math:`i` varies. (Specifically, :math:`T = L - k + 1 + 2 \times \text{padding}`.)
 
-    For further details see `Deep Signatures -- Bonnier et al. 2019 <https://arxiv.org/abs/1905.08494>`_. (Thus this
-    module is here more for convenience: it doesn't directly relate to the signature transform; it's just useful to have
-    around when you are using the signature transform.)
+    For further details see `Deep Signatures -- Bonnier et al. 2019 <https://arxiv.org/abs/1905.08494>`_. (This module
+    is here more for convenience: it doesn't directly relate to the signature transform; it's just useful to have around
+    when you are using the signature transform.)
 
     Arguments:
         in_channels (int): Number of channels :math:`C` in the input stream.
@@ -125,15 +122,16 @@ class Augment(nn.Module):
 
     .. note::
 
-        Thus the resulting stream of data has size ``out_channel``, where in pseudocode:
+        Thus the resulting stream of data has shape :math:`(N, L, \text{out_channels})`, where in pseudocode:
 
         .. code-block:: python
 
-            out_channel = layer_sizes[-1]
+            out_channels = layer_sizes[-1]
             if include_original:
-                out_channel += in_channels
+                out_channels += in_channels
             if include_time:
-                out_channel += 1
+                out_channels += 1
+
     """
 
     def __init__(self,
@@ -187,25 +185,28 @@ class Augment(nn.Module):
     def forward(self, x):
         # type: (torch.Tensor) -> torch.Tensor
         if len(x.shape) != 3:
-            raise RuntimeError('Argument x should have three dimensions, (batch, channnel, stream). Given shape'
+            raise RuntimeError('Argument x should have three dimensions, (batch, stream, channel). Given shape'
                                '{shape} dimensions with {x}.'.format(shape=x.shape, x=x))
+        len_truncated = x.size(1) - self.kernel_size + 1
         pieces = []
         if self.include_original:
-            truncated_x = x.narrow(2, self.kernel_size - 1, x.size(2) - self.kernel_size + 1)
+            truncated_x = x.narrow(1, self.kernel_size - 1, len_truncated)
             pieces.append(truncated_x)
 
         if self.include_time:
-            time = torch.linspace(0, 1, x.size(2) - self.kernel_size + 1, dtype=torch.float, device=x.device)
-            time = time.expand(x.size(0), 1, -1)
+            time = torch.linspace(0, 1, len_truncated, dtype=torch.float, device=x.device)
+            time.unsqueeze_(1)
+            time = time.expand(x.size(0), len_truncated, 1)
             pieces.append(time)
 
         if self.layer_sizes:
-            augmented_x = self.convs[0](x)
+            augmented_x = self.convs[0](x.transpose(1, 2))
             for conv in self.convs[1:]:
                 augmented_x = self.activation(augmented_x)
                 augmented_x = conv(augmented_x)
+            augmented_x.transpose_(1, 2)
             pieces.append(augmented_x)
-        return torch.cat(pieces, dim=1)  # concatenate along channel axis
+        return torch.cat(pieces, dim=2)  # concatenate along channel axis
 
     def extra_repr(self):
         return ('activation={activation}, include_original={include_original}, include_time={include_time}'

@@ -1,37 +1,19 @@
 #ifndef TORCHTEST_SRC_SIGNATURE_HPP
 #define TORCHTEST_SRC_SIGNATURE_HPP
 
+#include <torch/extension.h>
+#include <Python.h>   // PyCapsule
 #include <cstdint>    // int64_t
+#include <tuple>      // std::tuple
 
 
-namespace signatory{
-    struct SigSpec {
-        // Encapsulates all the things that aren't tensors
-        SigSpec(torch::Tensor path, int depth, bool basepoint, bool stream, bool flatten);
-        int64_t input_channels;
-        int64_t input_stream_size;
-        int64_t batch_size;
-        int64_t output_channels;
-        int64_t output_stream_size;
-        int depth;
-        int n_output_dims;
-        bool basepoint;
-        bool stream;
-        bool flatten;
-        torch::TensorOptions opts;
-    };
-
+namespace signatory {
     int64_t signature_channels(int64_t input_channels, int depth);
 
-    std::tuple<std::vector<torch::Tensor>,
-               std::vector<torch::Tensor>,
-               torch::Tensor,
-               SigSpec>
-    signature_forward(torch::Tensor path, int depth, bool basepoint, bool stream, bool flatten);
+    std::tuple<torch::Tensor, py::object>
+    signature_forward(torch::Tensor path, int depth, bool stream, bool basepoint, torch::Tensor basepoint_value);
 
-    torch::Tensor signature_backward(std::vector<torch::Tensor> grad_out_vector,
-                                     std::vector<torch::Tensor> out_vector, torch::Tensor path_increments,
-                                     SigSpec sigspec, int depth, bool basepoint, bool stream, bool flatten);
+    std::tuple<torch::Tensor, torch::Tensor>
+    signature_backward(torch::Tensor grad_out, py::object backwards_info_capsule);
 }
-
 #endif //TORCHTEST_SRC_SIGNATURE_HPP
