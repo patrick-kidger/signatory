@@ -9,4 +9,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
           &signatory::signature_forward);
     m.def("_signature_backward",
           &signatory::signature_backward);
+    m.def("_logsignature_forward",
+        &signatory::logsignature_forward);
+    m.def("_logsignature_backward",
+        &signatory::logsignature_backward);
 }

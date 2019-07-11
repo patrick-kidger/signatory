@@ -7,7 +7,9 @@ if False:
 
 from ._impl import (_signature_channels,
                     _signature_forward,
-                    _signature_backward)
+                    _signature_backward,
+                    _logsignature_forward,
+                    _logsignature_backward)
 
 
 # It would be lovely to do all of this at the C++ level. (In particular sigspec is really a struct that has no
@@ -29,6 +31,34 @@ class _SignatureFunction(autograd.Function):
         # type: (Any, Tuple[torch.Tensor]) -> Tuple[torch.Tensor, None, None, None, Union[None, torch.Tensor]]
         grad_path, grad_basepoint_value = _signature_backward(grad_result, ctx._backwards_info)
         return grad_path, None, None, None, grad_basepoint_value
+
+
+class _LogSignatureFunction(autograd.Function):
+    @staticmethod
+    def forward(ctx, path, depth, stream, basepoint, basepoint_value):
+        # type: (Any, torch.Tensor, int, bool, torch.Tensor, bool) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
+        result, backwards_info = _logsignature_forward(path, depth, stream, basepoint, basepoint_value)
+        ctx._backwards_info = backwards_info
+        ctx._basepoint = basepoint
+        return result
+
+    @staticmethod
+    @autograd.function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
+    def backward(ctx, grad_result):
+        # type: (Any, Tuple[torch.Tensor]) -> Tuple[torch.Tensor, None, None, None, Union[None, torch.Tensor]]
+        grad_path, grad_basepoint_value = _logsignature_backward(grad_result, ctx._backwards_info)
+        return grad_path, None, None, None, grad_basepoint_value
+
+
+def _parse_basepoint(basepoint, path):
+    if basepoint is True:
+        basepoint_value = torch.zeros((path.shape[0], path.shape[2]), dtype=path.dtype, device=path.device)
+    elif isinstance(basepoint, torch.Tensor):
+        basepoint_value = basepoint
+        basepoint = True
+    else:
+        basepoint_value = torch.Tensor()
+    return basepoint, basepoint_value
 
 
 def signature(path, depth, stream=False, basepoint=False):
@@ -106,14 +136,15 @@ def signature(path, depth, stream=False, basepoint=False):
 
     """
 
-    if basepoint is True:
-        basepoint_value = torch.zeros((path.shape[0], path.shape[2]), dtype=path.dtype, device=path.device)
-    elif isinstance(basepoint, torch.Tensor):
-        basepoint_value = basepoint
-        basepoint = True
-    else:
-        basepoint_value = torch.Tensor()
+    basepoint, basepoint_value = _parse_basepoint(basepoint, path)
     return _SignatureFunction.apply(path, depth, stream, basepoint, basepoint_value)
+
+
+def logsignature(path, depth, stream=False, basepoint=False):
+    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor]) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
+    """TODO"""
+    basepoint, basepoint_value = _parse_basepoint(basepoint, path)
+    return _LogSignatureFunction.apply(path, depth, stream, basepoint, basepoint_value)
 
 
 # A wrapper for the sake of consistent documentation on signatures

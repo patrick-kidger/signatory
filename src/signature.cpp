@@ -8,6 +8,8 @@
 
 #include "signature.hpp"
 
+// TODO: logsignature backward, docstring, tests.
+
 
 // TODO: numpy, tensorflow
 // TODO: CUDA?
@@ -81,7 +83,9 @@ namespace signatory {
         // TODO: Handle exponentials in a cheaper way? It's a symmetric tensor so we can save ~n! amount of work...
         //       That's a lot of work.
         // Computes the exponential of the 'in' tensor. Each higher-order tensor is placed in 'out'.
-        void compute_exp(torch::Tensor in, std::vector<torch::Tensor>& out, const SigSpec& sigspec) {
+        // It is 'restricted' in the sense that it only computes the exponential of a tensor belonging to the lowest
+        // level of the tensor algebra, not the exponential of an arbitrary element of the tensor algebra.
+        void compute_restricted_exp(torch::Tensor in, std::vector<torch::Tensor>& out, const SigSpec& sigspec) {
             out[0].copy_(in);
             for (int i = 0; i < sigspec.depth - 1; ++i) {
                 torch::Tensor view_out = out[i + 1].view({in.size(0), out[i].size(0), sigspec.batch_size});
@@ -90,56 +94,42 @@ namespace signatory {
             }
         }
 
-        template<bool div>
-        int should_invert(int index) {  // small helper function for division
-            if (div) {
-                return (index % 2) == 0;
+        // forced inline
+        #define COMPUTE_MULTDIV_INNER(tensor_at_depth_to_calculate, arg1, arg2, depth_to_calculate, multiplier, sigspec) \
+            for (int j = 0, k = depth_to_calculate - 1; j < depth_to_calculate; ++j, --k) {                            \
+                /* loop invariant:                                                                                     \
+                   j + k = depth_to_calculate - 1 */                                                                   \
+                torch::Tensor view_out = tensor_at_depth_to_calculate.view({arg1[j].size(0),                           \
+                                                                            arg2[k].size(0),                           \
+                                                                            sigspec.batch_size});                      \
+                view_out.addcmul_(arg2[k].unsqueeze(0),  /* += (this tensor times */                                   \
+                                  arg1[j].unsqueeze(1),  /* this tensor times     */                                   \
+                                  multiplier);           /* this scalar)          */                                   \
             }
-            else {
-                return false;
-            }
-        }
 
-        // Computes the tensor product of two members of the tensor algebra.
-        // if div==false then it computes arg1 \otimes arg2
-        // if div==true then it computes arg1 \otimes -arg2
-        // if rightret==false then it returns the result in arg1
-        // if rightret==true then it returns the result in arg2
-        template<bool rightret, bool div=false>
+        // Computes the tensor product of two members of the tensor algebra. It's not completely generic, as it imposes
+        // that the scalar value of both members of the tensor algebra must be 1. (As we don't store the scalar value,
+        // as for signatures - the most common use of this function - it is always 1.)
+        //
+        // that is, it computes arg1 \otimes arg2
+        //
+        // if rightret==false then it returns the result in arg1, and arg2 is left unchanged
+        // if rightret==true then it returns the result in arg2, and arg1 is left unchanged
+        template<bool rightret>
         void compute_mult(std::vector<torch::Tensor>& arg1, std::vector<torch::Tensor>& arg2,
-                          const SigSpec& sigspec) {
-            for (int depth_to_calculate = sigspec.depth - 1; depth_to_calculate >= 0 ; --depth_to_calculate) {
+                          const SigSpec& sigspec, int scalar_term_value=1) {
+            for (int depth_to_calculate = sigspec.depth - 1; depth_to_calculate >= 0; --depth_to_calculate) {
                 torch::Tensor tensor_at_depth_to_calculate = (rightret ? arg2 : arg1)[depth_to_calculate];
-                for (int j = 0, k = depth_to_calculate - 1; j < depth_to_calculate; ++j, --k) {
-                    // loop invariant:
-                    // j + k = depth_to_calculate - 1
-                    torch::Tensor view_out = tensor_at_depth_to_calculate.view({arg1[j].size(0),
-                                                                                arg2[k].size(0),
-                                                                                sigspec.batch_size});
 
-                    torch::addcmul_out(view_out,                                        // Output.
-                                       view_out,                                        // Add this tensor
-                                       arg2[k].unsqueeze(0),                            // to (this tensor
-                                       arg1[j].unsqueeze(1),                            // times this tensor
-                                       should_invert<div>(rightret ? j : k) ? -1 : 1);  // times this scalar).
-                    // Could also just do
-                    // view_out += arg2[k].unsqueeze(0) * arg1[j].unsqueeze(1)
-                    // but that definitely creates a large intermediate tensor for the product. In principle addcmul_out
-                    // could do something cleverer (possibly unlikely), so we use it anyway.
-                }
+                COMPUTE_MULTDIV_INNER(tensor_at_depth_to_calculate, arg1, arg2, depth_to_calculate, 1, sigspec)
 
-                if (should_invert<div>(depth_to_calculate)) {
-                    tensor_at_depth_to_calculate -= (rightret ? arg1 : arg2)[depth_to_calculate];
-                }
-                else {
-                    tensor_at_depth_to_calculate += (rightret ? arg1 : arg2)[depth_to_calculate];
-                }
+                tensor_at_depth_to_calculate += (rightret ? arg1 : arg2)[depth_to_calculate];
             }
         }
 
-        /***************************************/
-        /* Stuff that's only used for forwards */
-        /***************************************/
+        /************************************************/
+        /* Stuff that's only used for signature_forward */
+        /************************************************/
 
         // Checks the arguments for the forwards pass
         void checkargs(torch::Tensor path, int depth, bool basepoint, torch::Tensor basepoint_value) {
@@ -212,9 +202,9 @@ namespace signatory {
             delete static_cast<BackwardsInfo*>(PyCapsule_GetPointer(capsule, backwards_info_capsule_name));
         }
 
-        /****************************************/
-        /* Stuff that's only used for backwards */
-        /****************************************/
+        /*************************************************/
+        /* Stuff that's only used for signature_backward */
+        /*************************************************/
 
         // Checks the arguments for the backwards pass. Only grad_out is really checked to make sure it is as expected
         // The objects we get from the PyCapsule-wrapped BackwardsInfo object are just assumed to be correct.
@@ -243,10 +233,39 @@ namespace signatory {
             }
         }
 
+        // forced inline
+        #define SHOULD_INVERT(index) ((index % 2) == 0)
+
+        // Computes the tensor 'divison' of two members of the tensor algebra. It's not completely generic, as it
+        // imposes that the scalar value of both members of the tensor algebra must be 1. (As we don't store the scalar
+        // value, as for signatures - the most common use of this function - it is always 1.)
+        //
+        // that is, it computes arg1 \otimes -arg2
+        //
+        // it returns the restult in arg1 and leaves arg2 unchanged.
+        void compute_div(std::vector<torch::Tensor>& arg1, std::vector<torch::Tensor>& arg2,
+                         const SigSpec& sigspec, int scalar_term_value=1) {
+            for (int depth_to_calculate = sigspec.depth - 1; depth_to_calculate >= 0; --depth_to_calculate) {
+                torch::Tensor tensor_at_depth_to_calculate = arg1[depth_to_calculate];
+
+                COMPUTE_MULTDIV_INNER(tensor_at_depth_to_calculate, arg1, arg2, depth_to_calculate,
+                                      SHOULD_INVERT(k) ? -1 : 1, sigspec)
+
+                if (SHOULD_INVERT(depth_to_calculate)) {
+                    tensor_at_depth_to_calculate -= arg2[depth_to_calculate];
+                }
+                else {
+                    tensor_at_depth_to_calculate += arg2[depth_to_calculate];
+                }
+            }
+        }
+
         // Computes the backward pass for the tensor product operation of two members of the tensor algebra.
+        //
         // Note that both 'arg1' and 'arg2' should be the inputs that were used in the forward pass of the
         // multiplication. In particular neither of them should be the result of the forward pass of the multiplication
         // (As compute_mult returns its result via one of its input arguments.)
+        //
         // Argument 'grad_arg2' is the input gradient, and will be modified in-place according to the multiplication.
         // Argument 'grad_arg1' is the output gradient. If add_not_copy==true then the result of this operation is
         // added on to it. If add_not_copy==false then the result of this operation is placed into it directly,
@@ -254,39 +273,42 @@ namespace signatory {
         template<bool add_not_copy>
         void compute_mult_backward(std::vector<torch::Tensor>& grad_arg1, std::vector<torch::Tensor>& grad_arg2,
                                    const std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
-                                   const SigSpec& sigspec) {
+                                   const SigSpec& sigspec, int scalar_term_value=1) {
             for (int depth_to_calculate = 0; depth_to_calculate < sigspec.depth; ++depth_to_calculate) {
                 torch::Tensor grad_tensor_at_depth_to_calculate = grad_arg2[depth_to_calculate];
+
                 if (add_not_copy) {
                     grad_arg1[depth_to_calculate] += grad_tensor_at_depth_to_calculate;
                 }
                 else {
                     grad_arg1[depth_to_calculate].copy_(grad_tensor_at_depth_to_calculate);
                 }
+
                 for (int j = depth_to_calculate - 1, k = 0; j >= 0; --j, ++k) {
                     // loop invariant:
                     // j + k = depth_to_calculate - 1
                     torch::Tensor out_view = grad_tensor_at_depth_to_calculate.view({arg1[j].size(0),
                                                                                      arg2[k].size(0),
                                                                                      sigspec.batch_size});
-                    // TODO: This is just a batch matrix-multiply where the batch dimension is last instead of first,
-                    //       so profile this against transposing and using that.
+                    // This is just a batch matrix-multiply with the batch dimension in last place
+                    // It's not totally clear what the optimal way of writing this operation is, but this is at least
+                    // faster than transposing and using .baddbmm_ (not surprising, given the transposing)
                     grad_arg1[j] += (out_view * arg2[k].unsqueeze(0)).sum(/*dim=*/1);
                     grad_arg2[k] += (out_view * arg1[j].unsqueeze(1)).sum(/*dim=*/0);
                 }
             }
         }
 
-        // Computes the backwards pass through the exponential. 'in' should be the input to the forward pass of the
-        // exponential, but 'out' should be the result of the forward pass of the exponential. (I.e. what it holds
-        // after the function has been called - recall that the function operates with 'out' as an out-argument.)
+        // Computes the backwards pass through the restricted exponential. 'in' should be the input to the forward pass
+        // of the exponential, but 'out' should be the result of the forward pass of the exponential. (I.e. what it
+        // holds after the function has been called - recall that the function operates with 'out' as an out-argument.)
         // Argument 'grad_out' should have the gradient on the output of the forward pass, and has in-place changes
-        // occuring to it.
+        // occurring to it.
         // Argument 'grad_in' will have the gradients resulting from this operation placed into it, overwriting whatever
         // is current present.
-        void compute_exp_backward(torch::Tensor grad_in, std::vector<torch::Tensor>& grad_out,
-                                  torch::Tensor in, const std::vector<torch::Tensor>& out,
-                                  const SigSpec& sigspec) {
+        void compute_restricted_exp_backward(torch::Tensor grad_in, std::vector<torch::Tensor>& grad_out,
+                                             torch::Tensor in, const std::vector<torch::Tensor>& out,
+                                             const SigSpec& sigspec) {
             if (sigspec.depth >= 2) {
                 // grad_out is a vector of length sigspec.depth.
                 // grad_out[sigspec.depth - 1] doesn't need any gradients added on to it.
@@ -305,10 +327,12 @@ namespace signatory {
                 for (int i = sigspec.depth - 3; i >= 0; --i) {
                     grad_out[i + 1] *= sigspec.reciprocals[i];
                     view_grad_out = grad_out[i + 1].view({in.size(0), out[i].size(0), sigspec.batch_size});
-                    // TODO: This is just a batch matrix-multiply where the batch dimension is last instead of first,
-                    //       so profile this against transposing and using that.
-                    grad_out[i] += (view_grad_out * in.unsqueeze(1)).sum(/*dim=*/0);
+
+                    // This is just a batch matrix-multiply with the batch dimension in last place
+                    // It's not totally clear what the optimal way of writing this operation is, but this is at least
+                    // faster than transposing and using .baddbmm_ (not surprising, given the transposing)
                     grad_in += (view_grad_out * out[i].unsqueeze(0)).sum(/*dim=*/1);
+                    grad_out[i] += (view_grad_out * in.unsqueeze(1)).sum(/*dim=*/0);
                 }
                 grad_in += grad_out[0];
             }
@@ -341,14 +365,48 @@ namespace signatory {
             }
         }
 
+        /********************************************************************/
+        /* Stuff that's only used for log signatures (forward and backward) */
+        /********************************************************************/
+
+        // Computes the partial tensor product of two members of the tensor algebra, where arg1 is assumed to have
+        // scalar_term_value as the value of its scalar term, arg2 is assumed to have zero as the value of its scalar
+        // term, and the multiplication is only computed for a particular set of terms: the result ends up being a
+        // weird hybrid of what was passed in, and the result of an actual multiplication.
+        //
+        // The logsignature computation only uses certain terms of certain forms, hence this weird collection of
+        // restrictions.
+        //
+        // The result is returned in arg1, and arg2 is left unchanged.
+        void compute_mult_partial(std::vector<torch::Tensor>& arg1, std::vector<torch::Tensor>& arg2,
+                                  const SigSpec& sigspec, int scalar_term_value, int top_terms_to_skip) {
+            for (int depth_to_calculate = sigspec.depth - top_terms_to_skip - 1; depth_to_calculate >= 0;
+                 --depth_to_calculate) {
+                torch::Tensor tensor_at_depth_to_calculate = arg1[depth_to_calculate];
+
+                // corresponding to the zero scalar assumed to be associated with arg2
+                tensor_at_depth_to_calculate.zero_();
+
+                COMPUTE_MULTDIV_INNER(tensor_at_depth_to_calculate, arg1, arg2, depth_to_calculate, 1, sigspec)
+
+                tensor_at_depth_to_calculate.add_(arg2[depth_to_calculate], scalar_term_value);
+            }
+        }
+
+        // forced inline
+        #define LOGSIGNATURE_COMPUTATION(depth, logsignature_vector, signature_vector, sigspec, reciprocals)        \
+        for (int depth_index = depth - 3; depth_index >= 0; --depth_index) {                                        \
+            detail::compute_mult_partial(logsignature_vector, signature_vector, sigspec, reciprocals[depth_index],  \
+                                         depth_index + 1);                                                          \
+        }                                                                                                           \
+        detail::compute_mult_partial(logsignature_vector, signature_vector, sigspec, 1, 0);
+
         /***********************************************************/
         /* The templated implementations of forwards and backwards */
         /***********************************************************/
 
         template<bool stream> // Honestly moving certain boolean arguments to templates might have gotten a little out
-                              // of hand. It's only a very minor performance improvement.
-                              // It started with wanting to make the 'div' argument of compute_mult a template argument
-                              // (because it's in a hot loop, not that it's still going to affect much), and, well...
+                              // of hand.
         std::tuple<torch::Tensor, py::object>
         signature_forward_impl(torch::Tensor path, int depth, bool basepoint, torch::Tensor basepoint_value) {
             detail::checkargs(path, depth, basepoint, basepoint_value);
@@ -437,8 +495,8 @@ namespace signatory {
             }
 
             // compute the first term
-            detail::compute_exp(path_increments.narrow(/*dim=*/0, /*start=*/0, /*len=*/1).squeeze(0),
-                                stream ? scratch_vector : stream_vector, sigspec);
+            detail::compute_restricted_exp(path_increments.narrow(/*dim=*/0, /*start=*/0, /*len=*/1).squeeze(0),
+                                           stream ? scratch_vector : stream_vector, sigspec);
 
             for (int stream_index = 1; stream_index < sigspec.output_stream_size; ++stream_index) {
                 if (stream) {
@@ -452,8 +510,11 @@ namespace signatory {
                 }
 
                 // first compute the exponential of the increment and put it in scratch_vector
-                detail::compute_exp(path_increments.narrow(/*dim=*/0, /*start=*/stream_index, /*len=*/1).squeeze(0),
-                                    scratch_vector, sigspec);
+                detail::compute_restricted_exp(path_increments.narrow(/*dim=*/0,
+                                                                      /*start=*/stream_index,
+                                                                      /*len=*/1).squeeze(0),
+                                               scratch_vector,
+                                               sigspec);
                 // multiply on what we have so far in stream_vector onto scratch_vector, to calculate the signature for
                 // the path up to this next time step.
                 // if stream==true then return this value in scratch vector, so we don't overwrite our intermediate
@@ -584,11 +645,11 @@ namespace signatory {
                                                               sigspec.opts);
             for (int stream_index = sigspec.output_stream_size - 1; stream_index > 0; --stream_index) {
                 // Recompute the exponential of a path increment and put it in scratch_vector
-                detail::compute_exp(path_increments.narrow(/*dim=*/0,
-                                                           /*start=*/stream_index,
-                                                           /*len=*/1).squeeze(0),
-                                    scratch_vector,
-                                    sigspec);
+                detail::compute_restricted_exp(path_increments.narrow(/*dim=*/0,
+                                                                      /*start=*/stream_index,
+                                                                      /*len=*/1).squeeze(0),
+                                               scratch_vector,
+                                               sigspec);
                 if (stream) {
                     // Get the value of stream_vector from memory
                     stream_vector.clear();
@@ -603,7 +664,7 @@ namespace signatory {
                 else {
                     // Recompute the value of stream_vector by dividing by the exponential of the path increment, which
                     // conveniently we already know
-                    detail::compute_mult</*rightret=*/false, /*div=*/true>(stream_vector, scratch_vector, sigspec);
+                    detail::compute_div(stream_vector, scratch_vector, sigspec);
 
                     // Set grad_next_stream_vector to grad_prev_stream_vector, and then we'll overwrite the contents of
                     // grad_prev_stream_vector in a moment.
@@ -613,26 +674,30 @@ namespace signatory {
                 // Now actually do the computations
                 detail::compute_mult_backward</*add_not_copy=*/stream>(grad_prev_stream_vector, grad_next_stream_vector,
                                                                        stream_vector, scratch_vector, sigspec);
-                detail::compute_exp_backward(grad_path_increments.narrow(/*dim=*/0,
-                                                                         /*start=*/stream_index,
-                                                                         /*len=*/1).squeeze(0),
-                                             grad_next_stream_vector,
-                                             path_increments.narrow(/*dim=*/0,
-                                                                    /*start=*/stream_index,
-                                                                    /*len=*/1).squeeze(0),
-                                             scratch_vector,
-                                             sigspec);
+                detail::compute_restricted_exp_backward(grad_path_increments.narrow(/*dim=*/0,
+                                                                                    /*start=*/stream_index,
+                                                                                    /*len=*/1).squeeze(0),
+                                                        grad_next_stream_vector,
+                                                        path_increments.narrow(/*dim=*/0,
+                                                                               /*start=*/stream_index,
+                                                                               /*len=*/1).squeeze(0),
+                                                        scratch_vector,
+                                                        sigspec);
             }
 
             // Another minor implementation detail that differs from a naive backwards implementation: we can use
             // grad_prev_stream_vector and stream_vector here, rather than doing one more iteration of the first part of
             // the above for loop, just to get the same values in grad_next_stream_vector and scratch_vector.
             // (And we don't want to do another compute_mult_backward either.)
-            detail::compute_exp_backward(grad_path_increments.narrow(/*dim=*/0, /*start=*/0, /*len=*/1).squeeze(0),
-                                         grad_prev_stream_vector,
-                                         path_increments.narrow(/*dim=*/0, /*start=*/0, /*len=*/1).squeeze(0),
-                                         stream_vector,
-                                         sigspec);
+            detail::compute_restricted_exp_backward(grad_path_increments.narrow(/*dim=*/0,
+                                                                                /*start=*/0,
+                                                                                /*len=*/1).squeeze(0),
+                                                    grad_prev_stream_vector,
+                                                    path_increments.narrow(/*dim=*/0,
+                                                                           /*start=*/0,
+                                                                           /*len=*/1).squeeze(0),
+                                                    stream_vector,
+                                                    sigspec);
 
             // Find the gradient on the path from the gradient on the path increments.
             torch::Tensor grad_path;
@@ -686,5 +751,70 @@ namespace signatory {
         else {
             return detail::signature_backward_impl</*stream=*/false>(grad_out, backwards_info);
         }
+    }
+
+    std::tuple<torch::Tensor, py::object>
+    logsignature_forward(torch::Tensor path, int depth, bool stream, bool basepoint, torch::Tensor basepoint_value) {
+        if (depth == 1) {
+            return signature_forward(path, depth, stream, basepoint, basepoint_value);
+        }  // this isn't just a fast return path: we also can't index the reciprocals tensor if depth == 1.
+
+        // first call the regular signature
+        torch::Tensor signature;
+        py::object backwards_info_capsule;
+        std::tie(signature, backwards_info_capsule) = signature_forward(path, depth, stream, basepoint,
+                                                                        basepoint_value);
+
+        // unpack some of the information
+        auto backwards_info = static_cast<detail::BackwardsInfo*>(
+                PyCapsule_GetPointer(backwards_info_capsule.ptr(), detail::backwards_info_capsule_name));
+        torch::Tensor reciprocals = backwards_info->sigspec.reciprocals;
+        const detail::SigSpec& sigspec = backwards_info->sigspec;
+
+        // undo the transposing we just did in signature_forward...
+        if (stream) {
+            // convert from (batch, stream, channel) to (stream, channel, batch)
+            signature = signature.transpose(0, 1).transpose(1, 2);
+        }
+        else{
+            // convert from (batch, channel) to (channel, batch)
+            signature = signature.transpose(0, 1);
+        }
+
+        // put the signature in memory
+        std::vector<torch::Tensor> signature_vector;
+        signature_vector.reserve(depth);
+        detail::slice_by_term(signature, signature_vector, stream ? 1 : 0, sigspec);
+
+        // and allocate memory for the logsignature
+        torch::Tensor logsignature = signature * reciprocals[depth - 2];
+        std::vector<torch::Tensor> logsignature_vector;
+        logsignature_vector.reserve(depth);
+        detail::slice_by_term(logsignature, logsignature_vector, stream ? 1 : 0, sigspec);
+
+        if (stream) {
+            // allocate vectors for the signature and logsignature by stream index
+            std::vector<torch::Tensor> signature_stream_vector;
+            std::vector<torch::Tensor> logsignature_stream_vector;
+            signature_stream_vector.reserve(depth);
+            logsignature_stream_vector.reserve(depth);
+            for (int stream_index = 0; stream_index < sigspec.output_stream_size; ++stream_index) {
+                detail::slice_at_stream(signature_vector, signature_stream_vector, stream_index);
+                detail::slice_at_stream(logsignature_vector, logsignature_stream_vector, stream_index);
+                LOGSIGNATURE_COMPUTATION(depth, logsignature_vector, signature_stream_vector, sigspec, reciprocals)
+            }
+            logsignature = logsignature.transpose(1, 2).transpose(0, 1);
+        }
+        else {
+            LOGSIGNATURE_COMPUTATION(depth, logsignature_vector, signature_vector, sigspec, reciprocals)
+            logsignature = logsignature.transpose(0, 1);
+        }
+
+        return {logsignature, backwards_info_capsule};
+    }
+
+    std::tuple<torch::Tensor, torch::Tensor>
+    logsignature_backward(torch::Tensor grad_out, py::object backwards_info_capsule) {
+        // TODO
     }
 }  // namespace signatory

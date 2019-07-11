@@ -10,6 +10,14 @@ At the heart of the package is the :func:`signatory.signature` function:
 
 ----
 
+Log-signature calculations are also provided:
+
+.. autofunction:: signatory.logsignature
+
+.. autoclass:: signatory.LogSignature
+
+----
+
 The following functions are provided as a convenience.
 
 .. autofunction:: signatory.signature_channels

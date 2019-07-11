@@ -1,9 +1,11 @@
 import torch  # must be imported before anything from signatory
 
 from .backend import (signature,
+                      logsignature,
                       signature_channels,
                       extract_term)
 from .modules import (Signature,
+                      LogSignature,
                       Augment)
 
 

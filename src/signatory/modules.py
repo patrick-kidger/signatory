@@ -10,8 +10,31 @@ if False:
 from . import backend
 
 
-class Signature(nn.Module):
-    """Module wrapper around the signatory.signature function. See :func:`signatory.signature`.
+class _SigModule(nn.Module):
+    def __init__(self, depth, basepoint=False, stream=False, **kwargs):
+        # type: (int, bool, bool, **Any) -> None
+        if not isinstance(depth, int) or depth < 1:
+            raise ValueError('Depth must be an integer greater than or equal to one. Given {depth} of type '
+                             '{tdepth}'.format(depth=depth, tdepth=type(depth)))
+        super(_SigModule, self).__init__(**kwargs)
+        self.depth = depth
+        self.basepoint = basepoint
+        self.stream = stream
+
+    def forward(self, path):
+        # type: (torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
+        if path.size(1) == 1:
+            warnings.warn('{clsname} called on path with only one channel, so the signature is now just the moments of '
+                          'the path.'.format(clsname=self.__class__.__name__))
+        return self.__class__.sig_fn(path, self.depth, self.stream, self.basepoint)
+
+    def extra_repr(self):
+        return 'depth={depth}, stream={stream}, basepoint={basepoint}'.format(depth=self.depth, stream=self.stream,
+                                                                              basepoint=str(self.basepoint)[:6])
+
+
+class Signature(_SigModule):
+    """Module wrapper around the :func:`signatory.signature` function.
 
     Arguments:
         depth: as :func:`signatory.signature`.
@@ -22,27 +45,22 @@ class Signature(nn.Module):
 
     Called with a single argument :attr:`path` of type :class:`torch.Tensor`.
     """
+    sig_fn = backend.signature
 
-    def __init__(self, depth, basepoint=False, stream=False, **kwargs):
-        # type: (int, bool, bool, **Any) -> None
-        if not isinstance(depth, int) or depth < 1:
-            raise ValueError('Depth must be an integer greater than or equal to one. Given {depth} of type '
-                             '{tdepth}'.format(depth=depth, tdepth=type(depth)))
-        super(Signature, self).__init__(**kwargs)
-        self.depth = depth
-        self.basepoint = basepoint
-        self.stream = stream
 
-    def forward(self, path):
-        # type: (torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
-        if path.size(1) == 1:
-            warnings.warn('{clsname} called on path with only one channel, so the signature is now just the moments of '
-                          'the path.'.format(clsname=self.__class__.__name__))
-        return backend.signature(path, self.depth, self.stream, self.basepoint)
+class LogSignature(_SigModule):
+    """Module wrapper around the :func:`signatory.logsignature` function.
 
-    def extra_repr(self):
-        return 'depth={depth}, stream={stream}, basepoint={basepoint}'.format(depth=self.depth, stream=self.stream,
-                                                                              basepoint=str(self.basepoint)[:6])
+    Arguments:
+        depth: as :func:`signatory.logsignature`.
+
+        basepoint: as :func:`signatory.logsignature`.
+
+        stream: as :func:`signatory.logsignature`.
+
+    Called with a single argument :attr:`path` of type :class:`torch.Tensor`.
+    """
+    sig_fn = backend.logsignature
 
 
 class Augment(nn.Module):
