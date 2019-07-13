@@ -3,6 +3,10 @@
 #include "signature.hpp"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    py::enum_<signatory::Mode>(m, "_Mode")
+            .value("Expand", signatory::Mode::Expand)
+            .value("Duval", signatory::Mode::Duval)
+            .value("Lex", signatory::Mode::Lex);
     m.def("_signature_channels",
           &signatory::signature_channels);
     m.def("_signature_forward",

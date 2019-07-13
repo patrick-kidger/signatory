@@ -37,11 +37,11 @@ class Signature(_SigModule):
     """Module wrapper around the :func:`signatory.signature` function.
 
     Arguments:
-        depth: as :func:`signatory.signature`.
+        depth (int): as :func:`signatory.signature`.
 
-        basepoint: as :func:`signatory.signature`.
+        stream (bool, optional): as :func:`signatory.signature`.
 
-        stream: as :func:`signatory.signature`.
+        basepoint (bool or :class:`torch.Tensor`, optional): as :func:`signatory.signature`.
 
     Called with a single argument :attr:`path` of type :class:`torch.Tensor`.
     """
@@ -52,11 +52,11 @@ class LogSignature(_SigModule):
     """Module wrapper around the :func:`signatory.logsignature` function.
 
     Arguments:
-        depth: as :func:`signatory.logsignature`.
+        depth (int): as :func:`signatory.logsignature`.
 
-        basepoint: as :func:`signatory.logsignature`.
+        stream (bool, optional): as :func:`signatory.logsignature`.
 
-        stream: as :func:`signatory.logsignature`.
+        basepoint (bool or :class:`torch.Tensor`, optional): as :func:`signatory.logsignature`.
 
     Called with a single argument :attr:`path` of type :class:`torch.Tensor`.
     """

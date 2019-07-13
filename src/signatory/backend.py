@@ -1,56 +1,22 @@
+import math
 import torch
 from torch import autograd
 
-# noinspection PyUnreachableCode
-if False:
-    from typing import Any, Tuple, Union
-
-from ._impl import (_signature_channels,
+# noinspection PyProtectedMember, PyUnresolvedReferences
+from ._impl import (_Mode,
+                    _signature_channels,
                     _signature_forward,
                     _signature_backward,
                     _logsignature_forward,
                     _logsignature_backward)
 
-
-# It would be lovely to do all of this at the C++ level. (In particular sigspec is really a struct that has no
-# business being passed around at the Python level.) But unfortunately the documentation for how to create autograd
-# Functions in C++ is nonexistent. Presumably that means it's all still subject to change, so we're just going to stick
-# to the Python way of doings things for now.
-class _SignatureFunction(autograd.Function):
-    @staticmethod
-    def forward(ctx, path, depth, stream, basepoint, basepoint_value):
-        # type: (Any, torch.Tensor, int, bool, torch.Tensor, bool) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
-        result, backwards_info = _signature_forward(path, depth, stream, basepoint, basepoint_value)
-        ctx._backwards_info = backwards_info
-        ctx._basepoint = basepoint
-        return result
-
-    @staticmethod
-    @autograd.function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
-    def backward(ctx, grad_result):
-        # type: (Any, Tuple[torch.Tensor]) -> Tuple[torch.Tensor, None, None, None, Union[None, torch.Tensor]]
-        grad_path, grad_basepoint_value = _signature_backward(grad_result, ctx._backwards_info)
-        return grad_path, None, None, None, grad_basepoint_value
-
-
-class _LogSignatureFunction(autograd.Function):
-    @staticmethod
-    def forward(ctx, path, depth, stream, basepoint, basepoint_value):
-        # type: (Any, torch.Tensor, int, bool, torch.Tensor, bool) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
-        result, backwards_info = _logsignature_forward(path, depth, stream, basepoint, basepoint_value)
-        ctx._backwards_info = backwards_info
-        ctx._basepoint = basepoint
-        return result
-
-    @staticmethod
-    @autograd.function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
-    def backward(ctx, grad_result):
-        # type: (Any, Tuple[torch.Tensor]) -> Tuple[torch.Tensor, None, None, None, Union[None, torch.Tensor]]
-        grad_path, grad_basepoint_value = _logsignature_backward(grad_result, ctx._backwards_info)
-        return grad_path, None, None, None, grad_basepoint_value
+# noinspection PyUnreachableCode
+if False:
+    from typing import Any, Tuple, Union
 
 
 def _parse_basepoint(basepoint, path):
+    # type: (Union[bool, torch.Tensor], torch.Tensor) -> Tuple[bool, torch.Tensor]
     if basepoint is True:
         basepoint_value = torch.zeros((path.shape[0], path.shape[2]), dtype=path.dtype, device=path.device)
     elif isinstance(basepoint, torch.Tensor):
@@ -61,8 +27,71 @@ def _parse_basepoint(basepoint, path):
     return basepoint, basepoint_value
 
 
+# It would be lovely to do all of this at the C++ level. (In particular sigspec is really a struct that has no
+# business being passed around at the Python level.) But unfortunately the documentation for how to create autograd
+# Functions in C++ is nonexistent. Presumably that means it's all still subject to change, so we're just going to stick
+# to the Python way of doings things for now.
+class _SignatureFunction(autograd.Function):
+    # noinspection PyMethodOverriding
+    @staticmethod
+    def forward(ctx, path, depth, stream, basepoint):
+        # type: (Any, torch.Tensor, int, bool, Union[bool, torch.Tensor]) -> torch.Tensor
+
+        ctx.basepoint = basepoint
+        basepoint, basepoint_value = _parse_basepoint(basepoint, path)
+
+        result, backwards_info = _signature_forward(path, depth, stream, basepoint, basepoint_value)
+        ctx.backwards_info = backwards_info
+
+        return result
+
+    # noinspection PyUnresolvedReferences
+    @staticmethod
+    @autograd.function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
+    def backward(ctx, grad_result):
+        # type: (Any, Tuple[torch.Tensor]) -> Tuple[torch.Tensor, None, None, Union[None, torch.Tensor]]
+        grad_path, grad_basepoint_value = _signature_backward(grad_result, ctx.backwards_info)
+        if not isinstance(ctx.basepoint, torch.Tensor):
+            grad_basepoint_value = None
+        return grad_path, None, None, grad_basepoint_value
+
+
+class _LogSignatureFunction(autograd.Function):
+    # noinspection PyMethodOverriding
+    @staticmethod
+    def forward(ctx, path, depth, stream, basepoint, mode):
+        # type: (Any, torch.Tensor, int, bool, Union[bool, torch.Tensor], str) -> torch.Tensor
+
+        if mode == "expand":
+            mode_num = _Mode.Expand
+        elif mode == "duval":
+            mode_num = _Mode.Duval
+        elif mode == "lex":
+            mode_num = _Mode.Lex
+        else:
+            raise ValueError("Invalid values for argument 'mode'. Valid values are 'expand', 'duval' or 'lex'.")
+
+        ctx.basepoint = basepoint
+        basepoint, basepoint_value = _parse_basepoint(basepoint, path)
+
+        result, backwards_info = _logsignature_forward(path, depth, stream, basepoint, basepoint_value, mode_num)
+        ctx.backwards_info = backwards_info
+
+        return result
+
+    # noinspection PyUnresolvedReferences
+    @staticmethod
+    @autograd.function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
+    def backward(ctx, grad_result):
+        # type: (Any, Tuple[torch.Tensor]) -> Tuple[torch.Tensor, None, None, Union[None, torch.Tensor], None]
+        grad_path, grad_basepoint_value = _logsignature_backward(grad_result, ctx.backwards_info)
+        if not isinstance(ctx.basepoint, torch.Tensor):
+            grad_basepoint_value = None
+        return grad_path, None, None, grad_basepoint_value, None
+
+
 def signature(path, depth, stream=False, basepoint=False):
-    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor]) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
+    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor]) -> torch.Tensor
     r"""Applies the signature transform to a stream of data.
 
     The input :attr:`path` is expected to be a three-dimensional tensor, with dimensions :math:`(N, L, C)`, where
@@ -135,19 +164,50 @@ def signature(path, depth, stream=False, basepoint=False):
                 return torch.Tensor of shape (N, C + C^2 + ... + C^depth)
 
     """
-
-    basepoint, basepoint_value = _parse_basepoint(basepoint, path)
-    return _SignatureFunction.apply(path, depth, stream, basepoint, basepoint_value)
-
-
-def logsignature(path, depth, stream=False, basepoint=False):
-    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor]) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
-    """TODO"""
-    basepoint, basepoint_value = _parse_basepoint(basepoint, path)
-    return _LogSignatureFunction.apply(path, depth, stream, basepoint, basepoint_value)
+    # noinspection PyUnresolvedReferences
+    return _SignatureFunction.apply(path, depth, stream, basepoint)
 
 
-# A wrapper for the sake of consistent documentation on signatures
+def logsignature(path, depth, stream=False, basepoint=False, mode="lex"):
+    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], str) -> torch.Tensor
+    """Applies the logsignature transform to a stream of data.
+
+    Applies the signatures to the stream of data, then takes the logarithm (in the tensor algebra) of the result.
+
+    Arguments:
+        path (:class:`torch.Tensor`): as :func:`signatory.signature`.
+
+        depth (int): as :func:`signatory.signature`.
+
+        stream (bool, optional): as :func:`signatory.signature`.
+
+        basepoint (bool or :class:`torch.Tensor`, optional): as :func:`signatory.signature`.
+
+        mode (str, optional): How the output should be presented. Valid values are "expand", "duval", "lex".
+            If this is "expand" then the output will be presented in terms of coefficients of the usual basis of the
+            tensor algebra. If this is "duval" then the output will be presented according to the coefficients of the
+            Lyndon basis of the free Lie algebra, but whose order is that which is generated by Duval's algorithm for
+            generating the corresponding Lyndon words.
+            (J.-P. Duval, Theor. Comput. Sci. 1988, doi:10.1016/0304-3975(88)90113-2.) (For which the Lyndon words of
+            the same length are in lexicographic order with respect to each other, but which are not in lexicographic
+            order as a whole.)
+            If this option is "lex" then the result is again the coefficients of the Lyndon basis, but the result of
+            Duval's algorithm is now sorted so that the order is lexicographic.
+            In summary: use "duval" if this function is embedded somewhere within a machine learning application, or
+            "lex" if you want to spend extra time ordering the terms so that the order of terms means something;
+            meanwhile "expand" is probably only interesting if you're a mathematician.
+
+    Returns:
+        A :class:`torch.Tensor`.
+        If mode=="expand" then it will be of the same shape as the returned tensor from :func:`signatory.signature`.
+        If mode=="duval" or mode=="lex" then it will again be of the same shape, except that the channel dimension will
+        instead be of size logsignature_channels(in_channels, depth). (i.e. much smaller.)
+    """
+    # noinspection PyUnresolvedReferences
+    return _LogSignatureFunction.apply(path, depth, stream, basepoint, mode)
+
+
+# A wrapper for the sake of consistent documentation
 def signature_channels(in_channels, depth):
     # type: (int, int) -> int
     """Computes the number of output channels from a signature call.
@@ -165,7 +225,73 @@ def signature_channels(in_channels, depth):
     return _signature_channels(in_channels, depth)
 
 
-def extract_term(signature, in_channels, depth):
+def _get_prime_factors(x):
+    if x == 1:
+        return []
+
+    prime_factors = []
+    largest_i_so_far = 2
+    while True:
+        for i in range(largest_i_so_far, round(math.sqrt(x)) + 1):
+            if x % i == 0:
+                largest_i_so_far = i
+                break
+        else:
+            prime_factors.append(x)  # x is prime
+            break
+        x = x // i
+        prime_factors.append(i)
+
+    return prime_factors
+
+
+def _mobius_function(x):
+    prime_factors = _get_prime_factors(x)
+    prev_elem = None
+    for elem in prime_factors:
+        if elem == prev_elem:
+            return 0
+        prev_elem = elem
+    num_unique_factors = len(set(prime_factors))
+    if num_unique_factors % 2 == 0:
+        return 1
+    else:
+        return -1
+
+
+def logsignature_channels(in_channels, depth):
+    # type: (int, int) -> int
+    """Computes the number of output channels from a logsignature call with mode=="duval" or mode=="lex".
+
+    This function is quite slow.
+
+    Arguments:
+        in_channels (int): The number of channels in the input; that is, the dimension of the space that the input path
+            resides in.
+
+        depth (int): The depth of the signature that is being computed.
+
+    Returns:
+        An int specifying the number of channels in the logsignature of the path.
+    """
+
+    if in_channels < 1:
+        raise ValueError("in_channels must be at least 1")
+
+    if depth < 1:
+        raise ValueError("depth must be at least 1")
+
+    total = 0
+    for d in range(1, depth + 1):
+        subtotal = 0
+        for d_divisor in range(1, d + 1):
+            if d % d_divisor == 0:
+                subtotal += _mobius_function(d // d_divisor) * in_channels ** d_divisor
+        total += subtotal // d
+    return total
+
+
+def extract_term(sig_tensor, in_channels, depth):
     # type: (torch.Tensor, int, int) -> torch.Tensor
     r"""Extracts a particular term from a signature.
 
@@ -177,7 +303,7 @@ def extract_term(signature, in_channels, depth):
     it will be probably quicker to write your own function.
 
     Arguments:
-        signature (:class:`torch.Tensor`): The signature to extract the term from. Should be the result of the
+        sig_tensor (:class:`torch.Tensor`): The signature to extract the term from. Should be the result of the
             :func:`signatory.signature` function.
 
         in_channels (int): The number of input channels :math:`C`.
@@ -188,8 +314,11 @@ def extract_term(signature, in_channels, depth):
         The :class:`torch.Tensor` corresponding to the :attr:`depth` term of the signature.
     """
 
+    if in_channels < 1:
+        raise ValueError("in_channels must be at least 1")
+
     if depth == 1:
         start = 0
     else:
         start = signature_channels(in_channels, depth - 1)
-    return signature.narrow(dim=-1, start=start, length=in_channels ** depth)
+    return sig_tensor.narrow(dim=-1, start=start, length=in_channels ** depth)
