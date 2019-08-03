@@ -10,8 +10,9 @@
 
 #include "signature.hpp"  // signatory::depth_type, signatory::Mode
 
-// TODO: something is wrong with logsignature forwards and backwards. Have some wrong depth dependence, i.e.
-//       logsignature(x, 2) and logsignature(x, 3) don't agree at common terms
+// TODO: check logsignature_backwards; sort out projection
+
+// TODO: signature_jacobian, logsignature_jacobian
 
 // TODO: logsignature tests. Make sure memory doesn't get blatted tests.
 // TODO: figure out how to mark in-place operations on the output as preventing backwards
@@ -105,8 +106,7 @@ namespace signatory {
             }
         }
 
-        // TODO: Handle exponentials in a cheaper way? It's a symmetric tensor so we can save ~n! amount of work...
-        //       That's a lot of work.
+        // TODO: Handle exponentials in a cheaper way? It's a symmetric tensor so we can save a lot of work
         // Computes the exponential of the 'in' tensor. Each higher-order tensor is placed in 'out'.
         // It is 'restricted' in the sense that it only computes the exponential of a tensor belonging to the lowest
         // level of the tensor algebra, not the exponential of an arbitrary element of the tensor algebra.
@@ -251,7 +251,7 @@ namespace signatory {
         }
 
         // forced inline
-        #define SHOULD_INVERT(index) ((index % 2) == 0)
+        #define SHOULD_INVERT(index) (((index) % 2) == 0)
 
         /************************************************/
         /* Stuff that's only used for signature_forward */
@@ -442,7 +442,6 @@ namespace signatory {
         void compute_mult_partial(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
                                   const SigSpec& sigspec, torch::Scalar scalar_term_value,
                                   depth_type top_terms_to_skip) {
-            top_terms_to_skip = 0;  // TODO
             for (depth_type depth_to_calculate = sigspec.depth - top_terms_to_skip - 1; depth_to_calculate >= 0;
                  --depth_to_calculate) {
                 torch::Tensor tensor_at_depth_to_calculate = arg1[depth_to_calculate];
@@ -461,7 +460,6 @@ namespace signatory {
         void compute_div_partial(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
                                  const SigSpec& sigspec, torch::Scalar scalar_term_value,
                                  depth_type top_terms_to_skip) {
-            top_terms_to_skip = 0;  // TODO
             for (depth_type depth_to_calculate = sigspec.depth - top_terms_to_skip - 1; depth_to_calculate >= 0;
                  --depth_to_calculate) {
                 torch::Tensor tensor_at_depth_to_calculate = arg1[depth_to_calculate];
@@ -492,7 +490,6 @@ namespace signatory {
                                            const SigSpec& sigspec,
                                            torch::Scalar scalar_value_term,
                                            depth_type top_terms_to_skip) {
-            top_terms_to_skip = 0;  // TODO
             for (depth_type depth_to_calculate = 0; depth_to_calculate < sigspec.depth - top_terms_to_skip;
                  ++depth_to_calculate) {
                 torch::Tensor grad_tensor_at_depth_to_calculate = grad_arg1[depth_to_calculate];
@@ -506,6 +503,7 @@ namespace signatory {
             }
         }
 
+        // forced inline
         #define LOGSIG_INVERT(sigspec, depth_index) \
             ((SHOULD_INVERT(depth_index) ? -1 : 1) * sigspec.reciprocals[depth_index]).item()
 
@@ -538,8 +536,8 @@ namespace signatory {
             depth_type depth = word.size();
             int64_t index = 0;
             int64_t current_stride = 1;
-            for (auto elem : word) {
-                index += elem * current_stride;
+            for (auto word_index = word.rbegin(); word_index != word.rend(); ++word_index) {
+                index += *word_index * current_stride;
                 current_stride *= num_channels;
             }
             out_indices.emplace_back(depth - 1, index);  // -1 because the signature-depth-one elements are at index
@@ -912,7 +910,7 @@ namespace signatory {
         const detail::SigSpec& sigspec = backwards_info->sigspec;
 
         // undo the transposing we just did in signature_forward...
-        signature = detail::stream_transpose(signature, stream);
+        signature = detail::stream_transpose_reverse(signature, stream);
 
         int64_t channel_dim = stream ? 1 : 0;
 
@@ -922,6 +920,7 @@ namespace signatory {
         detail::slice_by_term(signature, signature_vector, channel_dim, sigspec);
 
         // and allocate memory for the logsignature
+        // TODO: only invert the lowest terms? The higher terms aren't used?
         torch::Tensor logsignature = signature * LOGSIG_INVERT(sigspec, depth - 2);
         std::vector<torch::Tensor> logsignature_vector;
         logsignature_vector.reserve(depth);
@@ -1096,11 +1095,10 @@ namespace signatory {
                    // because it's not externally visible: different memory is used for the compressed logsignature.
                    // This is just one of those many details about memory efficiency that have made implementing this
                    // whole project... interesting.
+
                 LOGSIGNATURE_COMPUTATION_BACKWARD(grad_logsig_stream_vector, grad_sig_stream_vector,
                                                   logsignature_stream_vector, signature_stream_vector, sigspec)
             }
-            // convert from (stream, channel, batch) to (batch, stream, channel)
-            grad_sig = grad_sig.transpose(1, 2).transpose(0, 1);
         }
         else {
             if (mode == Mode::Expand) {
@@ -1110,9 +1108,8 @@ namespace signatory {
             }
             LOGSIGNATURE_COMPUTATION_BACKWARD(grad_logsig_vector, grad_sig_vector, logsignature_vector,
                                               signature_vector, sigspec)
-            // convert from (channel, batch) to (batch, channel)
-            grad_sig = grad_sig.transpose(0, 1);
         }
+        grad_sig = detail::stream_transpose(grad_sig, stream);
         return signature_backward(grad_sig, backwards_info_capsule);
     }
 }  // namespace signatory
