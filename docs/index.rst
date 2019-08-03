@@ -7,8 +7,15 @@ Hosted on `GitHub <https://github.com/patrick-kidger/signatory>`__.
     :hidden:
 
     /pages/installation
-    /pages/reference
     /pages/examples
+
+.. toctree::
+    :caption: Reference
+    :hidden:
+
+    /pages/signatures
+    /pages/logsignatures
+    /pages/utilities
 
 .. toctree::
     :caption: Extras

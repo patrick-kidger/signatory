@@ -10,10 +10,9 @@
 
 #include "signature.hpp"  // signatory::depth_type, signatory::Mode
 
+// TODO: documentation: when to use signature / logsignature, time augmentation vs stream
 // TODO: check logsignature_backwards; sort out projection
-
 // TODO: signature_jacobian, logsignature_jacobian
-
 // TODO: logsignature tests. Make sure memory doesn't get blatted tests.
 // TODO: figure out how to mark in-place operations on the output as preventing backwards
 
