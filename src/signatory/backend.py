@@ -3,7 +3,7 @@ import torch
 from torch import autograd
 
 # noinspection PyProtectedMember, PyUnresolvedReferences
-from ._impl import (_Mode,
+from ._impl import (_LogSignatureMode,
                     _signature_channels,
                     _signature_forward,
                     _signature_backward,
@@ -63,16 +63,13 @@ class _LogSignatureFunction(autograd.Function):
         # type: (Any, torch.Tensor, int, bool, Union[bool, torch.Tensor], str) -> torch.Tensor
 
         if mode == "expand":
-            mode_num = _Mode.Expand
-        elif mode == "duval":
-            mode_num = _Mode.Duval
-        elif mode == "lex":
-            mode_num = _Mode.Lex
-        elif mode == "lyndon":
-            mode_num = _Mode.Lyndon
+            mode_num = _LogSignatureMode.Expand
+        elif mode == "brackets":
+            mode_num = _LogSignatureMode.Brackets
+        elif mode == "words":
+            mode_num = _LogSignatureMode.Words
         else:
-            raise ValueError("Invalid values for argument 'mode'. Valid values are 'expand', 'duval', 'lex' or "
-                             "'lyndon'.")
+            raise ValueError("Invalid values for argument 'mode'. Valid values are 'expand', 'brackets', or 'words'.")
 
         ctx.basepoint = basepoint
         basepoint, basepoint_value = _parse_basepoint(basepoint, path)
@@ -171,7 +168,7 @@ def signature(path, depth, stream=False, basepoint=False):
     return _SignatureFunction.apply(path, depth, stream, basepoint)
 
 
-def logsignature(path, depth, stream=False, basepoint=False, mode="lyndon"):
+def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
     # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], str) -> torch.Tensor
     """Applies the logsignature transform to a stream of data.
 
@@ -191,21 +188,21 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="lyndon"):
 
         basepoint (bool or :class:`torch.Tensor`, optional): as :func:`signatory.signature`.
 
-        mode (str, optional): How the output should be presented. Valid values are "duval", "lyndon", "lex", or
+        mode (str, optional): How the output should be presented. Valid values are "words", "brackets", or
             "expand". Precisely what each of these options mean is described in the "Returns" section below. As a rule
-            of thumb: use "duval" for new projects (as it is the fastest); use "lyndon" if you want compatibility with
+            of thumb: use "words" for new projects (as it is the fastest); use "brackets" if you want compatibility with
             other projects (such as `iisignature <https://github.com/bottler/iisignature>`__, which defaults to this).
-            Modes "lex" and "expand" are mostly only interesting for mathematicians.
+            The mode "expand" is mostly only interesting for mathematicians.
 
     Returns:
         A :class:`torch.Tensor`. If :code:`mode == "expand"` then it will be of the same shape as the returned tensor
-        from :func:`signatory.signature`. If :code:`mode in ("duval", "lyndon", "lex")` then it will again be of the
+        from :func:`signatory.signature`. If :code:`mode in ("words", "brackets")` then it will again be of the
         same shape, except that the channel dimension will instead be of size
         :code:`logsignature_channels(in_channels, depth)`. (i.e. much smaller, which is the whole point of using the
         logsignature over the signature in the first place.)
 
         We now go on to explain what the different values for :attr:`mode` mean. This discussion is the "Returns"
-        section as it the value of :attr:`mode` essentially just determines how the output is represented; the
+        section a the value of :attr:`mode` essentially just determines how the output is represented; the
         mathematical meaning is the same in all cases. We start with an explanation for the reader who is not familiar
         with notions such as free Lie algebras and Lyndon words. Which is most people! For the more mathematically
         inclined reader, we have an more in-depth explanation later.
@@ -223,7 +220,7 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="lyndon"):
         small space into the larger space. As such this probably isn't a useful value for :attr:`mode` when doing
         machine learning; you instead want a representation in the smaller space..
 
-        A representation in this smaller space is what will be returned if :code:`mode in ("duval", "lyndon", "lex")`.
+        A representation in this smaller space is what will be returned if :code:`mode in ("words", "brackets")`.
         (The keen-eyed reader will notice that since the logarithm is bijective, then this also means that the signature
         itself is also using more space than necessary to represent itself -- as it can just be represented by its
         corresponding logsignature, which lives in a smaller dimensional space. This is completely correct. However in
@@ -236,40 +233,30 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="lyndon"):
         of this smaller space. We offer three different bases; all of them are just linear transformations of each
         other.
 
-        A popular basis is called the "Lyndon basis", and this is the basis that is used if :code:`mode == "lyndon"`.
-        This is thus the default choice, so that the result is what people will tend to expect.
+        A popular basis is called the "Lyndon basis", and this is the basis that is used if :code:`mode == "brackets"`.
+        This is thus the default choice, as it is the result that is typically expected.
 
         However it turns out that there is a more computationally efficient basis which may be used: this is what is
-        used if :code:`mode == "duval"`. Thus this is the recommended choice for new projects.
-
-        Finally the basis elements corresponding to :code:`mode == "duval"` may be reordered in a particular natural
-        way. This is what is used if :code:`mode == "lex"`. If you're doing machine learning then you don't need to care
-        about reordering the elements, though, so you probably don't need this mode.
+        used if :code:`mode == "words"`. Thus this is the recommended choice for new projects.
 
         Now the high-math explanation.
 
-        The explanation will now assume that you are familiar with Lyndon words, the Lyndon basis, the standard
-        bracketing procedure to obtain the Lyndon basis from Lyndon words, and how the elements of the Lyndon basis may
-        be expanded out to be interpreted as members of the truncated tensor algebra.
+        The explanation will now assume that you are familiar with Lyndon words and the Lyndon basis.
 
         As already explained, :code:`mode == "expand"` represents the logsignature in the truncated tensor algebra, so
         that the numbers you see are the coefficients of all possible words.
 
-        Next, :code:`mode == "Lyndon"` represents the logsignature as coefficients of the Lyndon basis.
+        Next, :code:`mode == "brackets"` represents the logsignature as coefficients of the Lyndon basis. The order of
+        the coefficients corresponds to the lexicographic ordering of the foliage of the elements of the Lyndon basis.
 
         Now it turns out that the coefficients in the Lyndon basis may be computed by calculated by (a) computing the
         logsignature in the truncated tensor algebra, (b) extracting the coefficents of all Lyndon words, and (c)
         applying a unitriangular (i.e. triangular with 1 on the diagonal) linear transformation to them. In particular,
         this transformation is clearly invertible (as you'd expect, given that we're computing a basis), so we see that
-        the coefficients of all the Lyndon words also form a perfectly good basis for the free Lie algebra. (Somewhat
-        confusingly, this basis of coefficients of Lyndon words is *not* the same as the Lyndon basis!) The
-        representation in this basis is what is computed when :code:`mode in ("duval", "lex")`.
-
-        If :code:`mode == "duval"` then the coefficients are returned in the order that the Lyndon words are computed
-        with Duval's algorithm (J.-P. Duval, Theor. Comput. Sci. 1988, doi:10.1016/0304-3975(88)90113-2).
-
-        If :code:`mode == "lex"` then the coefficients are returned according to the usual lexiographical ordering of
-        Lyndon words.
+        the coefficients of all the Lyndon words also contain the same information; the Lyndon words may be interpreted
+        as forming a basis for the free Lie algebra. (And this basis in terms of the Lyndon words is *not* the same as
+        the Lyndon basis!) The representation in this basis is what is computed when :code:`mode == "words"`. The order
+        of the coefficients corresponds to the lexicographic ordering of the Lyndon words.
     """
     # noinspection PyUnresolvedReferences
     return _LogSignatureFunction.apply(path, depth, stream, basepoint, mode)
@@ -329,7 +316,7 @@ def _mobius_function(x):
 
 def logsignature_channels(in_channels, depth):
     # type: (int, int) -> int
-    """Computes the number of output channels from a logsignature call with :code:`mode in ("duval", "lyndon", "lex")`.
+    """Computes the number of output channels from a logsignature call with :code:`mode in ("words", "brackets")`.
 
     Arguments:
         in_channels (int): The number of channels in the input; that is, the dimension of the space that the input path

@@ -1,20 +1,22 @@
 #include <torch/extension.h>
 #include <Python.h>   // PyCapsule
-#include <algorithm>  // std::stable_sort
+#include <algorithm>  // std::binary_search, std::stable_sort
 #include <cmath>      // pow
 #include <cstdint>    // int64_t
+#include <set>        // std:multiset
 #include <stdexcept>  // std::invalid_argument
 #include <tuple>      // std::tie, std::tuple
 #include <utility>    // std::pair
 #include <vector>     // std::vector
 
-#include "signature.hpp"  // signatory::depth_type, signatory::Mode
+#include "signature.hpp"  // signatory::depth_type, signatory::LogSignatureMode
 
 // TODO: documentation: when to use signature / logsignature, time augmentation vs stream
 // TODO: check logsignature_backwards; sort out projection
 // TODO: signature_jacobian, logsignature_jacobian
 // TODO: logsignature tests. Make sure memory doesn't get blatted tests.
 // TODO: figure out how to mark in-place operations on the output as preventing backwards
+// TODO: split up this file a bit: signature vs logsignature at least
 
 // TODO: numpy, tensorflow
 // TODO: CUDA?
@@ -529,53 +531,187 @@ namespace signatory {
             }                                                                                                  \
         }
 
-        void emplace_word_to_index(const std::vector<int64_t>& word,
-                                   std::vector<std::pair<depth_type, int64_t>>& out_indices,
-                                   int64_t num_channels) {
-            depth_type depth = word.size();
+        // Implements Duval's algorithm for generating Lyndon words
+        // J.-P. Duval, Theor. Comput. Sci. 1988, doi:10.1016/0304-3975(88)90113-2.
+        void lyndon_word_generator(int64_t num_channels,
+                                   depth_type max_depth,
+                                   std::vector<std::vector<std::vector<int64_t>>>& lyndon_words) {
+            /*                                             \------------------/
+             *                                             A single Lyndon word
+             *
+             *                                 \-------------------------------/
+             *                  All Lyndon words of a particular depth, ordered lexicographically
+             *
+             *                     \--------------------------------------------/
+             *                    All Lyndon words of all depths, ordered by depth
+             *
+             * Duval's algorithm produces words of the same depth in lexicographic order, but words of different depths
+             * are muddled together. So in order to recover the full lexicographic order we put them into a bin
+             * corresponding to the depth of each generated word.
+            */
+
+            lyndon_words.reserve(max_depth);
+
+            std::vector<int64_t> word;
+            word.reserve(max_depth);
+            word.push_back(-1);
+
+            while (word.size()) {
+                word.back() += 1;
+                lyndon_words[word.size() - 1].push_back(word);
+                int64_t pos = 0;
+                while (static_cast<int64_t>(word.size()) < max_depth) {
+                    word.push_back(word[pos]);
+                    ++pos;
+                }
+                while (word.size() && word.back() == num_channels - 1) {
+                    word.pop_back();
+                }
+            }
+        }
+
+        // Converts a word to the corresponding index for which channel that corresponds to in the output tensor, with
+        // one caveat: it does not include the offset corresponding to the number of words of smaller lengths. In
+        // principle this could be added on easily here (in Python-pseudocode it's just
+        // index += sum(num_channels ** i for i in range(1, len(word)))
+        // ) but since this function is likely to be called lots of times on words of the same length, we avoid
+        // repetition by demanding that the caller add the offset on.
+        int64_t word_to_index(const std::vector<int64_t>& word, int64_t num_channels) {
             int64_t index = 0;
             int64_t current_stride = 1;
             for (auto word_index = word.rbegin(); word_index != word.rend(); ++word_index) {
                 index += *word_index * current_stride;
                 current_stride *= num_channels;
             }
-            out_indices.emplace_back(depth - 1, index);  // -1 because the signature-depth-one elements are at index
-                                                         // 0 in the vector of tensors.
+            return index;
         }
 
-        // Implements Duval's algorithm for generating Lyndon words
-        // J.-P. Duval, Theor. Comput. Sci. 1988, doi:10.1016/0304-3975(88)90113-2.
-        // credit to
-        // https://gist.github.com/dvberkel/1950267
-        // for inspiration
-        void lyndon_word_generator(int64_t num_channels,
-                                   depth_type max_depth,
-                                   std::vector<std::pair<depth_type, int64_t>>& out_indices,
-                                   Mode mode) {
-            int64_t num_channels_minus_one = num_channels - 1;
-            std::vector<int64_t> word;
-            word.reserve(max_depth);
-            word.push_back(-1);
+        // Computes the transforms that need to be applied to the coefficients of the Lyndon words to produce the
+        // coefficients of the Lyndon basis.
+        // The transforms are returned in the transforms argument.
+        void lyndon_words_to_lyndon_basis(const std::vector<std::vector<std::vector<int64_t>>>& lyndon_words,
+                                          std::vector<std::pair<int64_t, int64_t>>& transforms,
+                                          int64_t num_channels) {
+            // Don't need the signed-ness of depth_type here so we use this instead
+            using size_type = decltype(lyndon_words)::size_type;
 
-            while (word.size() != 0) {
-                word.back() += 1;
-                emplace_word_to_index(word, out_indices, num_channels);
-                int64_t pos = 0;
-                while (static_cast<int64_t>(word.size()) < max_depth) {
-                    word.push_back(word[pos]);
-                    ++pos;
-                }
-                while (word.size() && word.back() == num_channels_minus_one) {
-                    word.pop_back();
+            // First initialise the output vector
+            size_type number_of_lyndon_words = 0;
+            for (const auto& depth_class : lyndon_words) {
+                number_of_lyndon_words += depth_class.size();
+            }
+            transforms.reserve(number_of_lyndon_words);
+
+            // Now figure out which Lyndon words are anagrams of each other
+
+            // Gosh this is starting to look complicated.
+            std::vector<std::map<std::multiset<int64_t>, std::vector<std::vector<int64_t>>>> lyndon_anagrams;
+            //                   \--------------------/              \------------------/
+            //                Multiset of letters in word         A single Lyndon word
+            //
+            //                                           \-------------------------------/
+            //                         All Lyndon words of a particular anagram class, ordered lexicographically
+            //
+            //          \-----------------------------------------------------------------/
+            //                        All anagram classes of a particular depth
+            //
+            //\----------------------------------------------------------------------------/
+            //                      Depth classes; ordered by depth
+            lyndon_anagrams.reserve(lyndon_words.size());
+
+            for (size_type depth_index = 0; depth_index < lyndon_words.size(); ++depth_index) {
+                auto& depth_class = lyndon_anagrams[depth_index];
+                for (const auto& lyndon_word : lyndon_words[depth_index]) {
+                    depth_class[std::multiset(lyndon_word)].push_back(lyndon_word);
                 }
             }
 
-            if (mode == Mode::Lex) {
-                std::stable_sort(out_indices.begin(),
-                                 out_indices.end(),
-                                 [] (std::pair<depth_type, int64_t> depth_index_pair1,
-                                     std::pair<depth_type, int64_t> depth_index_pair2)
-                                    {return depth_index_pair1.first < depth_index_pair2.first;});
+            // Now compute the standard bracketing of each Lyndon word
+
+            // TODO: compute brackets
+
+            // Now unpack each bracket to find the coefficients we're interested in. This takes quite a lot of work.
+
+            std::map<std::vector<int64_t>, std::map<std::vector<int64_t>, int64_t>> bracket_expansion_cache;
+            //                                      \------------------/  \-----/
+            //                             A (possibly non-Lyndon) word    and its coefficient in the expansion of...
+            //       \------------------/
+            //         ...the standard bracketing of this Lyndon word
+            for (int64_t channel = 0; channel < num_channels; ++channel) {
+                bracket_expansion_cache[std::vector<int64_t> {channel}] = {{channel, 1}};
+            }
+
+            int64_t offset = 0;  // The offset is the offset specified in the word_to_index function.
+            int64_t next_offset = num_channels;
+            // Start at 1 because depth_index == 0 corresponds to the "bracketed words without brackets", at the very
+            // lowest level - so we can't decompose them into two pieces yet.
+            // This does mean that lyndon_brackets[0] is essentially meangingless, but we keep it around to keep the
+            // indices in sync with everything else.
+            for (size_type depth_index = 1; depth_index < lyndon_brackets.size(); ++depth) {
+                const auto& depth_class_words = lyndon_words[depth_index];
+                const auto& depth_class_brackets = lyndon_brackets[depth_index];
+                const auto& depth_class_anagrams = lyndon_anagrams[depth_index];
+
+                for (size_type elem_index = 0; elem_index < depth_class_brackets.size(); ++elem_index) {
+                    const auto& lyndon_word = depth_class_words[elem_index];
+                    const auto& lyndon_bracket = depth_class_brackets[elem_index];
+                    const auto& anagram_class  = depth_class_anagrams[std::multiset(lyndon_word)];
+
+                    // Record the coefficients of each word in the expansion
+                    std::map<std::vector<int64_t>, int64_t> bracket_expansion_map;
+
+                    // Iterate over every word in the expansion of the first element of the bracket
+                    for (const auto& word_coeff_first : bracket_expansion_cache[lyndon_bracket.first()]) {
+                        const std::vector<int64_t>& word_first = word_coeff_first.first();
+                        int64_t coeff_first = word_coeff_first.second();
+
+                        // And over every word in the expansion of the second element of the bracket
+                        for (const auto& word_coeff_second : bracket_expansion_cache[lyndon_bracket.second()]) {
+                            const std::vector<int64_t>& word_second = word_coeff_second.first();
+                            int64_t coeff_second = word_coeff_second.second();
+
+                            // And put them together to get every word in the expansion of the bracket
+                            std::vector<int64_t> first_second;
+                            std::vector<int64_t> second_first;
+                            first_second.reserve(word_first.size() + word_second.size());
+                            first_second.insert(first_second.end(), word_first.begin(), word_first.end());
+                            first_second.insert(first_second.end(), word_second.begin(), word_second.end());
+                            second_first.reserve(word_first.size() + word_second.size());
+                            second_first.insert(second_first.end(), word_first.begin(), word_first.end());
+                            second_first.insert(second_first.end(), word_second.begin(), word_second.end());
+
+                            // If depth_index == lyndon_brackets.size() - 1 then we don't need to record the
+                            // coefficients of non-Lyndon words.
+                            if (depth_index < lyndon_brackets.size() - 1 ||
+                                std::binary_search(anagram_class.begin(), anagram_class.end(), word)) {
+
+                                int64_t product = coeff_first * coeff_second;
+
+                                bracket_expansion_map[first_second] += product;
+                                bracket_expansion_map[second_first] -= product;
+                            }
+                        }
+                    }
+
+                    // Record the transformations we're interested in
+                    for (const auto& word_coeff : bracket_expansion_map) {
+                        const std::vector<int64_t>& word = word_coeff.first();
+                        int64_t coeff = word_coeff.second();
+                        // Filter out non-Lyndon words
+                        if (depth_index == lyndon_brackets.size() - 1 ||
+                            std::binary_search(anagram_class.begin(), anagram_class.end(), word)) {
+
+                            transforms.emplace_back(offset + word_to_index(word), coeff);
+                        }
+                    }
+
+                    // If depth_index == lyndon_brackets.size() - 1 then we don't need to record what we've found
+                    if (depth_index < lyndon_brackets.size() - 1) {
+                        bracket_expansion_cache[lyndon_word] = std::move(bracket_expansion_map);
+                    }
+                }
+                offset += num_words_at_depth;
+                next_offset *= num_channels;
             }
         }
     }  // namespace signatory::detail
