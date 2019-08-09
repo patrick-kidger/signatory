@@ -3,7 +3,7 @@
 #include "signature.hpp"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    py::enum_<signatory::Mode>(m, "_LogSignatureMode")
+    py::enum_<signatory::LogSignatureMode>(m, "_LogSignatureMode")
             .value("Expand", signatory::LogSignatureMode::Expand)
             .value("Brackets", signatory::LogSignatureMode::Brackets)
             .value("Words", signatory::LogSignatureMode::Words);
