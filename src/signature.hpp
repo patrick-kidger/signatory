@@ -2,9 +2,8 @@
 #define TORCHTEST_SRC_SIGNATURE_HPP
 
 #include <torch/extension.h>
-#include <Python.h>   // PyCapsule
-#include <cstdint>    // int64_t
-#include <tuple>      // std::tuple
+#include <cstdint>      // int64_t
+#include <tuple>        // std::tuple
 #include <type_traits>  // std::make_signed
 
 
@@ -22,7 +21,7 @@ namespace signatory {
     signature_forward(torch::Tensor path, size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value);
 
     std::tuple<torch::Tensor, torch::Tensor>
-    signature_backward(torch::Tensor grad_out, py::object backwards_info_capsule, bool clone=true);
+    signature_backward(torch::Tensor grad_out, py::object backwards_info_capsule, bool clone = true);
 
     std::tuple<torch::Tensor, py::object>
     logsignature_forward(torch::Tensor path, size_type depth, bool stream, bool basepoint,

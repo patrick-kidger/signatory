@@ -11,13 +11,16 @@
 
 #include "signature.hpp"  // signatory::size_type, signatory::LogSignatureMode
 
-// TODO: logsignature recording transformation
-// TODO: documentation: when to use signature / logsignature, time augmentation vs stream
-// TODO: fix logsignature_backwards
-// TODO: signature_jacobian, logsignature_jacobian
 // TODO: logsignature tests. Make sure memory doesn't get blatted tests.
-// TODO: figure out how to mark in-place operations on the output as preventing backwards
+// TODO: rationalise backwards_info. Can we combine out_vector and signature_vector?
+// TODO: rename out_* to signature_*
+// TODO: have a few less macros...
+// TODO: switch to negative indexing axes
+// TODO: logsignature memory for transformation
+// TODO: check in-place operations get caught
 // TODO: split up this file a bit: signature vs logsignature at least
+// TODO: signature_jacobian, logsignature_jacobian
+// TODO: documentation: when to use signature / logsignature, time augmentation vs stream
 
 // TODO: numpy, tensorflow
 // TODO: CUDA?
@@ -44,6 +47,7 @@ namespace signatory {
                 n_output_dims{stream ? 3 : 2},
                 depth{depth},
                 reciprocals{torch::ones({depth - 1}, opts)},
+                stream{stream},
                 basepoint{basepoint}
             {
                 if (depth > 1) {
@@ -61,6 +65,7 @@ namespace signatory {
             int64_t n_output_dims;
             size_type depth;
             torch::Tensor reciprocals;
+            bool stream;
             bool basepoint;
         };
 
@@ -89,8 +94,8 @@ namespace signatory {
             }
         }
 
-        torch::Tensor stream_transpose(torch::Tensor tensor, bool stream) {
-            if (stream) {
+        torch::Tensor transpose(torch::Tensor tensor, const SigSpec& sigspec) {
+            if (sigspec.stream) {
                 // convert from (stream, channel, batch) to (batch, stream, channel)
                 return tensor.transpose(1, 2).transpose(0, 1);
             }
@@ -100,8 +105,8 @@ namespace signatory {
             }
         }
 
-        torch::Tensor stream_transpose_reverse(torch::Tensor tensor, bool stream) {
-            if (stream) {
+        torch::Tensor transpose_reverse(torch::Tensor tensor, const SigSpec& sigspec) {
+            if (sigspec.stream) {
                 // convert from (batch, stream, channel) to (stream, channel, batch)
                 return tensor.transpose(0, 1).transpose(1, 2);
             }
@@ -125,18 +130,24 @@ namespace signatory {
         }
 
         // forced inline
-        #define COMPUTE_MULTDIV_INNER(tensor_at_depth_to_calculate, arg1, arg2, depth_to_calculate, multiplier,  \
-                                      sigspec) {                                                                 \
-            for (size_type j = 0, k = depth_to_calculate - 1; j < depth_to_calculate; ++j, --k) {               \
-                /* loop invariant:                                                                               \
-                   j + k = depth_to_calculate - 1 */                                                             \
-                torch::Tensor view_out = tensor_at_depth_to_calculate.view({arg1[j].size(0),                     \
-                                                                            arg2[k].size(0),                     \
-                                                                            sigspec.batch_size});                \
-                view_out.addcmul_(arg2[k].unsqueeze(0),  /* += (this tensor times */                             \
-                                  arg1[j].unsqueeze(1),  /* this tensor times     */                             \
-                                  multiplier);           /* this scalar)          */                             \
-            }                                                                                                    \
+        #define SHOULD_INVERT(index) (((index) % 2) == 0)
+
+        // forced inline
+        #define NO_INVERT(index) false
+
+        // forced inline
+        #define COMPUTE_MULTDIV_INNER(tensor_at_depth_to_calculate, arg1, arg2, depth_to_calculate, invert,  \
+                                      sigspec) {                                                             \
+            for (size_type j = 0, k = depth_to_calculate - 1; j < depth_to_calculate; ++j, --k) {            \
+                /* loop invariant:                                                                           \
+                   j + k = depth_to_calculate - 1 */                                                         \
+                torch::Tensor view_out = tensor_at_depth_to_calculate.view({arg1[j].size(0),                 \
+                                                                            arg2[k].size(0),                 \
+                                                                            sigspec.batch_size});            \
+                view_out.addcmul_(arg2[k].unsqueeze(0), /* += (this tensor times */                          \
+                                  arg1[j].unsqueeze(1), /*     this tensor times */                          \
+                                  invert(k) ? -1 : 1);  /*     this scalar)      */                          \
+            }                                                                                                \
         }
 
         // Computes the tensor product of two members of the tensor algebra. It's not completely generic, as it imposes
@@ -147,12 +158,12 @@ namespace signatory {
         //
         // if rightret==false then it returns the result in arg1, and arg2 is left unchanged
         // if rightret==true then it returns the result in arg2, and arg1 is left unchanged
-        void compute_mult(std::vector<torch::Tensor>& arg1, std::vector<torch::Tensor>& arg2, const SigSpec& sigspec,
-                          bool rightret) {
+        void compute_mult(std::vector<torch::Tensor>& arg1, std::vector<torch::Tensor>& arg2, bool rightret,
+                          const SigSpec& sigspec) {
             for (size_type depth_to_calculate = sigspec.depth - 1; depth_to_calculate >= 0; --depth_to_calculate) {
                 torch::Tensor tensor_at_depth_to_calculate = (rightret ? arg2 : arg1)[depth_to_calculate];
 
-                COMPUTE_MULTDIV_INNER(tensor_at_depth_to_calculate, arg1, arg2, depth_to_calculate, 1, sigspec)
+                COMPUTE_MULTDIV_INNER(tensor_at_depth_to_calculate, arg1, arg2, depth_to_calculate, NO_INVERT, sigspec)
 
                 tensor_at_depth_to_calculate += (rightret ? arg1 : arg2)[depth_to_calculate];
             }
@@ -178,40 +189,35 @@ namespace signatory {
         // Retains information needed for the backwards pass.
         struct BackwardsInfo{
             BackwardsInfo(SigSpec&& sigspec, std::vector<torch::Tensor>&& out_vector, torch::Tensor out,
-                          torch::Tensor path_increments, bool stream) :
+                          torch::Tensor path_increments) :
                 sigspec{sigspec},
                 out_vector{out_vector},
                 out{out},
-                path_increments{path_increments},
-                stream{stream}
+                path_increments{path_increments}
             {};
 
             void set_logsignature_data(std::vector<torch::Tensor>&& signature_vector_,
-                                       std::vector<torch::Tensor>&& logsignature_vector_,
                                        std::vector<std::tuple<int64_t, int64_t, int64_t>>&& transforms_,
                                        LogSignatureMode mode_,
-                                       int64_t logsig_channels_) {
+                                       int64_t logsignature_channels_) {
                 signature_vector = signature_vector_;
-                logsignature_vector = logsignature_vector_;
                 transforms = transforms_;
                 mode = mode_;
-                logsig_channels = logsig_channels_;
+                logsignature_channels = logsignature_channels_;
             }
 
             SigSpec sigspec;
             std::vector<torch::Tensor> out_vector;
             torch::Tensor out;
             torch::Tensor path_increments;
-            bool stream;
 
             std::vector<torch::Tensor> signature_vector;  // will be the same as out_vector when computing logsignatures
                                                           // with stream==true. But we provide a separate vector here
                                                           // for a consistent interface with the stream==false case as
                                                           // well.
-            std::vector<torch::Tensor> logsignature_vector;
             std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
             LogSignatureMode mode;
-            int64_t logsig_channels;
+            int64_t logsignature_channels;
         };
 
         constexpr auto backwards_info_capsule_name = "signatory.BackwardsInfoCapsule";
@@ -219,7 +225,7 @@ namespace signatory {
         // Frees the memory consumed retaining information for the backwards pass. The BackwardsInfo object is wrapped
         // into a PyCapsule.
         void BackwardsInfoCapsuleDestructor(PyObject* capsule) {
-                delete static_cast<BackwardsInfo*>(PyCapsule_GetPointer(capsule, backwards_info_capsule_name));
+            delete static_cast<BackwardsInfo*>(PyCapsule_GetPointer(capsule, backwards_info_capsule_name));
         }
 
         // Unwraps a capsule to get at the BackwardsInfo object
@@ -228,15 +234,14 @@ namespace signatory {
                     PyCapsule_GetPointer(backwards_info_capsule.ptr(), backwards_info_capsule_name));
         }
 
-        // Checks the arguments for the backwards pass. Only grad_out is really checked to make sure it is as expected
-        // The objects we get from the PyCapsule-wrapped BackwardsInfo object are just assumed to be correct.
-        void checkargs_backward(torch::Tensor grad_out, const SigSpec& sigspec, bool stream,
-                                int64_t num_channels = -1) {
+        // Checks the arguments for the backwards pass. Only grad_out is checked to make sure it is as expected.
+        // The objects we get from the PyCapsule-wrapped BackwardsInfo object are assumed to be correct.
+        void checkargs_backward(torch::Tensor grad_out, const SigSpec& sigspec, int64_t num_channels = -1) {
             if (num_channels == -1) {
                 num_channels = sigspec.output_channels;
             }
 
-            if (stream) {
+            if (sigspec.stream) {
                 if (grad_out.ndimension() != 3) {
                     throw std::invalid_argument("Gradient must be a 3-dimensional tensor, with dimensions "
                                                 "corresponding to (batch, stream, channel) respectively.");
@@ -258,9 +263,6 @@ namespace signatory {
                 }
             }
         }
-
-        // forced inline
-        #define SHOULD_INVERT(index) (((index) % 2) == 0)
 
         /************************************************/
         /* Stuff that's only used for signature_forward */
@@ -329,8 +331,8 @@ namespace signatory {
             for (size_type depth_to_calculate = sigspec.depth - 1; depth_to_calculate >= 0; --depth_to_calculate) {
                 torch::Tensor tensor_at_depth_to_calculate = arg1[depth_to_calculate];
 
-                COMPUTE_MULTDIV_INNER(tensor_at_depth_to_calculate, arg1, arg2, depth_to_calculate,
-                                      SHOULD_INVERT(k) ? -1 : 1, sigspec)  // TODO: SHOULD_INVERT as a higher order macro
+                COMPUTE_MULTDIV_INNER(tensor_at_depth_to_calculate, arg1, arg2, depth_to_calculate, SHOULD_INVERT,
+                                      sigspec)
 
                 if (SHOULD_INVERT(depth_to_calculate)) {
                     tensor_at_depth_to_calculate -= arg2[depth_to_calculate];
@@ -353,7 +355,7 @@ namespace signatory {
         // overwriting whatever is already present.
         void compute_mult_backward(std::vector<torch::Tensor>& grad_arg1, std::vector<torch::Tensor>& grad_arg2,
                                    const std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
-                                   const SigSpec& sigspec, bool add_not_copy) {
+                                   bool add_not_copy, const SigSpec& sigspec) {
             for (size_type depth_to_calculate = 0; depth_to_calculate < sigspec.depth; ++depth_to_calculate) {
                 torch::Tensor grad_tensor_at_depth_to_calculate = grad_arg2[depth_to_calculate];
 
@@ -449,8 +451,8 @@ namespace signatory {
         //
         // The result is returned in arg1, and arg2 is left unchanged.
         void compute_mult_partial(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
-                                  const SigSpec& sigspec, torch::Scalar scalar_term_value,
-                                  size_type top_terms_to_skip) {
+                                  torch::Scalar scalar_term_value, size_type top_terms_to_skip,
+                                  const SigSpec& sigspec) {
             for (size_type depth_to_calculate = sigspec.depth - top_terms_to_skip - 1; depth_to_calculate >= 0;
                  --depth_to_calculate) {
                 torch::Tensor tensor_at_depth_to_calculate = arg1[depth_to_calculate];
@@ -458,34 +460,9 @@ namespace signatory {
                 // corresponding to the zero scalar assumed to be associated with arg2
                 tensor_at_depth_to_calculate.zero_();
 
-                COMPUTE_MULTDIV_INNER(tensor_at_depth_to_calculate, arg1, arg2, depth_to_calculate, 1, sigspec)
+                COMPUTE_MULTDIV_INNER(tensor_at_depth_to_calculate, arg1, arg2, depth_to_calculate, NO_INVERT, sigspec)
 
                 tensor_at_depth_to_calculate.add_(arg2[depth_to_calculate], scalar_term_value);
-            }
-        }
-
-        // computes arg1 \otimes -arg2, but only partially, in the same manner as compute_mult_partial. The scalar term
-        // of arg1 is taken to be scalar_term_value; the scalar term of arg2 is taken to be zero.
-        // arg2 is left unchanged, arg1 is modified to contain the result.
-        void compute_div_partial(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
-                                 const SigSpec& sigspec, torch::Scalar scalar_term_value,
-                                 size_type top_terms_to_skip) {
-            for (size_type depth_to_calculate = sigspec.depth - top_terms_to_skip - 1; depth_to_calculate >= 0;
-                 --depth_to_calculate) {
-                torch::Tensor tensor_at_depth_to_calculate = arg1[depth_to_calculate];
-
-                // corresponding to the zero scalar assumed to be associated with arg2
-                tensor_at_depth_to_calculate.zero_();
-
-                COMPUTE_MULTDIV_INNER(tensor_at_depth_to_calculate, arg1, arg2, depth_to_calculate,
-                                      SHOULD_INVERT(k) ? -1 : 1, sigspec)  // TODO: SHOULD_INVERT needs to used in a higher-order macro
-
-                if (SHOULD_INVERT(depth_to_calculate)) {
-                    tensor_at_depth_to_calculate.sub_(arg2[depth_to_calculate], scalar_term_value);
-                }
-                else {
-                    tensor_at_depth_to_calculate.add_(arg2[depth_to_calculate], scalar_term_value);
-                }
             }
         }
 
@@ -497,9 +474,9 @@ namespace signatory {
                                            std::vector<torch::Tensor>& grad_arg2,
                                            const std::vector<torch::Tensor>& arg1,
                                            const std::vector<torch::Tensor>& arg2,
-                                           const SigSpec& sigspec,
                                            torch::Scalar scalar_value_term,
-                                           size_type top_terms_to_skip) {
+                                           size_type top_terms_to_skip,
+                                           const SigSpec& sigspec) {
             for (size_type depth_to_calculate = 0; depth_to_calculate < sigspec.depth - top_terms_to_skip;
                  ++depth_to_calculate) {
                 torch::Tensor grad_tensor_at_depth_to_calculate = grad_arg1[depth_to_calculate];
@@ -514,32 +491,40 @@ namespace signatory {
         }
 
         // forced inline
-        #define LOGSIG_INVERT(sigspec, depth_index) \
+        #define LOGSIG_INVERT(depth_index, sigspec) \
             ((SHOULD_INVERT(depth_index) ? -1 : 1) * sigspec.reciprocals[depth_index]).item()
 
         // forced inline
-        #define LOGSIGNATURE_COMPUTATION(logsignature_vector, signature_vector, sigspec) {       \
-            for (size_type depth_index = sigspec.depth - 3; depth_index >= 0; --depth_index) {   \
-                compute_mult_partial(logsignature_vector, signature_vector, sigspec,             \
-                                     LOGSIG_INVERT(sigspec, depth_index), depth_index + 1);      \
-            }                                                                                    \
-            compute_mult_partial(logsignature_vector, signature_vector, sigspec, 1, 0);          \
+        #define LOGSIGNATURE_COMPUTATION_INNER(logsignature_vector, signature_vector, lower_depth_index, sigspec) {  \
+            for (size_type depth_index = sigspec.depth - 3; depth_index >= lower_depth_index; --depth_index) {       \
+                compute_mult_partial(logsignature_vector, signature_vector, LOGSIG_INVERT(depth_index, sigspec),     \
+                                     depth_index + 1, sigspec);                                                      \
+            }                                                                                                        \
         }
 
-
         // forced inline
-        // TODO: This is wrong!
-        #define LOGSIGNATURE_COMPUTATION_BACKWARD(grad_logsig_vector, grad_sig_vector, logsignature_vector,    \
-                                                  signature_vector, sigspec) {                                 \
-            compute_div_partial(logsignature_vector, signature_vector, sigspec, 1, 0);                         \
-            compute_mult_partial_backward(grad_logsig_vector, grad_sig_vector, logsignature_vector,            \
-                                          signature_vector, sigspec, 1, 0);                                    \
-            for (size_type depth_index = 0; depth_index < sigspec.depth - 2; ++depth_index) {                  \
-                torch::Scalar invert = LOGSIG_INVERT(sigspec, depth_index);                                    \
-                compute_div_partial(logsignature_vector, signature_vector, sigspec, invert, depth_index + 1);  \
-                compute_mult_partial_backward(grad_logsig_vector, grad_sig_vector, logsignature_vector,        \
-                                              signature_vector, sigspec, invert, depth_index + 1);             \
-            }                                                                                                  \
+        #define LOGSIGNATURE_COMPUTATION(logsignature_vector, signature_vector, sigspec) {     \
+            LOGSIGNATURE_COMPUTATION_INNER(logsignature_vector, signature_vector, 0, sigspec)  \
+            compute_mult_partial(logsignature_vector, signature_vector, 1, 0, sigspec);        \
+        }
+
+        // TODO: depth_index_two -> depth_index when un-macroing this
+        // forced inline
+        #define LOGSIGNATURE_COMPUTATION_BACKWARD(grad_logsignature_vector, grad_signature_vector, scratch_vector,  \
+                                                  signature_vector, scratch, scratch_init, sigspec) {               \
+            LOGSIGNATURE_COMPUTATION_INNER(scratch_vector, signature_vector, 0, sigspec)                            \
+            compute_mult_partial_backward(grad_logsignature_vector, grad_signature_vector, scratch_vector,          \
+                                          signature_vector, 1, 0, sigspec);                                         \
+            for (size_type depth_index_two = 0; depth_index_two < sigspec.depth - 2; ++depth_index_two) {           \
+                scratch.copy_(scratch_init * LOGSIG_INVERT(sigspec.depth - 2, sigspec));                            \
+                /* Yuck, this is O(depth^2). Sadly I don't see a way to compute this without either that or saving  \
+                 * intermediate results, which is in some sense even worse.                                         \
+                 */                                                                                                 \
+                LOGSIGNATURE_COMPUTATION_INNER(scratch_vector, signature_vector, depth_index_two + 1, sigspec)      \
+                compute_mult_partial_backward(grad_logsignature_vector, grad_signature_vector, scratch_vector,      \
+                                              signature_vector, LOGSIG_INVERT(depth_index_two, sigspec),            \
+                                              depth_index_two + 1, sigspec);                                        \
+            }                                                                                                       \
         }
 
         // forced inline
@@ -572,32 +557,28 @@ namespace signatory {
             std::map<std::vector<int64_t>, int64_t> expansion;
         };
 
-        // Note: sometimes a Lyndon word will be represented by a LyndonWord instance, sometimes it will be represented
-        // by a std::vector<int64_t>. This is because the mechanism for finding the standard bracket of a Lyndon word
-        // gives the form of the two sub-Lyndon words as std::vector<int64_t>, so we are forced to use that
-        // representation sometimes.
         struct LyndonWord {
             // Constructor for lyndon_word_generator (with extra==false) and
             // constructor for lyndon_bracket_generator for the depth == 1 words (with extra==true).
-            LyndonWord(const std::vector<int64_t>& word, int64_t num_channels, bool extra)
+            LyndonWord(const std::vector<int64_t>& word, bool extra, const SigSpec& sigspec)
             {
-                init(word, num_channels, extra, nullptr, nullptr);
+                init(word, extra, nullptr, nullptr, sigspec);
             };
             // Constructor for lyndon_bracket_generator for the depth > 1 words.
-            LyndonWord(int64_t num_channels, LyndonWord* first_child, LyndonWord* second_child)
+            LyndonWord(LyndonWord* first_child, LyndonWord* second_child, const SigSpec& sigspec)
             {
                 std::vector<int64_t> word;
                 CONCAT_WORDS(first_child->extra->word, second_child->extra->word, word)
-                init(word, num_channels, true, first_child, second_child);
+                init(word, true, first_child, second_child, sigspec);
             };
 
-            void init(const std::vector<int64_t>& word, int64_t num_channels, bool extra_, LyndonWord* first_child,
-                      LyndonWord* second_child) {
+            void init(const std::vector<int64_t>& word, bool extra_, LyndonWord* first_child, LyndonWord* second_child,
+                      const SigSpec& sigspec) {
 
                 int64_t current_stride = 1;
                 for (auto word_index = word.rbegin(); word_index != word.rend(); ++word_index) {
                     tensor_algebra_index += *word_index * current_stride;
-                    current_stride *= num_channels;
+                    current_stride *= sigspec.input_channels;
                 }
                 // We still need to add on to tensor_algebra_index the offset corresponding to number of all smaller
                 // words.
@@ -617,9 +598,9 @@ namespace signatory {
             std::unique_ptr<ExtraLyndonInformation> extra {nullptr};
         };
 
-        void set_indices(std::vector<std::vector<LyndonWord>>& lyndon_words, int64_t num_channels) {
+        void set_indices(std::vector<std::vector<LyndonWord>>& lyndon_words, const SigSpec& sigspec) {
             int64_t tensor_algebra_offset = 0;
-            int64_t num_words = num_channels;
+            int64_t num_words = sigspec.input_channels;
             size_type compressed_offset = 0;
             for (auto& depth_class : lyndon_words) {
                 for (size_type compressed_index = 0;
@@ -630,7 +611,7 @@ namespace signatory {
                     lyndon_word.compressed_index = compressed_offset + compressed_index;
                 }
                 tensor_algebra_offset += num_words;
-                num_words *= num_channels;
+                num_words *= sigspec.input_channels;
                 compressed_offset += depth_class.size();
             }
         }
@@ -652,32 +633,29 @@ namespace signatory {
              * corresponding to the depth of each generated word.
             */
 
-            int64_t num_channels = sigspec.input_channels;
-            size_type max_depth = sigspec.depth;
-
-            lyndon_words.reserve(max_depth);
-            for (size_type depth_index = 0; depth_index < max_depth; ++depth_index) {
+            lyndon_words.reserve(sigspec.depth);
+            for (size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index) {
                 lyndon_words.emplace_back();
             }
 
             std::vector<int64_t> word;
-            word.reserve(max_depth);
+            word.reserve(sigspec.depth);
             word.push_back(-1);
 
             while (word.size()) {
                 ++word.back();
-                lyndon_words[word.size() - 1].emplace_back(word, num_channels, false);
+                lyndon_words[word.size() - 1].emplace_back(word, false, sigspec);
                 int64_t pos = 0;
-                while (word.size() < static_cast<u_size_type>(max_depth)) {
+                while (word.size() < static_cast<u_size_type>(sigspec.depth)) {
                     word.push_back(word[pos]);
                     ++pos;
                 }
-                while (word.size() && word.back() == num_channels - 1) {
+                while (word.size() && word.back() == sigspec.input_channels - 1) {
                     word.pop_back();
                 }
             }
 
-            set_indices(lyndon_words, num_channels);
+            set_indices(lyndon_words, sigspec);
         }
 
 
@@ -688,20 +666,17 @@ namespace signatory {
         }
 
         void lyndon_bracket_generator(std::vector<std::vector<LyndonWord>>& lyndon_words, const SigSpec& sigspec) {
-            int64_t num_channels = sigspec.input_channels;
-            size_type max_depth = sigspec.depth;
-
-            lyndon_words.reserve(max_depth);
-            for (size_type depth_index = 0; depth_index < max_depth; ++depth_index) {
+            lyndon_words.reserve(sigspec.depth);
+            for (size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index) {
                 lyndon_words.emplace_back();
             }
 
-            lyndon_words[0].reserve(num_channels);
-            for (int64_t channel_index = 0; channel_index < num_channels; ++channel_index) {
-                lyndon_words[0].emplace_back(std::vector<int64_t> {channel_index}, num_channels, true);
+            lyndon_words[0].reserve(sigspec.input_channels);
+            for (int64_t channel_index = 0; channel_index < sigspec.input_channels; ++channel_index) {
+                lyndon_words[0].emplace_back(std::vector<int64_t> {channel_index}, true, sigspec);
             }
 
-            for (size_type target_depth_index = 1; target_depth_index < max_depth; ++target_depth_index) {
+            for (size_type target_depth_index = 1; target_depth_index < sigspec.depth; ++target_depth_index) {
                 auto& target_depth_class = lyndon_words[target_depth_index];
 
                 auto& depth_class1 = lyndon_words[0];
@@ -710,7 +685,7 @@ namespace signatory {
                     auto index_start = std::upper_bound(depth_class2.begin(), depth_class2.end(), elem,
                                                         compare_lyndon_words);
                     for (auto elemptr = index_start; elemptr != depth_class2.end(); ++elemptr) {
-                        target_depth_class.emplace_back(num_channels, &elem, &*elemptr);
+                        target_depth_class.emplace_back(&elem, &*elemptr, sigspec);
                     }
                 }
 
@@ -725,7 +700,7 @@ namespace signatory {
                         auto index_end = std::upper_bound(index_start, depth_class2.end(), *elem.extra->second_child,
                                                           compare_lyndon_words);
                         for (auto elemptr = index_start; elemptr != index_end; ++elemptr) {
-                            target_depth_class.emplace_back(num_channels, &elem, &*elemptr);
+                            target_depth_class.emplace_back(&elem, &*elemptr, sigspec);
                         }
                     }
                 }
@@ -733,7 +708,7 @@ namespace signatory {
                 std::sort(target_depth_class.begin(), target_depth_class.end(), compare_lyndon_words);
             }
 
-            set_indices(lyndon_words, num_channels);
+            set_indices(lyndon_words, sigspec);
         }
 
         struct CompareWords {
@@ -761,15 +736,23 @@ namespace signatory {
         // The transforms are returned in the transforms argument.
         void lyndon_words_to_lyndon_basis(std::vector<std::vector<LyndonWord>>& lyndon_words,
                                           std::vector<std::tuple<int64_t, int64_t, int64_t>>& transforms,
-                                          int64_t num_channels) {
+                                          const SigSpec& sigspec) {
 
             // TODO: keys are guaranteed to be added in lexicographic order. Is that good or bad?
             std::map<std::multiset<int64_t>, std::vector<LyndonWord*>> lyndon_anagrams;
             //       \--------------------/  \--------------------------------/
             //    Letters in a Lyndon word    All Lyndon words of a particular anagram class, ordered lexicographically
 
+            size_type num_lyndon_words;
+            if (sigspec.input_channels == 1) {
+                // see the equivalent spot in compress_logsignature for an explanation.
+                num_lyndon_words = 1;
+            }
+            else {
+                num_lyndon_words = lyndon_words.back().back().compressed_index + 1;
+            }
             std::vector<size_type> anagram_class_sizes;
-            anagram_class_sizes.reserve(lyndon_words.back().back().compressed_index + 1);
+            anagram_class_sizes.reserve(num_lyndon_words);
             // First go through and figure out the anagram classes
             for (auto& depth_class : lyndon_words) {
                 for (auto& lyndon_word : depth_class) {
@@ -833,13 +816,6 @@ namespace signatory {
 
                             int64_t product = first_coeff * second_coeff;
 
-//                            bool asdf = lyndon_word.extra->anagram_limit == lyndon_word.extra->anagram_class->end();
-//                            py::print(asdf);
-//                            py::print(lyndon_word.extra->word);
-//                            if (!asdf) {
-//                                py::print((*(lyndon_word.extra->anagram_limit))->extra->word);
-//                            }
-
                             // If depth_index == lyndon_words.size() - 1 then we don't need to record the
                             // coefficients of non-Lyndon words.
                             if (static_cast<u_size_type>(depth_index) < lyndon_words.size() - 1 ||
@@ -864,7 +840,8 @@ namespace signatory {
                         auto ptr_to_word = std::lower_bound(lyndon_word.extra->anagram_limit, end, word,
                                                             CompareWords());
                         if (ptr_to_word != end) {
-                            transforms.emplace_back(lyndon_word.compressed_index, (*ptr_to_word)->compressed_index, coeff);
+                            transforms.emplace_back(lyndon_word.compressed_index, (*ptr_to_word)->compressed_index,
+                                                    coeff);
                         }
                     }
 
@@ -883,14 +860,21 @@ namespace signatory {
             }
         }
 
-        torch::Tensor compress_logsignature(std::vector<std::vector<LyndonWord>>& lyndon_words,
+        torch::Tensor compress_logsignature(const std::vector<std::vector<LyndonWord>>& lyndon_words,
                                             torch::Tensor logsignature,
-                                            const SigSpec& sigspec,
-                                            bool stream) {
-            int64_t num_lyndon_words = lyndon_words.back().back().compressed_index + 1;
+                                            const SigSpec& sigspec) {
+            int64_t num_lyndon_words;
+            if (sigspec.input_channels == 1) {
+                // In this case there only exists a singe Lyndon word '0', at lyndon_words[0].back(). There are now
+                // higher-depth words, i.e. lyndon_words[1], lyndon_words[2], ... etc. are all size-0 vectors.
+                num_lyndon_words = 1;
+            }
+            else {
+                num_lyndon_words = lyndon_words.back().back().compressed_index + 1;
+            }
 
             torch::Tensor compressed_logsignature;
-            if (stream) {
+            if (sigspec.stream) {
                 compressed_logsignature = torch::empty({sigspec.output_stream_size,
                                                         num_lyndon_words,
                                                         sigspec.batch_size},
@@ -921,18 +905,18 @@ namespace signatory {
             return compressed_logsignature;
         }
 
-        torch::Tensor compress_logsignature_backward(torch::Tensor grad_logsig, const SigSpec& sigspec, bool stream) {
-            torch::Tensor grad_logsig_expanded;
-            if (stream) {
-                grad_logsig_expanded = torch::zeros({sigspec.output_stream_size,
-                                                     sigspec.output_channels,
-                                                     sigspec.batch_size},
-                                                    sigspec.opts);
+        torch::Tensor compress_logsignature_backward(torch::Tensor grad_logsignature, const SigSpec& sigspec) {
+            torch::Tensor grad_logsignature_expanded;
+            if (sigspec.stream) {
+                grad_logsignature_expanded = torch::zeros({sigspec.output_stream_size,
+                                                           sigspec.output_channels,
+                                                           sigspec.batch_size},
+                                                          sigspec.opts);
             }
             else {
-                grad_logsig_expanded = torch::zeros({sigspec.output_channels,
-                                                     sigspec.batch_size},
-                                                    sigspec.opts);
+                grad_logsignature_expanded = torch::zeros({sigspec.output_channels,
+                                                           sigspec.batch_size},
+                                                          sigspec.opts);
             }
 
             // On the forward pass we had to calculate the Lyndon words for
@@ -948,17 +932,17 @@ namespace signatory {
 
             for (size_type depth_index = 0; static_cast<u_size_type>(depth_index) < lyndon_words.size(); ++depth_index){
                 for (auto& lyndon_word: lyndon_words[depth_index]) {
-                    grad_logsig_expanded.narrow(/*dim=*/sigspec.output_channel_dim,
-                                                /*start=*/lyndon_word.tensor_algebra_index,
-                                                /*length=*/1).copy_(
-                                                        grad_logsig.narrow(/*dim=*/sigspec.output_channel_dim,
-                                                                           /*start=*/lyndon_word.compressed_index,
-                                                                           /*length=*/1)
-                                                                    );
+                    grad_logsignature_expanded.narrow(/*dim=*/sigspec.output_channel_dim,
+                                                      /*start=*/lyndon_word.tensor_algebra_index,
+                                                      /*length=*/1).copy_(
+                                                        grad_logsignature.narrow(/*dim=*/sigspec.output_channel_dim,
+                                                                                 /*start=*/lyndon_word.compressed_index,
+                                                                                 /*length=*/1)
+                                                                          );
                 }
             }
 
-            return grad_logsig_expanded;
+            return grad_logsignature_expanded;
         }
     }  // namespace signatory::detail
 
@@ -980,8 +964,7 @@ namespace signatory {
     }
 
     std::tuple<torch::Tensor, py::object>
-    signature_forward(torch::Tensor path, size_type depth, bool stream, bool basepoint,
-                      torch::Tensor basepoint_value) {
+    signature_forward(torch::Tensor path, size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value) {
         detail::checkargs(path, depth, basepoint, basepoint_value);
 
         // convert from (batch, stream, channel) to (stream, channel, batch), which is the representation we use
@@ -1088,16 +1071,15 @@ namespace signatory {
             // if stream==true then return this value in scratch vector, so we don't overwrite our intermediate
             // signature stored in stream_vector.
             // if stream==false then just return this value in stream_vector
-            detail::compute_mult(stream_vector, scratch_vector, sigspec, stream);
+            detail::compute_mult(stream_vector, scratch_vector, /*rightret=*/stream, sigspec);
         }
 
-        torch::Tensor out_with_transposes = detail::stream_transpose(out, stream);
+        torch::Tensor out_with_transposes = detail::transpose(out, sigspec);
         return {out_with_transposes,
                 py::reinterpret_steal<py::object>(PyCapsule_New(new detail::BackwardsInfo{std::move(sigspec),
                                                                                           std::move(out_vector),
                                                                                           out,
-                                                                                          path_increments,
-                                                                                          stream},
+                                                                                          path_increments},
                                                                 detail::backwards_info_capsule_name,
                                                                 detail::BackwardsInfoCapsuleDestructor))};
         }
@@ -1111,13 +1093,12 @@ namespace signatory {
         const std::vector<torch::Tensor>& out_vector = backwards_info->out_vector;
         torch::Tensor out = backwards_info->out;
         torch::Tensor path_increments = backwards_info->path_increments;
-        bool stream = backwards_info->stream;
 
         // Check arguments
-        detail::checkargs_backward(grad_out, sigspec, stream);
+        detail::checkargs_backward(grad_out, sigspec);
 
         // Transpose and clone. (Clone so we don't leak changes through grad_out.)
-        grad_out = detail::stream_transpose_reverse(grad_out, stream);
+        grad_out = detail::transpose_reverse(grad_out, sigspec);
         if (!grad_out.is_floating_point()) {
             grad_out = grad_out.to(torch::kFloat32);
         }
@@ -1172,7 +1153,7 @@ namespace signatory {
         detail::slice_by_term(scratch, scratch_vector, 0, sigspec);
 
         // Populate our memory vectors with the scratch memory and with the gradient we've been given
-        if (stream) {
+        if (sigspec.stream) {
             detail::slice_by_term(grad_out, grad_out_vector, 1, sigspec);
 
             detail::slice_at_stream(out_vector, stream_vector, -1);
@@ -1203,7 +1184,7 @@ namespace signatory {
                                                                   /*len=*/1).squeeze(0),
                                            scratch_vector,
                                            sigspec);
-            if (stream) {
+            if (sigspec.stream) {
                 // Get the value of stream_vector from memory
                 stream_vector.clear();
                 detail::slice_at_stream(out_vector, stream_vector, stream_index - 1);
@@ -1226,7 +1207,7 @@ namespace signatory {
 
             // Now actually do the computations
             detail::compute_mult_backward(grad_prev_stream_vector, grad_next_stream_vector, stream_vector,
-                                          scratch_vector, sigspec, stream);
+                                          scratch_vector, /*add_not_copy=*/sigspec.stream, sigspec);
             detail::compute_restricted_exp_backward(grad_path_increments.narrow(/*dim=*/0,
                                                                                 /*start=*/stream_index,
                                                                                 /*len=*/1).squeeze(0),
@@ -1284,15 +1265,15 @@ namespace signatory {
         const detail::SigSpec& sigspec = backwards_info->sigspec;
 
         // undo the transposing we just did in signature_forward...
-        signature = detail::stream_transpose_reverse(signature, stream);
+        signature = detail::transpose_reverse(signature, sigspec);
 
-        // put the signature in memory
+        // organise the memory into a vector
         std::vector<torch::Tensor> signature_vector;
         detail::slice_by_term(signature, signature_vector, sigspec.output_channel_dim, sigspec);
 
         // and allocate memory for the logsignature
         // TODO: only invert the lowest terms? The higher terms aren't used?
-        torch::Tensor logsignature = signature * LOGSIG_INVERT(sigspec, depth - 2);
+        torch::Tensor logsignature = signature * LOGSIG_INVERT(depth - 2, sigspec);
         std::vector<torch::Tensor> logsignature_vector;
         detail::slice_by_term(logsignature, logsignature_vector, sigspec.output_channel_dim, sigspec);
 
@@ -1315,11 +1296,11 @@ namespace signatory {
         std::vector<std::vector<detail::LyndonWord>> lyndon_words;
         if (mode == LogSignatureMode::Words) {
             detail::lyndon_word_generator(lyndon_words, sigspec);
-            logsignature = compress_logsignature(lyndon_words, logsignature, sigspec, stream);
+            logsignature = compress_logsignature(lyndon_words, logsignature, sigspec);
         }
         else if (mode == LogSignatureMode::Brackets){
             detail::lyndon_bracket_generator(lyndon_words, sigspec);
-            logsignature = compress_logsignature(lyndon_words, logsignature, sigspec, stream);
+            logsignature = compress_logsignature(lyndon_words, logsignature, sigspec);
         }
 
         // If mode == LogSignatureMode::Brackets then we need to apply an additional transform. Some of the work for
@@ -1329,7 +1310,7 @@ namespace signatory {
         std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
         if (mode == LogSignatureMode::Brackets) {
             // First find all the transforms
-            detail::lyndon_words_to_lyndon_basis(lyndon_words, transforms, sigspec.input_channels);
+            detail::lyndon_words_to_lyndon_basis(lyndon_words, transforms, sigspec);
             // Then apply the transforms. We rely on the triangularity property of the Lyndon basis for this to work.
             for (const auto& transform : transforms) {
                 int64_t source_index = std::get<0>(transform);
@@ -1352,114 +1333,110 @@ namespace signatory {
         // this probably shouldn't be a performance issue, as the already-on-the-heap elements of the vector certainly
         // won't need to be copied.
         backwards_info->set_logsignature_data(std::move(signature_vector),
-                                              std::move(logsignature_vector),
                                               std::move(transforms),
                                               mode,
                                               logsignature.size(sigspec.output_channel_dim));
 
-        logsignature = detail::stream_transpose(logsignature, stream);
+        logsignature = detail::transpose(logsignature, sigspec);
         return {logsignature, backwards_info_capsule};
     }
 
     std::tuple<torch::Tensor, torch::Tensor>
-    logsignature_backward(torch::Tensor grad_logsig, py::object backwards_info_capsule) {
+    logsignature_backward(torch::Tensor grad_logsignature, py::object backwards_info_capsule) {
+        // Unpack sigspec
         detail::BackwardsInfo* backwards_info = detail::get_backwards_info(backwards_info_capsule);
         const detail::SigSpec& sigspec = backwards_info->sigspec;
         if (sigspec.depth == 1) {
-            return signature_backward(grad_logsig, backwards_info_capsule);
+            return signature_backward(grad_logsignature, backwards_info_capsule);
         }
-        std::vector<torch::Tensor>& logsignature_vector = backwards_info->logsignature_vector;  // Not const so that we
-                                                                                                // can clone its
-                                                                                                // contents and assign
-                                                                                                // them back.
-                                                                                                // Ironically this is
-                                                                                                // so that we leave its
-                                                                                                // apparent content
-                                                                                                // unchanged.
+
+        // Unpack everything else from backwards_info
+        torch::Tensor signature = backwards_info->out;
         const std::vector<torch::Tensor>& signature_vector = backwards_info->signature_vector;
         const std::vector<std::tuple<int64_t, int64_t, int64_t>>& transforms = backwards_info->transforms;
-        bool stream = backwards_info->stream;
         LogSignatureMode mode = backwards_info->mode;
-        int64_t logsig_channels = backwards_info->logsig_channels;
+        int64_t logsignature_channels = backwards_info->logsignature_channels;
 
-        detail::checkargs_backward(grad_logsig, sigspec, stream, logsig_channels);
+        detail::checkargs_backward(grad_logsignature, sigspec, logsignature_channels);
 
-        grad_logsig = detail::stream_transpose_reverse(grad_logsig, stream);
-        if (!grad_logsig.is_floating_point()) {
-            grad_logsig = grad_logsig.to(torch::kFloat32);
+        grad_logsignature = detail::transpose_reverse(grad_logsignature, sigspec);
+        if (!grad_logsignature.is_floating_point()) {
+            grad_logsignature = grad_logsignature.to(torch::kFloat32);
         }
 
+        // Decompress the logsignature
         if (mode == LogSignatureMode::Expand) {
-            grad_logsig = grad_logsig.clone();  // Clone so we don't leak changes through grad_logsig.
+            grad_logsignature = grad_logsignature.clone();  // Clone so we don't leak changes through grad_logsignature.
         }
         else if (mode == LogSignatureMode::Words){
-            grad_logsig = detail::compress_logsignature_backward(grad_logsig, sigspec, stream);
+            // Don't need to clone grad_logsignature as it gets put into new memory when decompressing
+
+            grad_logsignature = detail::compress_logsignature_backward(grad_logsignature, sigspec);
         }
         else {  // mode == LogSignatureMode::Brackets
-            grad_logsig = grad_logsig.clone();  // Clone so we don't leak changes through grad_logsig.
+            grad_logsignature = grad_logsignature.clone();  // Clone so we don't leak changes through grad_logsignature.
 
             for (auto tptr = transforms.rbegin(); tptr != transforms.rend(); ++tptr) {
                 int64_t source_index = std::get<0>(*tptr);
                 int64_t target_index = std::get<1>(*tptr);
                 int64_t coefficient = std::get<2>(*tptr);
-                torch::Tensor grad_source = grad_logsig.narrow(/*dim=*/sigspec.output_channel_dim,
-                                                               /*start=*/source_index,
-                                                               /*length=*/1);
-                torch::Tensor grad_target = grad_logsig.narrow(/*dim=*/sigspec.output_channel_dim,
-                                                               /*start=*/target_index,
-                                                               /*length=*/1);
+                torch::Tensor grad_source = grad_logsignature.narrow(/*dim=*/sigspec.output_channel_dim,
+                                                                     /*start=*/source_index,
+                                                                     /*length=*/1);
+                torch::Tensor grad_target = grad_logsignature.narrow(/*dim=*/sigspec.output_channel_dim,
+                                                                     /*start=*/target_index,
+                                                                     /*length=*/1);
                 grad_source.sub_(grad_target, coefficient);
             }
 
-            grad_logsig = detail::compress_logsignature_backward(grad_logsig, sigspec, stream);
+            grad_logsignature = detail::compress_logsignature_backward(grad_logsignature, sigspec);
         }
 
         // Our old friend.
         // Memory management.
-        torch::Tensor grad_sig = torch::zeros_like(grad_logsig);
-        std::vector<torch::Tensor> grad_logsig_vector;
-        std::vector<torch::Tensor> grad_sig_vector;
-        detail::slice_by_term(grad_logsig, grad_logsig_vector, sigspec.output_channel_dim, sigspec);
-        detail::slice_by_term(grad_sig, grad_sig_vector, sigspec.output_channel_dim, sigspec);
+        torch::Tensor grad_signature = torch::zeros_like(grad_logsignature);
+        torch::Tensor scratch;
+        if (sigspec.stream) {
+            scratch = torch::empty({sigspec.output_channels, sigspec.batch_size}, sigspec.opts);
+        }
+        else {
+            // TODO: only invert the lowest terms? The higher terms aren't used?
+            scratch = signature * LOGSIG_INVERT(sigspec.depth - 2, sigspec);
+        }
+        std::vector<torch::Tensor> grad_logsignature_vector;
+        std::vector<torch::Tensor> grad_signature_vector;
+        std::vector<torch::Tensor> scratch_vector;
+        detail::slice_by_term(grad_logsignature, grad_logsignature_vector, sigspec.output_channel_dim, sigspec);
+        detail::slice_by_term(grad_signature, grad_signature_vector, sigspec.output_channel_dim, sigspec);
+        detail::slice_by_term(scratch, scratch_vector, sigspec.output_channel_dim, sigspec);
 
-        if (stream) {
+        if (sigspec.stream) {
             // allocate vectors for the signature and logsignature by stream index
-            std::vector<torch::Tensor> grad_logsig_stream_vector;
-            std::vector<torch::Tensor> grad_sig_stream_vector;
-            std::vector<torch::Tensor> logsignature_stream_vector;
+            std::vector<torch::Tensor> grad_logsignature_stream_vector;
+            std::vector<torch::Tensor> grad_signature_stream_vector;
             std::vector<torch::Tensor> signature_stream_vector;
             for (int64_t stream_index = 0; stream_index < sigspec.output_stream_size; ++stream_index) {
-                detail::slice_at_stream(grad_logsig_vector, grad_logsig_stream_vector, stream_index);
-                detail::slice_at_stream(grad_sig_vector, grad_sig_stream_vector, stream_index);
-                detail::slice_at_stream(logsignature_vector, logsignature_stream_vector, stream_index);
+                detail::slice_at_stream(grad_logsignature_vector, grad_logsignature_stream_vector, stream_index);
+                detail::slice_at_stream(grad_signature_vector, grad_signature_stream_vector, stream_index);
                 detail::slice_at_stream(signature_vector, signature_stream_vector, stream_index);
-                if (mode == LogSignatureMode::Expand) {
-                    // if mode == LogSignatureMode::Expand then logsignature_vector (and thus
-                    // logsignature_stream_vector) is holding memory that is available externally, as the result of the
-                    // forward pass. Since we're going to modify it in-place we need to clone it here.
-                    for (auto& elem : logsignature_stream_vector) {
-                        elem = elem.clone();
-                    }
-                }  // if mode != LogSignatureMode::Expand then we are free to overwrite the memory used from the forward
-                   // pass because it's not externally visible: different memory is used for the compressed
-                   // logsignature, which is what is then actually returned.
+                torch::Tensor signature_at_stream = signature.narrow(/*dim=*/0, /*start=*/stream_index, /*len=*/1);
+                // TODO: only invert the lowest terms? The higher terms aren't used?
+                scratch.copy_(signature_at_stream * LOGSIG_INVERT(sigspec.depth - 2, sigspec));
 
-                LOGSIGNATURE_COMPUTATION_BACKWARD(grad_logsig_stream_vector, grad_sig_stream_vector,
-                                                  logsignature_stream_vector, signature_stream_vector, sigspec)
+
+                LOGSIGNATURE_COMPUTATION_BACKWARD(grad_logsignature_stream_vector, grad_signature_stream_vector,
+                                                  scratch_vector, signature_stream_vector, scratch, signature_at_stream,
+                                                  sigspec)
             }
         }
         else {
-            // as above, if mode == LogSignatureMode::Expand then logsignature_vector is holding externally-visible
-            // memory
-            if (mode == LogSignatureMode::Expand) {
-                for (auto& elem : logsignature_vector) {
-                    elem = elem.clone();
-                }
-            }
-            LOGSIGNATURE_COMPUTATION_BACKWARD(grad_logsig_vector, grad_sig_vector, logsignature_vector,
-                                              signature_vector, sigspec)
+            LOGSIGNATURE_COMPUTATION_BACKWARD(grad_logsignature_vector, grad_signature_vector, scratch_vector,
+                                              signature_vector, scratch, signature, sigspec)
         }
-        grad_sig = detail::stream_transpose(grad_sig, stream);
-        return signature_backward(grad_sig, backwards_info_capsule, false);
+
+        grad_signature.add_(grad_logsignature, LOGSIG_INVERT(sigspec.depth - 2, sigspec));
+
+        grad_signature = detail::transpose(grad_signature, sigspec);
+        return signature_backward(grad_signature, backwards_info_capsule, false);
     }
 }  // namespace signatory
