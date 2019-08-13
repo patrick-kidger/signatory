@@ -11,12 +11,14 @@
 
 #include "signature.hpp"  // signatory::size_type, signatory::LogSignatureMode
 
-// TODO: logsignature tests. Make sure memory doesn't get blatted tests.
+// TODO: [[1, 3], 2] isn't getting its coefficient properly adjusted.
+// TODO: create functions for printing basis elements and transformations for word->basis
 // TODO: rationalise backwards_info. Can we combine out_vector and signature_vector?
 // TODO: rename out_* to signature_*
 // TODO: have a few less macros...
 // TODO: switch to negative indexing axes
-// TODO: logsignature memory for transformation
+// TODO: test on GPU
+// TODO: logsignature prepare
 // TODO: check in-place operations get caught
 // TODO: split up this file a bit: signature vs logsignature at least
 // TODO: signature_jacobian, logsignature_jacobian
@@ -75,6 +77,7 @@ namespace signatory {
         void slice_by_term(torch::Tensor in, std::vector<torch::Tensor>& out, int64_t dim, const SigSpec& sigspec) {
             int64_t current_memory_pos = 0;
             int64_t current_memory_length = sigspec.input_channels;
+            out.clear();
             out.reserve(sigspec.depth);
             for (int64_t i = 0; i < sigspec.depth; ++i) {
                 out.push_back(in.narrow(/*dim=*/dim,
@@ -88,6 +91,7 @@ namespace signatory {
         // Argument 'in' is assumed to be a tensor for which its first dimension corresponds to the stream dimension.
         // Its slices along a particular index of that dimension are put in 'out'.
         void slice_at_stream(std::vector<torch::Tensor> in, std::vector<torch::Tensor>& out, int64_t stream_index) {
+            out.clear();
             out.reserve(in.size());
             for (auto elem : in) {
                 out.push_back(elem.narrow(/*dim=*/0, /*start=*/stream_index, /*len=*/1).squeeze(0));
@@ -274,10 +278,10 @@ namespace signatory {
                 throw std::invalid_argument("Argument 'path' must be a 3-dimensional tensor, with dimensions "
                                             "corresponding to (batch, stream, channel) respectively.");
             }
-            if (path.size(0) == 0 || path.size(2) == 0) {
+            if (path.size(0) == 0 || path.size(1) == 0 || path.size(2) == 0) {
                 throw std::invalid_argument("Argument 'path' cannot have dimensions of size zero.");
             }
-            if (path.size(1) < 2) {
+            if (!basepoint && path.size(1) == 1) {
                 throw std::invalid_argument("Argument 'path' must have stream dimension of size at least 2. (Need at "
                                             "least this many points to define a path.)");
             }
@@ -509,14 +513,18 @@ namespace signatory {
         }
 
         // TODO: depth_index_two -> depth_index when un-macroing this
+        // TODO: only invert the lowest terms? The higher terms aren't used?
         // forced inline
         #define LOGSIGNATURE_COMPUTATION_BACKWARD(grad_logsignature_vector, grad_signature_vector, scratch_vector,  \
                                                   signature_vector, scratch, scratch_init, sigspec) {               \
+            scratch.copy_(scratch_init);                                                                            \
+            scratch *= LOGSIG_INVERT(sigspec.depth - 2, sigspec);                                                   \
             LOGSIGNATURE_COMPUTATION_INNER(scratch_vector, signature_vector, 0, sigspec)                            \
             compute_mult_partial_backward(grad_logsignature_vector, grad_signature_vector, scratch_vector,          \
                                           signature_vector, 1, 0, sigspec);                                         \
             for (size_type depth_index_two = 0; depth_index_two < sigspec.depth - 2; ++depth_index_two) {           \
-                scratch.copy_(scratch_init * LOGSIG_INVERT(sigspec.depth - 2, sigspec));                            \
+                scratch.copy_(scratch_init);                                                                        \
+                scratch *= LOGSIG_INVERT(sigspec.depth - 2, sigspec);                                               \
                 /* Yuck, this is O(depth^2). Sadly I don't see a way to compute this without either that or saving  \
                  * intermediate results, which is in some sense even worse.                                         \
                  */                                                                                                 \
@@ -727,6 +735,7 @@ namespace signatory {
         };
 
         // forced inline
+        // TODO: rename. It's really checking if it's a Lyndon word (it's obviously definitely an anagram)
         #define IS_ANAGRAM(lyndon_word, word)                                                                     \
             std::binary_search(lyndon_word.extra->anagram_limit,  lyndon_word.extra->anagram_class->end(), word,  \
                                CompareWords())
@@ -818,6 +827,7 @@ namespace signatory {
 
                             // If depth_index == lyndon_words.size() - 1 then we don't need to record the
                             // coefficients of non-Lyndon words.
+                            // TODO: change lyndon_words.size() to sigspec.depth
                             if (static_cast<u_size_type>(depth_index) < lyndon_words.size() - 1 ||
                                 IS_ANAGRAM(lyndon_word, first_then_second)) {
                                 bracket_expansion[first_then_second] += product;
@@ -836,12 +846,17 @@ namespace signatory {
                         int64_t coeff = word_coeff.second;
 
                         // Filter out non-Lyndon words. (If depth_index == lyndon_words.size() - 1 then we've
-                        // essentially already done this above so the if statement should always be true).
+                        // essentially already done this above so the if statement should always be true, so we check
+                        // that preferentially as it's probably faster to check. Probably - I know I know I should
+                        // time it but it's not that big a deal either way...)
                         auto ptr_to_word = std::lower_bound(lyndon_word.extra->anagram_limit, end, word,
                                                             CompareWords());
                         if (ptr_to_word != end) {
-                            transforms.emplace_back(lyndon_word.compressed_index, (*ptr_to_word)->compressed_index,
-                                                    coeff);
+                            if (static_cast<u_size_type>(depth_index) == lyndon_words.size() - 1 ||
+                                (*ptr_to_word)->extra->word == word) {
+                                transforms.emplace_back(lyndon_word.compressed_index, (*ptr_to_word)->compressed_index,
+                                                        coeff);
+                            }
                         }
                     }
 
@@ -1056,7 +1071,6 @@ namespace signatory {
                 stream_vector = std::move(scratch_vector);
                 // and now split up the memory for the next scratch_vector from the memory we have stored in
                 // out_vector
-                scratch_vector.clear();
                 detail::slice_at_stream(out_vector, scratch_vector, stream_index);
             }
 
@@ -1186,13 +1200,11 @@ namespace signatory {
                                            sigspec);
             if (sigspec.stream) {
                 // Get the value of stream_vector from memory
-                stream_vector.clear();
                 detail::slice_at_stream(out_vector, stream_vector, stream_index - 1);
 
                 // Set grad_next_stream_vector to grad_prev_stream_vector, and set grad_prev_stream_vector to the
                 // gradient that was inputted to the backward pass for this stream index.
                 grad_next_stream_vector = std::move(grad_prev_stream_vector);
-                grad_prev_stream_vector.clear();
                 detail::slice_at_stream(grad_out_vector, grad_prev_stream_vector, stream_index - 1);
             }
             else {
@@ -1374,6 +1386,8 @@ namespace signatory {
             grad_logsignature = detail::compress_logsignature_backward(grad_logsignature, sigspec);
         }
         else {  // mode == LogSignatureMode::Brackets
+            // TODO: have transforms record the tensor algebra indices as well so we can do this after decompressing
+            //       and not need to clone here
             grad_logsignature = grad_logsignature.clone();  // Clone so we don't leak changes through grad_logsignature.
 
             for (auto tptr = transforms.rbegin(); tptr != transforms.rend(); ++tptr) {
@@ -1395,14 +1409,7 @@ namespace signatory {
         // Our old friend.
         // Memory management.
         torch::Tensor grad_signature = torch::zeros_like(grad_logsignature);
-        torch::Tensor scratch;
-        if (sigspec.stream) {
-            scratch = torch::empty({sigspec.output_channels, sigspec.batch_size}, sigspec.opts);
-        }
-        else {
-            // TODO: only invert the lowest terms? The higher terms aren't used?
-            scratch = signature * LOGSIG_INVERT(sigspec.depth - 2, sigspec);
-        }
+        torch::Tensor scratch = torch::empty({sigspec.output_channels, sigspec.batch_size}, sigspec.opts);
         std::vector<torch::Tensor> grad_logsignature_vector;
         std::vector<torch::Tensor> grad_signature_vector;
         std::vector<torch::Tensor> scratch_vector;
@@ -1419,10 +1426,9 @@ namespace signatory {
                 detail::slice_at_stream(grad_logsignature_vector, grad_logsignature_stream_vector, stream_index);
                 detail::slice_at_stream(grad_signature_vector, grad_signature_stream_vector, stream_index);
                 detail::slice_at_stream(signature_vector, signature_stream_vector, stream_index);
-                torch::Tensor signature_at_stream = signature.narrow(/*dim=*/0, /*start=*/stream_index, /*len=*/1);
-                // TODO: only invert the lowest terms? The higher terms aren't used?
-                scratch.copy_(signature_at_stream * LOGSIG_INVERT(sigspec.depth - 2, sigspec));
-
+                torch::Tensor signature_at_stream = signature.narrow(/*dim=*/0,
+                                                                     /*start=*/stream_index,
+                                                                     /*len=*/1).squeeze(0);
 
                 LOGSIGNATURE_COMPUTATION_BACKWARD(grad_logsignature_stream_vector, grad_signature_stream_vector,
                                                   scratch_vector, signature_stream_vector, scratch, signature_at_stream,
