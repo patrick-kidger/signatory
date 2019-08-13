@@ -6,7 +6,6 @@ import unittest
 import warnings
 
 
-@unittest.skip
 class TestSignatureSpeed(unittest.TestCase):
     @staticmethod
     def speed(batch_size=1000, number=20, depth=3, stream=True, backward=False):
@@ -67,7 +66,6 @@ class TestSignatureSpeed(unittest.TestCase):
         self.wrapped_speed_test(stream=False, backward=True)
 
 
-@unittest.skip
 class TestLogSignatureSpeed(unittest.TestCase):
     @classmethod
     def speed(cls, batch_size=1000, number=20, depth=3, backward=False, signatory_mode="brackets"):

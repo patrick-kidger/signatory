@@ -13,7 +13,7 @@ class TestSignatureAccuracy(unittest.TestCase):
                 self.fail(c.fail(signatory_out=signatory_out, iisignature_out=iisignature_out))
 
     def test_backward(self):
-        for c in utils.ConfigIter(stream=False,
+        for c in utils.ConfigIter(stream=False,  # iisignature doesn't support backwards with stream=True
                                   requires_grad=True):
             c.signature()
             c.sig()

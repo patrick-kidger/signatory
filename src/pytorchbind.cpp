@@ -1,6 +1,9 @@
 #include <torch/extension.h>  // to get the pybind11 stuff
 
-#include "signature.hpp"
+#include "logsignature.hpp"  // signatory::logsignature_forward, signatory::logsignature_backward
+#include "misc.hpp"          // signatory::LogSignatureMode
+#include "signature.hpp"     // signatory::signature_forward, signatory::signature_backward
+#include "utilities.hpp"     // signatory::signature_channels
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     py::enum_<signatory::LogSignatureMode>(m, "_LogSignatureMode")
@@ -14,7 +17,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("_signature_backward",
           &signatory::signature_backward,
           // need to specify default argument
-          py::arg("grad_out"), py::arg("backwards_info_capsule"), py::arg("clone") = true);
+          py::arg("grad_out"), py::arg("backwards_info_capsule"), py::arg("clone")=true);
     m.def("_logsignature_forward",
         &signatory::logsignature_forward);
     m.def("_logsignature_backward",

@@ -6,8 +6,20 @@ import torch.utils.cpp_extension as cpp
 import metadata
 
 
-ext_modules = [cpp.CppExtension(name='_impl', sources=['src/pytorchbind.cpp', 'src/signature.cpp'],
-                                depends=['src/signature.hpp'])]
+ext_modules = [cpp.CppExtension(name='_impl',
+                                sources=['src/utilities.cpp',
+                                         'src/misc.cpp',
+                                         'src/tensor_algebra_ops.cpp',
+                                         'src/free_lie_algebra_ops.cpp',
+                                         'src/signature.cpp',
+                                         'src/logsignature.cpp',
+                                         'src/pytorchbind.cpp'],
+                                depends=['src/utilities.hpp',
+                                         'src/misc.hpp',
+                                         'src/tensor_algebra_ops.hpp',
+                                         'src/free_lie_algebra_ops.hpp',
+                                         'src/signature.hpp',
+                                         'src/logsignature.hpp'])]
 
 here = os.path.abspath(os.path.dirname(__file__))
 
