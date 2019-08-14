@@ -44,7 +44,7 @@ class TestLogSignatureAccuracy(unittest.TestCase):
                                   depth=(1, 2, 3),  # We've only coded in the necessary adjustments in the tests between
                                                     # signatory.signature with mode="words" and iisignature.logsig with
                                                     # mode="brackets" for depth<=3
-                                  C=(2, 3, 6),      # Can't use C==1 because iisignature.logsig doesn't support that
+                                  C=(2, 3),         # Can't use C==1 because iisignature.logsig doesn't support that
                                   stream=False):    # Can't use stream=True because isiignature.logsig doesnt support
                                                     # that.
             signatory_out = c.logsignature()

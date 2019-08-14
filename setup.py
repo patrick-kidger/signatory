@@ -1,5 +1,3 @@
-import io
-import os
 import setuptools
 import torch.utils.cpp_extension as cpp
 
@@ -21,13 +19,6 @@ ext_modules = [cpp.CppExtension(name='_impl',
                                          'src/signature.hpp',
                                          'src/logsignature.hpp'])]
 
-here = os.path.abspath(os.path.dirname(__file__))
-
-with io.open(os.path.join(here, 'README.rst'), 'r', encoding='utf-8') as f:
-    readme = f.read()
-
-with io.open(os.path.join(here, 'docs', 'fragments', 'description.rst'), 'r', encoding='utf-8') as f:
-    description = f.read()
 
 setuptools.setup(name=metadata.project,
                  version=metadata.version,
@@ -35,10 +26,10 @@ setuptools.setup(name=metadata.project,
                  author_email=metadata.author_email,
                  maintainer=metadata.author,
                  maintainer_email=metadata.author_email,
-                 description=description,
-                 long_description=readme,
+                 description=metadata.description,
+                 long_description=metadata.readme,
                  url=metadata.url,
-                 license=license,
+                 license=metadata.license,
                  keywords=metadata.keywords,
                  classifiers=metadata.classifiers,
                  zip_safe=False,

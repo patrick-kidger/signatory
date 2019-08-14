@@ -1,0 +1,1 @@
+Hosted on `GitHub <https://github.com/patrick-kidger/signatory>`__.

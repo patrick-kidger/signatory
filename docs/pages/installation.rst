@@ -4,7 +4,7 @@ Installation
 ------------
 Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7.
 
-Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.0.1, but will probably work with other versions as well.
+Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.0.1, but should probably work with all recent versions.
 
 Install via ``pip``:
 

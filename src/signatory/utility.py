@@ -2,7 +2,15 @@ import math
 import torch
 
 # noinspection PyProtectedMember, PyUnresolvedReferences
-from ._impl import _signature_channels
+from ._impl import (_signature_channels,
+                    _lyndon_words,
+                    _lyndon_brackets,
+                    _lyndon_words_to_basis_transform)
+
+# noinspection PyUnreachableCode
+if False:
+    from typing import List, Tuple, Union
+    LyndonBracket = Union[int, Tuple['LyndonBracket', 'LyndonBracket']]
 
 
 # A wrapper for the sake of consistent documentation
@@ -21,6 +29,48 @@ def signature_channels(in_channels, depth):
     """
 
     return _signature_channels(in_channels, depth)
+
+
+def lyndon_words(in_channels, depth):
+    # type: (int, int) -> List[List[int]]
+    r"""Computes the collection of all Lyndon words up to length :attr:`depth` in an alphabet of size
+    :attr:`in_channels`. Each letter is represented by an integer :math:`i` in the range
+    :math:`0 \leq i < \text{in_channels}`.
+
+    Arguments:
+        in_channels (int): The size of the alphabet.
+        depth (int): The maximum word length.
+
+    Returns:
+        A list of lists of integers. Each sub-list corresponds to one Lyndon word.
+    """
+
+    return _lyndon_words(in_channels, depth)
+
+
+def lyndon_brackets(in_channels, depth):
+    # type: (int, int) -> List[LyndonBracket]
+    r"""Computes the collection of all Lyndon words, in their standard bracketing, up to length :attr:`depth` in an
+    alphabet of size :attr:`in_channels`. Each letter is represented by an integer :math:`i` in the range
+    :math:`0 \leq i < \text{in_channels}`.
+
+    Arguments:
+        in_channels (int): The size of the alphabet.
+        depth (int): The maximum word length.
+
+    Returns:
+        A list. Each element corresponds to a single Lyndon word with its standard bracketing."""
+
+    return _lyndon_brackets(in_channels, depth)
+
+
+def lyndon_words_to_basis_transform(in_channels, depth):
+    # type: (int, int) -> List[Tuple[int, int, int]]
+    """Computes the collection of transforms needed to go from a basis of the free Lie algebra in terms of Lyndon words
+    to a basis of the free Lie algebra in terms of the Lyndon basis."""
+    # TODO: put example code here to explain
+
+    return _lyndon_words_to_basis_transform(in_channels, depth)
 
 
 def _get_prime_factors(x):

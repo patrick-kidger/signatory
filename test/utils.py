@@ -251,11 +251,9 @@ class Config(object):
                      "size={size}\n"
                      "path.requires_grad={requires_grad}\n"
                      "depth={depth}\n"
-                     "basepoint={basepoint}\n"
-                     "basepoint_size={basepoint_size}"
+                     "basepoint={basepoint}"
                      .format(mode=self.signatory_mode, stream=self.stream, size=self.size,
-                             requires_grad=self.path.requires_grad, depth=self.depth, basepoint=self.basepoint,
-                             basepoint_size=self.basepoint_size))
+                             requires_grad=self.path.requires_grad, depth=self.depth, basepoint=self.basepoint))
         for key, value in kwargs.items():
             returnval += '\n{key}={value}'.format(key=key, value=value)
 

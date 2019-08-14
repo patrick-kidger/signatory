@@ -7,6 +7,25 @@
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
 
+// TODO: add accuracy tests for stream=True for logsig+sig backward
+// TODO: add tests for utility functions
+// TODO: rationalise backwards_info. Can we combine out_vector and signature_vector?
+// TODO: rename out_* to signature_*
+// TODO: switch to negative indexing axes
+// TODO: test on GPU
+// TODO: logsignature prepare
+// TODO: check in-place operations get caught
+// TODO: signature_jacobian, logsignature_jacobian
+// TODO: documentation: when to use signature / logsignature, time augmentation vs stream
+// TODO: create type for std::vector<std::vector<LyndonWord>> with the two different constructors?
+
+// TODO: numpy, tensorflow
+// TODO: CUDA?
+// TODO: support torchscript? https://pytorch.org/tutorials/advanced/torch_script_custom_ops.html
+// TODO: concatenating onto an already existing signature. A class that takes data and spits out signatures?
+// TODO: check that the right things are being put in the sdist/bdist
+// TODO: profile for memory leaks, just in case!
+
 
 namespace signatory {
     namespace detail {

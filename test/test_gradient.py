@@ -28,12 +28,19 @@ class TestSignatureGrad(unittest.TestCase):
             except RuntimeError:
                 self.fail(c.fail())
 
+    def test_gradcheck_grid(self):
+        for c in utils.ConfigIter(requires_grad=True):
+            try:
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint)
+            except RuntimeError:
+                self.fail(c.fail())
+
     def test_gradcheck_random(self):
         for c in utils.ConfigIter(requires_grad=True,
                                   size=random_size()):
             try:
                 self.gradcheck(c.path, c.depth, c.stream, c.basepoint)
-            except Exception:
+            except RuntimeError:
                 self.fail(c.fail())
 
     # We don't do gradgradcheck because our backwards function uses a whole bunch of in-place operations for memory
@@ -55,11 +62,19 @@ class TestLogSignatureGrad(unittest.TestCase):
             except RuntimeError:
                 self.fail(c.fail())
 
+    def test_gradcheck_grid(self):
+        for c in utils.ConfigIter(mode=utils.all_modes,
+                                  requires_grad=True):
+            try:
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.signatory_mode)
+            except RuntimeError:
+                self.fail(c.fail())
+
     def test_gradcheck_random(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   requires_grad=True,
                                   size=random_size()):
             try:
                 self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.signatory_mode)
-            except Exception:
+            except RuntimeError:
                 self.fail(c.fail())

@@ -19,15 +19,19 @@ namespace signatory {
             }
         }  // namespace signatory::misc::detail
 
+        LyndonSpec::LyndonSpec(int64_t input_channels, size_type depth) :
+            input_channels{input_channels},
+            depth{depth}
+        {};
+
         SigSpec::SigSpec(torch::Tensor path, size_type depth, bool stream, bool basepoint) :
+            LyndonSpec(path.size(1), depth),
             opts{torch::TensorOptions().dtype(path.dtype()).device(path.device())},
             input_stream_size{path.size(0)},
-            input_channels{path.size(1)},
             batch_size{path.size(2)},
             output_stream_size{path.size(0) - (basepoint ? 0 : 1)},
             output_channels{signature_channels(path.size(1), depth)},
             n_output_dims{stream ? 3 : 2},
-            depth{depth},
             reciprocals{torch::ones({depth - 1}, opts)},
             stream{stream},
             basepoint{basepoint}
@@ -36,52 +40,6 @@ namespace signatory {
                 reciprocals /= torch::linspace(2, depth, depth - 1, opts);
             }  // and reciprocals will be empty - of size 0 - if depth == 1.
         };
-
-        void slice_by_term(torch::Tensor in, std::vector <torch::Tensor> &out, int64_t dim, const SigSpec &sigspec) {
-            int64_t current_memory_pos = 0;
-            int64_t current_memory_length = sigspec.input_channels;
-            out.clear();
-            out.reserve(sigspec.depth);
-            for (int64_t i = 0; i < sigspec.depth; ++i) {
-                out.push_back(in.narrow(/*dim=*/dim,
-                        /*start=*/current_memory_pos,
-                        /*len=*/current_memory_length));
-                current_memory_pos += current_memory_length;
-                current_memory_length *= sigspec.input_channels;
-            }
-        }
-
-        void slice_at_stream(std::vector <torch::Tensor> in, std::vector <torch::Tensor> &out, int64_t stream_index) {
-            out.clear();
-            out.reserve(in.size());
-            for (auto elem : in) {
-                out.push_back(elem.narrow(/*dim=*/0, /*start=*/stream_index, /*len=*/1).squeeze(0));
-            }
-        }
-
-        torch::Tensor transpose(torch::Tensor tensor, const SigSpec &sigspec) {
-            if (sigspec.stream) {
-                // convert from (stream, channel, batch) to (batch, stream, channel)
-                return tensor.transpose(1, 2).transpose(0, 1);
-            } else {
-                // convert from (channel, batch) to (batch, channel)
-                return tensor.transpose(0, 1);
-            }
-        }
-
-        torch::Tensor transpose_reverse(torch::Tensor tensor, const SigSpec &sigspec) {
-            if (sigspec.stream) {
-                // convert from (batch, stream, channel) to (stream, channel, batch)
-                return tensor.transpose(0, 1).transpose(1, 2);
-            } else {
-                // convert from (batch, channel) to (channel, batch)
-                return tensor.transpose(0, 1);
-            }
-        }
-
-        bool is_even(size_type index) {
-            return (((index) % 2) == 0);
-        }
 
         BackwardsInfo::BackwardsInfo(SigSpec&& sigspec, std::vector<torch::Tensor>&& out_vector, torch::Tensor out,
                                      torch::Tensor path_increments) :
@@ -100,6 +58,8 @@ namespace signatory {
             mode = mode_;
             logsignature_channels = logsignature_channels_;
         }
+
+
 
         py::object make_backwards_info(std::vector<torch::Tensor>& out_vector, torch::Tensor out,
                                        torch::Tensor path_increments, SigSpec& sigspec) {

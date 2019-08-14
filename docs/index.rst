@@ -1,6 +1,6 @@
 .. include:: /fragments/title.rst
 
-Hosted on `GitHub <https://github.com/patrick-kidger/signatory>`__.
+.. include:: /fragments/hosted.rst
 
 .. toctree::
     :caption: Usage
@@ -22,6 +22,7 @@ Hosted on `GitHub <https://github.com/patrick-kidger/signatory>`__.
     :hidden:
 
     /pages/info
+    /pages/sourcecode
     /pages/faq
     /pages/citation
     /pages/acknowledgements

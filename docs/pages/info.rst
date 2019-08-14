@@ -2,8 +2,14 @@
 
 What is the signature transform?
 --------------------------------
-If you're reading this documentation then it's probably because you already know what the signature transform is, and are looking to use it in your project. But in case you've stumbled across this and are curious what all the fuss is about...
+If you're reading this documentation then it's probably because you already know what the signature transform is, and are looking to use it in your project. But in case you've stumbled across this and are curious what this 'signature' thing is...
 
-The 'signature transform' is a transformation that does a particularly good job extracting features from streams of data. Check out `this <https://arxiv.org/abs/1603.03788>`__ for a primer on its use in machine learning, as a feature transformation. Then have a look `here <https://arxiv.org/abs/1905.08494>`__ for a more in-depth look at building it into neural network models, as an arbitrary layer anywhere within a neural network. It's pretty cool.
+The 'signature transform' is a transformation that takes in a stream of data (often a time series), and returns a collection of statistics about that stream of data. This collection of statistics determines the path essentially uniquely, in an efficient computable way. Furthermore it is rich enough that every continuous function of the input stream may be approximated arbitrarily well by a linear function of its signature; the signature is what we call a 'universal nonlinearity'. If you're doing machine learning then you probably understand why this is such a desirable property!
 
-In brief: the signature of a path determines the path essentially uniquely, and does so in an efficient, computable way.  Furthermore, the signature is rich enough that every continuous function of the path may be approximated arbitrarily well by a linear function of its signature; it is what we call a ‘universal nonlinearity’. Now for various reasons this is a mathematical idealisation not borne out in practice (which is why we put them in a neural network and don't just use a simple linear model), but they still work very well!
+In principle it's quite similar to the Fourier transform: it's a transformation that can be applied to a stream of data, which extracts certain information. The Fourier transform describes frequencies; the signature most naturally describes *order*. That is, the order of events, potentially in different channels, is a particularly easy thing to understand using the signature.
+
+Now sadly the universal nonlinearity property requires the whole, infinite, signature: this doesn't fit in your computer's memory. The solution is actually incredible simple: truncate the signature to some finite collection of statistics, and then embed it within a nonlinear model, like a neural network. The signature transform acts as a pooling function, doing a provably good job of extracting information.
+
+Check out `this <https://arxiv.org/abs/1603.03788>`__ for a primer on its use in machine learning, just as a feature transformation. Meanwhile `this <https://arxiv.org/abs/1905.08494>`__ gives a more in-depth look at integrating it into neural neural networks.
+
+(Meanwhile if you're a kernel or Gaussian Process sort of person then see `here <http://jmlr.org/papers/v20/16-314.html>`__ for using signatures with kernels, and `here <https://arxiv.org/abs/1906.08215>`__ for using signatures with Gaussian Processes!)

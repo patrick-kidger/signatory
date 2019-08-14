@@ -1,4 +1,4 @@
-.PHONY: genreadme test docs publish prepublish buildandtest
+.PHONY: genreadme test develop docs publish prepublish buildandtest
 .RECIPEPREFIX+=
 
 # generate the readme from the documentation
@@ -8,6 +8,10 @@ genreadme:
 # run tests
 test:
     python -m test.runner
+
+# make development version
+develop:
+    python setup.py develop
 
 # make docs
 docs:
