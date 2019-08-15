@@ -29,6 +29,27 @@ words = object()
 all_modes = (expand, brackets, words)
 
 
+def random_size(num=20):
+    for _ in range(num):
+        batch_size = int(torch.randint(low=1, high=10, size=(1,)))
+        stream_size = int(torch.randint(low=2, high=10, size=(1,)))
+        channel_size = int(torch.randint(low=1, high=10, size=(1,)))
+        yield batch_size, stream_size, channel_size
+
+
+def large_size():
+    for _ in range(5):
+        batch_size = int(torch.randint(low=4, high=64, size=(1,)))
+        stream_size = int(torch.randint(low=10, high=50, size=(1,)))
+        channel_size = int(torch.randint(low=3, high=10, size=(1,)))
+        yield batch_size, stream_size, channel_size
+
+
+def large_depth():
+    for _ in range(5):
+        yield int(torch.randint(low=4, high=8, size=(1,)))
+
+
 class Config(object):
     """Represents a particular set of inputs to signatory and iisignature functions; also provides methods to actually
     call these functions in an appropriate, comparable, manner.

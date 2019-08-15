@@ -49,7 +49,7 @@ namespace signatory {
             }
         }
 
-        inline bool is_even(size_type index) {
+        inline bool is_even(s_size_type index) {
             return (((index) % 2) == 0);
         }
     }  // namespace signatory::misc

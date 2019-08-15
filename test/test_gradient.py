@@ -1,17 +1,8 @@
 import signatory
-import torch
 import torch.autograd as autograd
 import unittest
 
 import utils
-
-
-def random_size():
-    for _ in range(5):
-        size0 = int(torch.randint(low=1, high=10, size=(1,)))
-        size1 = int(torch.randint(low=2, high=10, size=(1,)))
-        size2 = int(torch.randint(low=1, high=10, size=(1,)))
-        yield size0, size1, size2
 
 
 class TestSignatureGrad(unittest.TestCase):
@@ -38,7 +29,16 @@ class TestSignatureGrad(unittest.TestCase):
 
     def test_gradcheck_random(self):
         for c in utils.ConfigIter(requires_grad=True,
-                                  size=random_size()):
+                                  size=utils.random_size()):
+            try:
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint)
+            except RuntimeError:
+                self.fail(c.fail())
+
+    def test_gradcheck_large(self):
+        for c in utils.ConfigIter(requires_grad=True,
+                                  size=utils.large_size(),
+                                  depth=utils.large_depth()):
             try:
                 self.gradcheck(c.path, c.depth, c.stream, c.basepoint)
             except RuntimeError:
@@ -75,7 +75,17 @@ class TestLogSignatureGrad(unittest.TestCase):
     def test_gradcheck_random(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   requires_grad=True,
-                                  size=random_size()):
+                                  size=utils.random_size()):
+            try:
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.signatory_mode)
+            except RuntimeError:
+                self.fail(c.fail())
+
+    def test_gradcheck_depth(self):
+        for c in utils.ConfigIter(mode=utils.all_modes,
+                                  requires_grad=True,
+                                  size=utils.large_size(),
+                                  depth=utils.large_depth()):
             try:
                 self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.signatory_mode)
             except RuntimeError:

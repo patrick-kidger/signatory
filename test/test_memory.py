@@ -18,6 +18,15 @@ class TestSignatureMemory(unittest.TestCase):
             self.assertTrue(c.signatory_out.allclose(signatory_out_copy))
             self.assertTrue(c.grad.allclose(grad_copy))
 
+    @unittest.skip  # Bug in PyTorch: https://github.com/pytorch/pytorch/issues/24413
+    def test_inplace_caught(self):
+        for c in utils.ConfigIter(requires_grad=True,
+                                  size=utils.random_size(5)):
+            signatory_out = c.signature()
+            signatory_out += 1
+            with self.assertRaises(RuntimeError):
+                c.signature_backward()
+
 
 class TestLogSignatureMemory(unittest.TestCase):
     def test_memory(self):
@@ -33,3 +42,13 @@ class TestLogSignatureMemory(unittest.TestCase):
             self.assertTrue(c.path.allclose(path_copy))
             self.assertTrue(c.signatory_out.allclose(signatory_out_copy))
             self.assertTrue(c.grad.allclose(grad_copy))
+
+    @unittest.skip  # Bug in PyTorch: https://github.com/pytorch/pytorch/issues/24413
+    def test_inplace_caught(self):
+        for c in utils.ConfigIter(mode=utils.all_modes,
+                                  requires_grad=True,
+                                  size=utils.random_size(5)):
+            signatory_out = c.signature()
+            signatory_out += 1
+            with self.assertRaises(RuntimeError):
+                c.signature_backward()

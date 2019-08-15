@@ -13,21 +13,23 @@ namespace signatory {
     enum class LogSignatureMode { Expand, Brackets, Words };
 
     // signed-ness is important because we'll sometimes iterate downwards
-    using size_type = std::make_signed<std::vector<torch::Tensor>::size_type>::type;
-    using u_size_type = std::make_unsigned<size_type>::type;
+    // it is very deliberately not called 'size_type' because otherwise when using it in e.g. the constructor for
+    // something inheriting from std::vector, then 'size_type' will there refer to std::vector::size_type instead.
+    using s_size_type = std::make_signed<std::vector<torch::Tensor>::size_type>::type;
+    using u_size_type = std::make_unsigned<s_size_type>::type;
 
     namespace misc {
         // Encapsulates the things necessary for Lyndon word etc. computations
         struct LyndonSpec {
-            LyndonSpec(int64_t input_channels, size_type depth);
+            LyndonSpec(int64_t input_channels, s_size_type depth);
 
             int64_t input_channels;
-            size_type depth;
+            s_size_type depth;
         };
 
         // Encapsulates all the things that aren't tensors for signature and logsignature computations
         struct SigSpec : LyndonSpec {
-            SigSpec(torch::Tensor path, size_type depth, bool stream, bool basepoint);
+            SigSpec(torch::Tensor path, s_size_type depth, bool stream, bool basepoint);
 
             torch::TensorOptions opts;
             int64_t input_stream_size;
@@ -58,7 +60,7 @@ namespace signatory {
         // Convert from externally-visible axis ordering to internally-used axis ordering
         inline torch::Tensor transpose_reverse(torch::Tensor tensor, const SigSpec& sigspec);
 
-        inline bool is_even(size_type index);
+        inline bool is_even(s_size_type index);
 
         // Retains information needed for the backwards pass.
         struct BackwardsInfo{
@@ -92,7 +94,7 @@ namespace signatory {
         BackwardsInfo* get_backwards_info(py::object backwards_info_capsule);
 
         // Checks the arguments for the forwards pass
-        void checkargs(torch::Tensor path, size_type depth, bool basepoint, torch::Tensor basepoint_value);
+        void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value);
 
         // Checks the arguments for the backwards pass. Only grad_out is checked to make sure it is as expected.
         // The objects we get from the PyCapsule-wrapped BackwardsInfo object are assumed to be correct.

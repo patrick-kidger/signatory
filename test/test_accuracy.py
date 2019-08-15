@@ -21,8 +21,8 @@ class TestSignatureAccuracy(unittest.TestCase):
             iisignature_grad = c.sig_backward()
 
             # strangely iisignature returns float32 in the backward calculation, even if the input was float64, so we
-            # have to reduce the tolerance slightly
-            if not signatory_grad.allclose(iisignature_grad, atol=1e-6):
+            # have to reduce the tolerance quite a lot
+            if not signatory_grad.allclose(iisignature_grad, atol=2e-6):
                 self.fail(c.diff_fail(signatory_grad=signatory_grad, iisignature_grad=iisignature_grad))
 
 
@@ -87,5 +87,5 @@ class TestLogSignatureAccuracy(unittest.TestCase):
             iisignature_grad = c.logsig_backward()
             # strangely iisignature returns float32 in the backward calculation, even if the input was float64, so we
             # have to reduce the tolerance slightly
-            if not signatory_grad.allclose(iisignature_grad, atol=1e-6):
+            if not signatory_grad.allclose(iisignature_grad, atol=2e-6):
                 self.fail(c.diff_fail(signatory_grad=signatory_grad, iisignature_grad=iisignature_grad))

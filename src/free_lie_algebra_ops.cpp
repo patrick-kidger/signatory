@@ -43,7 +43,7 @@ namespace signatory { namespace fla_ops {
 
     LyndonWords::LyndonWords(const misc::LyndonSpec& lyndonspec, WordTag) : lyndonspec{lyndonspec} {
         this->reserve(lyndonspec.depth);
-        for (size_type depth_index = 0; depth_index < lyndonspec.depth; ++depth_index) {
+        for (s_size_type depth_index = 0; depth_index < lyndonspec.depth; ++depth_index) {
             this->emplace_back();
         }
 
@@ -68,7 +68,7 @@ namespace signatory { namespace fla_ops {
 
     LyndonWords::LyndonWords(const misc::LyndonSpec& lyndonspec, BracketTag) : lyndonspec{lyndonspec} {
         this->reserve(lyndonspec.depth);
-        for (size_type depth_index = 0; depth_index < lyndonspec.depth; ++depth_index) {
+        for (s_size_type depth_index = 0; depth_index < lyndonspec.depth; ++depth_index) {
             this->emplace_back();
         }
 
@@ -77,7 +77,7 @@ namespace signatory { namespace fla_ops {
             (*this)[0].emplace_back(std::vector<int64_t> {channel_index}, true, lyndonspec);
         }
 
-        for (size_type target_depth_index = 1; target_depth_index < lyndonspec.depth; ++target_depth_index) {
+        for (s_size_type target_depth_index = 1; target_depth_index < lyndonspec.depth; ++target_depth_index) {
             auto& target_depth_class = (*this)[target_depth_index];
 
             auto& depth_class1 = (*this)[0];
@@ -90,8 +90,8 @@ namespace signatory { namespace fla_ops {
                 }
             }
 
-            for (size_type depth_index1 = 1; depth_index1 < target_depth_index; ++depth_index1) {
-                size_type depth_index2 = target_depth_index - depth_index1 - 1;
+            for (s_size_type depth_index1 = 1; depth_index1 < target_depth_index; ++depth_index1) {
+                s_size_type depth_index2 = target_depth_index - depth_index1 - 1;
                 auto& depth_class1 = (*this)[depth_index1];
                 auto& depth_class2 = (*this)[depth_index2];
 
@@ -116,7 +116,7 @@ namespace signatory { namespace fla_ops {
         //       \--------------------/  \----------------------/
         //    Letters in a Lyndon word    All Lyndon words of a particular anagram class, ordered lexicographically
 
-        std::vector<size_type> anagram_class_sizes;
+        std::vector<s_size_type> anagram_class_sizes;
         anagram_class_sizes.reserve(amount);
         // First go through and figure out the anagram classes
         for (auto& depth_class : *this) {
@@ -135,7 +135,7 @@ namespace signatory { namespace fla_ops {
         // of Lyndon bases we can restrict our search space for anagrams.
         // Note that we couldn't do this in the above for loop because anagram_class was changing size (and thus
         // reallocating memory), so anagram_class.end() ends up becoming invalid.
-        size_type counter = 0;
+        s_size_type counter = 0;
         for (auto& depth_class : *this) {
             for (auto& lyndon_word : depth_class) {
                 lyndon_word.extra->anagram_limit = lyndon_word.extra->anagram_class->begin() +
@@ -153,7 +153,7 @@ namespace signatory { namespace fla_ops {
 
         // Start at 1 because depth_index == 0 corresponds to the "bracketed words without brackets", at the very
         // lowest level - so we can't decompose them into two pieces yet.
-        for (size_type depth_index = 1; depth_index < lyndonspec.depth; ++depth_index){
+        for (s_size_type depth_index = 1; depth_index < lyndonspec.depth; ++depth_index){
             for (const auto& lyndon_word : (*this)[depth_index]) {
                 // Record the coefficients of each word in the expansion
                 std::map<std::vector<int64_t>, int64_t> bracket_expansion;
@@ -235,9 +235,9 @@ namespace signatory { namespace fla_ops {
         // than applying this to them one-by-one.
         int64_t tensor_algebra_offset = 0;
         int64_t num_words = lyndonspec.input_channels;
-        size_type compressed_offset = 0;
+        s_size_type compressed_offset = 0;
         for (auto& depth_class : (*this)) {
-            for (size_type compressed_index = 0;
+            for (s_size_type compressed_index = 0;
                  static_cast<u_size_type>(compressed_index) < depth_class.size();
                  ++compressed_index) {
                 auto& lyndon_word = depth_class[compressed_index];
@@ -331,7 +331,7 @@ namespace signatory { namespace fla_ops {
         // don't really have good ways to compute logsignatures. Even the Baker-Campbell-Hausdoff formula is
         // expensive, and not obviously better than what we do.
         // It also means that we're holding on to a lot of memory until the backward pass.
-        for (size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index){
+        for (s_size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index){
             for (auto& lyndon_word : lyndon_words[depth_index]) {
                 compressed.narrow(/*dim=*/sigspec.output_channel_dim,
                                   /*start=*/lyndon_word.compressed_index,
@@ -368,7 +368,7 @@ namespace signatory { namespace fla_ops {
         // save that for the backward pass; it's applied outside this function.)
         LyndonWords lyndon_words(sigspec, LyndonWords::word_tag);
 
-        for (size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index){
+        for (s_size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index){
             for (auto& lyndon_word: lyndon_words[depth_index]) {
                 grad_expanded.narrow(/*dim=*/sigspec.output_channel_dim,
                                      /*start=*/lyndon_word.tensor_algebra_index,

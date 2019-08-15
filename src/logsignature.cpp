@@ -12,7 +12,7 @@
 
 namespace signatory {
     std::tuple<torch::Tensor, py::object>
-    logsignature_forward(torch::Tensor path, size_type depth, bool stream, bool basepoint,
+    logsignature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint,
                          torch::Tensor basepoint_value, LogSignatureMode mode) {
         if (depth == 1) {
             return signature_forward(path, depth, stream, basepoint, basepoint_value);

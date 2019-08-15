@@ -84,14 +84,14 @@ namespace signatory { namespace fla_ops {
         /* The index of this element in the sequence of all Lyndon words i.e. given some lyndonspec and some tag:
          *
          * LyndonWords lyndon_words(lyndonspec, tag);
-         * size_type counter = 0
+         * s_size_type counter = 0
          * for (auto& depth_class : lyndon_words) {
          *     for (auto& lyndon_word : depth_class) {
          *         lyndon_word.compressed_index == counter;
          *     }
          * }
          */
-        size_type compressed_index;
+        s_size_type compressed_index;
 
         // The index of this element in the sequence of all words (not necessarily Lyndon).
         int64_t tensor_algebra_index {0};

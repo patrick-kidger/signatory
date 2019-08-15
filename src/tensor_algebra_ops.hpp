@@ -70,7 +70,7 @@ namespace signatory {
         //
         // The result is returned in arg1, and arg2 is left unchanged.
         void compute_mult_partial(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
-                                  torch::Scalar scalar_term_value, size_type top_terms_to_skip,
+                                  torch::Scalar scalar_term_value, s_size_type top_terms_to_skip,
                                   const misc::SigSpec& sigspec);
 
         // Backward pass through compute_mult_partial. Is somewhat simplified compared to the naive implementation.
@@ -82,11 +82,11 @@ namespace signatory {
                                            const std::vector<torch::Tensor>& arg1,
                                            const std::vector<torch::Tensor>& arg2,
                                            torch::Scalar scalar_value_term,
-                                           size_type top_terms_to_skip,
+                                           s_size_type top_terms_to_skip,
                                            const misc::SigSpec& sigspec);
 
         // The coefficient of a term in the power series of the logarithm
-        torch::Scalar log_coefficient_at_depth(size_type depth_index, const misc::SigSpec& sigspec);
+        torch::Scalar log_coefficient_at_depth(s_size_type depth_index, const misc::SigSpec& sigspec);
 
         // Computes the logarithm in the tensor algebra
         void compute_log(std::vector<torch::Tensor>& output_vector,

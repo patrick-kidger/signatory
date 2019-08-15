@@ -7,24 +7,21 @@
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
 
+// TODO: fix logsignature backward
 // TODO: add accuracy tests for stream=True for logsig+sig backward
-// TODO: add tests for utility functions
+// TODO: logsignature prepare
+// TODO: test on GPU
+// TODO: profile for memory leaks, just in case!
+
 // TODO: rationalise backwards_info. Can we combine out_vector and signature_vector?
 // TODO: rename out_* to signature_*
 // TODO: switch to negative indexing axes
-// TODO: test on GPU
-// TODO: logsignature prepare
-// TODO: check in-place operations get caught
 // TODO: signature_jacobian, logsignature_jacobian
 // TODO: documentation: when to use signature / logsignature, time augmentation vs stream
-// TODO: create type for std::vector<std::vector<LyndonWord>> with the two different constructors?
-
-// TODO: numpy, tensorflow
-// TODO: CUDA?
+// TODO: tensorflow
 // TODO: support torchscript? https://pytorch.org/tutorials/advanced/torch_script_custom_ops.html
 // TODO: concatenating onto an already existing signature. A class that takes data and spits out signatures?
 // TODO: check that the right things are being put in the sdist/bdist
-// TODO: profile for memory leaks, just in case!
 
 
 namespace signatory {
@@ -72,7 +69,7 @@ namespace signatory {
     }  // namespace signatory::detail
 
     std::tuple<torch::Tensor, py::object>
-    signature_forward(torch::Tensor path, size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value) {
+    signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value) {
         misc::checkargs(path, depth, basepoint, basepoint_value);
 
         // convert from (batch, stream, channel) to (stream, channel, batch), which is the representation we use

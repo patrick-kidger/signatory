@@ -25,8 +25,9 @@ def _forward(ctx, path, depth, stream, basepoint, fn_forward, extra_args=()):
         basepoint_value = torch.Tensor()
 
     result, backwards_info = fn_forward(path, depth, stream, basepoint, basepoint_value, *extra_args)
-    ctx.backwards_info = backwards_info
-    ctx.save_for_backward(result)
+    if ctx.requires_grad:
+        ctx.backwards_info = backwards_info
+        ctx.save_for_backward(result)
 
     return result
 
@@ -35,8 +36,9 @@ def _backward(ctx, grad_result, fn_backward):
     # Just to check that the result of the forward pass hasn't been modified in-place. (Which would make the result
     # of the backwards calculation be incorrect!) The reason we don't use the tensor itself is because another
     # handle to the same information is already saved in ctx.backwards_info.
-    # TODO: this isn't actually the case :(
     _ = ctx.saved_tensors
+    # Actually the check doesn't work at the moment: https://github.com/pytorch/pytorch/issues/24413
+
     grad_path, grad_basepoint_value = fn_backward(grad_result, ctx.backwards_info)
     if not isinstance(ctx.basepoint, torch.Tensor):
         grad_basepoint_value = None

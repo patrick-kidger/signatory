@@ -19,12 +19,12 @@ namespace signatory {
             }
         }  // namespace signatory::misc::detail
 
-        LyndonSpec::LyndonSpec(int64_t input_channels, size_type depth) :
+        LyndonSpec::LyndonSpec(int64_t input_channels, s_size_type depth) :
             input_channels{input_channels},
             depth{depth}
         {};
 
-        SigSpec::SigSpec(torch::Tensor path, size_type depth, bool stream, bool basepoint) :
+        SigSpec::SigSpec(torch::Tensor path, s_size_type depth, bool stream, bool basepoint) :
             LyndonSpec(path.size(1), depth),
             opts{torch::TensorOptions().dtype(path.dtype()).device(path.device())},
             input_stream_size{path.size(0)},
@@ -76,7 +76,7 @@ namespace signatory {
                     PyCapsule_GetPointer(backwards_info_capsule.ptr(), detail::backwards_info_capsule_name));
         }
 
-        void checkargs(torch::Tensor path, size_type depth, bool basepoint, torch::Tensor basepoint_value) {
+        void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value) {
             if (path.ndimension() != 3) {
                 throw std::invalid_argument("Argument 'path' must be a 3-dimensional tensor, with dimensions "
                                             "corresponding to (batch, stream, channel) respectively.");
