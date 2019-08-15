@@ -28,6 +28,7 @@ class TestSignatureGrad(unittest.TestCase):
             except RuntimeError:
                 self.fail(c.fail())
 
+    @unittest.skip  # takes forever
     def test_gradcheck_grid(self):
         for c in utils.ConfigIter(requires_grad=True):
             try:
@@ -62,6 +63,7 @@ class TestLogSignatureGrad(unittest.TestCase):
             except RuntimeError:
                 self.fail(c.fail())
 
+    @unittest.skip  # takes forever
     def test_gradcheck_grid(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   requires_grad=True):

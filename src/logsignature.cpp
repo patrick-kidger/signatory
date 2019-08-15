@@ -58,24 +58,17 @@ namespace signatory {
 
         // Brackets and Words are the two possible compressed forms of the logsignature. So here we perform the
         // compression.
-        std::vector<std::vector<fla_ops::LyndonWord>> lyndon_words;
+        std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
         if (mode == LogSignatureMode::Words) {
-            fla_ops::lyndon_word_generator(lyndon_words, sigspec);
+            fla_ops::LyndonWords lyndon_words(sigspec, fla_ops::LyndonWords::word_tag);
             logsignature = fla_ops::compress(lyndon_words, logsignature, sigspec);
         }
         else if (mode == LogSignatureMode::Brackets){
-            fla_ops::lyndon_bracket_generator(lyndon_words, sigspec);
+            fla_ops::LyndonWords lyndon_words(sigspec, fla_ops::LyndonWords::bracket_tag);
             logsignature = fla_ops::compress(lyndon_words, logsignature, sigspec);
-        }
 
-        // If mode == LogSignatureMode::Brackets then we need to apply an additional transform. Some of the work for
-        // that has already been done in lyndon_bracket_generator (some information only becomes available when we
-        // generate the word), but some of it is now done in lyndon_words_to_lyndon_basis (as some of the information is
-        // only available once the whole set of words has been generated).
-        std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
-        if (mode == LogSignatureMode::Brackets) {
             // First find all the transforms
-            fla_ops::lyndon_words_to_lyndon_basis(lyndon_words, transforms, sigspec);
+            lyndon_words.to_lyndon_basis(transforms);
             // Then apply the transforms. We rely on the triangularity property of the Lyndon basis for this to work.
             for (const auto& transform : transforms) {
                 int64_t source_index = std::get<0>(transform);

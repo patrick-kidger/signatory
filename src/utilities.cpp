@@ -26,12 +26,10 @@ namespace signatory {
     }
 
     std::vector<std::vector<int64_t>> lyndon_words(int64_t channels, int64_t depth) {
-        misc::LyndonSpec lyndonspec {channels, depth};
-        std::vector<std::vector<fla_ops::LyndonWord>> lyndon_words;
-        fla_ops::lyndon_bracket_generator(lyndon_words, lyndonspec);
+        fla_ops::LyndonWords lyndon_words(misc::LyndonSpec {channels, depth}, fla_ops::LyndonWords::bracket_tag);
 
         std::vector<std::vector<int64_t>> lyndon_words_as_words;
-        lyndon_words_as_words.reserve(fla_ops::num_lyndon_words(lyndon_words, lyndonspec));
+        lyndon_words_as_words.reserve(lyndon_words.amount);
 
         for (const auto& depth_class : lyndon_words) {
             for (const auto& lyndon_word : depth_class) {
@@ -43,12 +41,10 @@ namespace signatory {
     }
 
     std::vector<py::object> lyndon_brackets(int64_t channels, int64_t depth) {
-        misc::LyndonSpec lyndonspec {channels, depth};
-        std::vector<std::vector<fla_ops::LyndonWord>> lyndon_words;
-        fla_ops::lyndon_bracket_generator(lyndon_words, lyndonspec);
+        fla_ops::LyndonWords lyndon_words(misc::LyndonSpec {channels, depth}, fla_ops::LyndonWords::bracket_tag);
 
         std::vector<py::object> lyndon_words_as_brackets;
-        lyndon_words_as_brackets.reserve(fla_ops::num_lyndon_words(lyndon_words, lyndonspec));
+        lyndon_words_as_brackets.reserve(lyndon_words.amount);
 
         for (const auto& depth_class : lyndon_words) {
             for (const auto& lyndon_word : depth_class) {
@@ -81,13 +77,9 @@ namespace signatory {
 
     std::vector<std::tuple<int64_t, int64_t, int64_t>> lyndon_words_to_basis_transform(int64_t channels, int64_t depth)
     {
-        misc::LyndonSpec lyndonspec {channels, depth};
-
-        std::vector<std::vector<fla_ops::LyndonWord>> lyndon_words;
+        fla_ops::LyndonWords lyndon_words(misc::LyndonSpec {channels, depth}, fla_ops::LyndonWords::bracket_tag);
         std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
-        fla_ops::lyndon_bracket_generator(lyndon_words, lyndonspec);
-        fla_ops::lyndon_words_to_lyndon_basis(lyndon_words, transforms, lyndonspec);
-
+        lyndon_words.to_lyndon_basis(transforms);
         return transforms;
     }
 }  // namespace signatory
