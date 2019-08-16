@@ -11,14 +11,6 @@
 
 namespace signatory {
     namespace misc {
-        namespace detail {
-            constexpr auto backwards_info_capsule_name = "signatory.BackwardsInfoCapsule";
-
-            void BackwardsInfoCapsuleDestructor(PyObject* capsule) {
-                delete static_cast<BackwardsInfo*>(PyCapsule_GetPointer(capsule, backwards_info_capsule_name));
-            }
-        }  // namespace signatory::misc::detail
-
         LyndonSpec::LyndonSpec(int64_t input_channels, s_size_type depth) :
             input_channels{input_channels},
             depth{depth}
@@ -50,30 +42,13 @@ namespace signatory {
             {};
 
         void BackwardsInfo::set_logsignature_data(std::vector<torch::Tensor>&& signature_vector_,
-                                                  std::vector<std::tuple<int64_t, int64_t, int64_t>>&& transforms_,
+                                                  py::object lyndon_info_capsule_,
                                                   LogSignatureMode mode_,
                                                   int64_t logsignature_channels_) {
             signature_vector = signature_vector_;
-            transforms = transforms_;
+            lyndon_info_capsule = lyndon_info_capsule_;
             mode = mode_;
             logsignature_channels = logsignature_channels_;
-        }
-
-
-
-        py::object make_backwards_info(std::vector<torch::Tensor>& out_vector, torch::Tensor out,
-                                       torch::Tensor path_increments, SigSpec& sigspec) {
-            return py::reinterpret_steal<py::object>(PyCapsule_New(new misc::BackwardsInfo{std::move(sigspec),
-                                                                                           std::move(out_vector),
-                                                                                           out,
-                                                                                           path_increments},
-                                                                   detail::backwards_info_capsule_name,
-                                                                   detail::BackwardsInfoCapsuleDestructor));
-        }
-
-        BackwardsInfo* get_backwards_info(py::object backwards_info_capsule) {
-            return static_cast<BackwardsInfo*>(
-                    PyCapsule_GetPointer(backwards_info_capsule.ptr(), detail::backwards_info_capsule_name));
         }
 
         void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value) {

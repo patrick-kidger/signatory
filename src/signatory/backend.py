@@ -58,7 +58,7 @@ class _SignatureFunction(autograd.Function):
 
 class _LogSignatureFunction(_SignatureFunction):
     @staticmethod
-    def forward(ctx, path, depth, stream, basepoint, mode):
+    def forward(ctx, path, depth, stream, basepoint, mode, lyndon_info):
         if mode == "expand":
             mode = _LogSignatureMode.Expand
         elif mode == "brackets":
@@ -68,7 +68,7 @@ class _LogSignatureFunction(_SignatureFunction):
         else:
             raise ValueError("Invalid values for argument 'mode'. Valid values are 'expand', 'brackets', or 'words'.")
 
-        return _forward(ctx, path, depth, stream, basepoint, _logsignature_forward, (mode,))
+        return _forward(ctx, path, depth, stream, basepoint, _logsignature_forward, (mode, lyndon_info))
 
     @staticmethod
     @autograd.function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
@@ -164,6 +164,9 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
     See the "Returns" section below for a little more detail.)
 
     In particular the :attr`modes` argument determines how the logsignature is represented.
+
+    Note that if performing many logsignature calculations for the same depth and size of input, then you will likely
+    see a performance boost by using :class:`signatory.LogSignature` over :class:`signatory.logsignature`.
 
     Arguments:
         path (:class:`torch.Tensor`): as :func:`signatory.signature`.

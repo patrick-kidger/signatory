@@ -41,7 +41,8 @@ namespace signatory { namespace fla_ops {
         constexpr CompareWords compare_words {};
     }  // namespace signatory::fla_ops::detail
 
-    LyndonWords::LyndonWords(const misc::LyndonSpec& lyndonspec, WordTag) : lyndonspec{lyndonspec} {
+    void LyndonWords::word_init(const misc::LyndonSpec& lyndonspec) {
+        this->lyndonspec = lyndonspec;
         this->reserve(lyndonspec.depth);
         for (s_size_type depth_index = 0; depth_index < lyndonspec.depth; ++depth_index) {
             this->emplace_back();
@@ -66,7 +67,7 @@ namespace signatory { namespace fla_ops {
         finalise();
     }
 
-    LyndonWords::LyndonWords(const misc::LyndonSpec& lyndonspec, BracketTag) : lyndonspec{lyndonspec} {
+    void LyndonWords::bracket_init(const misc::LyndonSpec& lyndonspec) {
         this->reserve(lyndonspec.depth);
         for (s_size_type depth_index = 0; depth_index < lyndonspec.depth; ++depth_index) {
             this->emplace_back();
@@ -110,7 +111,8 @@ namespace signatory { namespace fla_ops {
         finalise();
     }
 
-    void LyndonWords::to_lyndon_basis(std::vector<std::tuple<int64_t, int64_t, int64_t>>& transforms) {
+    void LyndonWords::to_lyndon_basis(std::vector<std::tuple<int64_t, int64_t, int64_t>>& transforms,
+                                      std::vector<std::tuple<int64_t, int64_t, int64_t>>& transforms_backward) {
 
         std::map<std::multiset<int64_t>, std::vector<LyndonWord*>> lyndon_anagrams;
         //       \--------------------/  \----------------------/
@@ -207,8 +209,12 @@ namespace signatory { namespace fla_ops {
                                                         detail::compare_words);
                     if (ptr_to_word != end) {
                         if (depth_index == lyndonspec.depth - 1 || (*ptr_to_word)->extra->word == word) {
-                            transforms.emplace_back(lyndon_word.compressed_index, (*ptr_to_word)->compressed_index,
+                            transforms.emplace_back(lyndon_word.compressed_index,
+                                                    (*ptr_to_word)->compressed_index,
                                                     coeff);
+                            transforms_backward.emplace_back(lyndon_word.tensor_algebra_index,
+                                                             (*ptr_to_word)->tensor_algebra_index,
+                                                             coeff);
                         }
                     }
                 }
@@ -224,6 +230,14 @@ namespace signatory { namespace fla_ops {
         for (auto& depth_class : *this) {
             for (auto& lyndon_word : depth_class) {
                 lyndon_word.extra = nullptr;
+            }
+        }
+    }
+
+    void LyndonWords::delete_extra() {
+        for (auto& depth_class : (*this)) {
+            for (auto& lyndon_word : depth_class) {
+                lyndon_word.extra.reset();
             }
         }
     }
@@ -268,14 +282,14 @@ namespace signatory { namespace fla_ops {
             second_child{second_child_}
     {};
 
-    // Constructor for LyndonWords(..., LyndonWords::word_tag) (with extra==false) and
-    // constructor for LyndonWords(..., LyndonWords::bracket_tag) for the depth == 1 words (with extra==true).
+    // Constructor for LyndonWords::word_init (with extra==false) and
+    // constructor for LyndonWords::bracket_init for the depth == 1 words (with extra==true).
     LyndonWord::LyndonWord(const std::vector<int64_t>& word, bool extra, const misc::LyndonSpec& lyndonspec)
     {
         init(word, extra, nullptr, nullptr, lyndonspec);
     };
 
-    // Constructor for LyndonWords(..., LyndonWords::bracket_tag) for the depth > 1 words.
+    // Constructor for LyndonWords::bracket_init for the depth > 1 words.
     LyndonWord::LyndonWord(LyndonWord* first_child, LyndonWord* second_child, const misc::LyndonSpec& lyndonspec)
     {
         std::vector<int64_t> word = detail::concat_vectors(first_child->extra->word, second_child->extra->word);

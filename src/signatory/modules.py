@@ -7,6 +7,8 @@ if False:
     from typing import Any, Callable, Tuple, Union
 
 from . import backend
+# noinspection PyProtectedMember, PyUnresolvedReferences
+from ._impl import _make_lyndon_info
 
 
 class Signature(nn.Module):
@@ -41,6 +43,11 @@ class Signature(nn.Module):
 class LogSignature(nn.Module):
     """Module wrapper around the :func:`signatory.logsignature` function.
 
+    Calling this module on an input `path` with the same number of channels as the last input `path` it was called with
+    will be faster than the corresponding :func:`signatory.logsignature` function, as this module caches the result of
+    certain computations which depend only on this value. (For larger numbers of channels, this speedup will be
+    substantial.)
+
     Arguments:
         depth (int): as :func:`signatory.logsignature`.
 
@@ -61,9 +68,18 @@ class LogSignature(nn.Module):
         self.basepoint = basepoint
         self.mode = mode
 
+        self.path_size = None
+        self.lyndon_info = None
+
     def forward(self, path):
         # type: (torch.Tensor) -> torch.Tensor
-        return backend.logsignature(path, self.depth, self.stream, self.basepoint, self.mode)
+        if self.path_size != path.size(-1):
+            self.lyndon_info = _make_lyndon_info(path.size(-1), self.depth)
+
+        # don't call logsignature itself because that (deliberately) doesn't expose a lyndon_info argument.
+        # noinspection PyProtectedMember, PyUnresolvedReferences
+        return backend._LogSignatureFunction.apply(path, self.depth, self.stream, self.basepoint, self.mode,
+                                                   self.lyndon_info)
 
     def extra_repr(self):
         return ('depth={depth}, stream={stream}, basepoint={basepoint}, mode{mode}'

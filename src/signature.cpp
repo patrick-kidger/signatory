@@ -4,12 +4,10 @@
 #include <vector>     // std::vector
 
 #include "misc.hpp"
+#include "pycapsule.hpp"
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
 
-// TODO: fix logsignature backward
-// TODO: add accuracy tests for stream=True for logsig+sig backward
-// TODO: logsignature prepare
 // TODO: test on GPU
 // TODO: profile for memory leaks, just in case!
 
@@ -179,12 +177,17 @@ namespace signatory {
         }
 
         torch::Tensor out_with_transposes = misc::transpose(out, sigspec);
-        return {out_with_transposes, misc::make_backwards_info(out_vector, out, path_increments, sigspec)};
+
+        py::object backwards_info_capsule = misc::wrap_capsule<misc::BackwardsInfo>(std::move(sigspec),
+                                                                                    std::move(out_vector),
+                                                                                    out,
+                                                                                    path_increments);
+        return {out_with_transposes, backwards_info_capsule};
     }
 
     std::tuple<torch::Tensor, torch::Tensor>
     signature_backward(torch::Tensor grad_out, py::object backwards_info_capsule, bool clone) {
-        misc::BackwardsInfo* backwards_info = misc::get_backwards_info(backwards_info_capsule);
+        misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<BackwardsInfo>(backwards_info_capsule);
 
         // Unpacked backwards_info
         const misc::SigSpec& sigspec = backwards_info->sigspec;

@@ -68,7 +68,7 @@ namespace signatory {
                           torch::Tensor path_increments);
 
             void set_logsignature_data(std::vector<torch::Tensor>&& signature_vector_,
-                                       std::vector<std::tuple<int64_t, int64_t, int64_t>>&& transforms_,
+                                       py::object lyndon_info_capsule_,
                                        LogSignatureMode mode_,
                                        int64_t logsignature_channels_);
 
@@ -81,17 +81,16 @@ namespace signatory {
                                                           // with stream==true. But we provide a separate vector here
                                                           // for a consistent interface with the stream==false case as
                                                           // well.
-            std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
+            py::object lyndon_info_capsule;
             LogSignatureMode mode;
             int64_t logsignature_channels;
+
+            constexpr static auto capsule_name = "signatory.BackwardsInfoCapsule";
         };
 
         // Makes a BackwardsInfo object and wraps it into a PyCapsule and wraps that into a py::object
         py::object make_backwards_info(std::vector<torch::Tensor>& out_vector, torch::Tensor out,
                                        torch::Tensor path_increments, SigSpec& sigspec);
-
-        // Unwraps a py::object to unwrap a PyCapsule to get a BackwardsInfo object
-        BackwardsInfo* get_backwards_info(py::object backwards_info_capsule);
 
         // Checks the arguments for the forwards pass
         void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value);

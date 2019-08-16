@@ -1,19 +1,59 @@
 #include <torch/extension.h>
 #include <cstdint>    // int64_t
+#include <stdexcept>  // std::invalid_argument
 #include <tuple>      // std::tie, std::tuple
 #include <vector>     // std::vector
 
 #include "free_lie_algebra_ops.hpp"
 #include "logsignature.hpp"
 #include "misc.hpp"
+#include "pycapsule.hpp"
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
 
 
 namespace signatory {
+    namespace detail {
+        struct LyndonInfo {
+            LyndonInfo(fla_ops::LyndonWords&& lyndon_words,
+                       std::vector<std::tuple<int64_t, int64_t, int64_t>>&& transforms,
+                       std::vector<std::tuple<int64_t, int64_t, int64_t>>&& transforms_backward) :
+                lyndon_words{lyndon_words},
+                transforms{transforms}
+                transforms_backward{transforms_backward};
+            {};
+
+            fla_ops::LyndonWords lyndon_words;
+            std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms
+            std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms_backward;
+
+            constexpr static auto capsule_name = "signatory.LyndonInfoCapsule";
+        };
+    }  // namespace signatory::detail
+
+    py::object make_lyndon_info(int64_t input_channels, s_size_type depth, LogSignatureMode mode) {
+        fla_ops::LyndonWords lyndon_words;
+        std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
+        std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms_backward;
+        misc::LyndonSpec lyndonspec{input_channels, depth};
+
+        if (mode == LogSignatureMode::Words) {
+            lyndon_words.word_init(lyndonspec);
+        }
+        else if (mode == LogSignatureMode::Brackets) {
+            lyndon_words.bracket_init(lyndonspec);
+            lyndon_words.to_lyndon_basis(transforms, transforms_backward);
+            lyndon_words.delete_extra();
+        }
+
+        return misc::wrap_capsule<detail::LyndonInfo>(std::move(lyndon_words), std::move(transforms),
+                                                      std::move(transforms_backward));
+    }
+
     std::tuple<torch::Tensor, py::object>
     logsignature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint,
-                         torch::Tensor basepoint_value, LogSignatureMode mode) {
+                         torch::Tensor basepoint_value, LogSignatureMode mode, py::object lyndon_info_capsule=py::none)
+    {
         if (depth == 1) {
             return signature_forward(path, depth, stream, basepoint, basepoint_value);
         }  // this isn't just a fast return path: we also can't index the reciprocals tensor if depth == 1, so we'd need
@@ -26,7 +66,7 @@ namespace signatory {
                                                                         basepoint_value);
 
         // unpack sigspec
-        misc::BackwardsInfo* backwards_info = misc::get_backwards_info(backwards_info_capsule);
+        misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<BackwardsInfo>(backwards_info_capsule);
         const misc::SigSpec& sigspec = backwards_info->sigspec;
 
         // undo the transposing we just did in signature_forward...
@@ -58,19 +98,17 @@ namespace signatory {
 
         // Brackets and Words are the two possible compressed forms of the logsignature. So here we perform the
         // compression.
-        std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
+        if (lyndon_info_capsule.is_none()) {
+            lyndon_info_capsule = make_lyndon_info(sigspec.input_channels, sigspec.depth, mode);
+        }
+        detail::LyndonInfo* lyndon_info = misc::unwrap_capsule<detail::LyndonInfo>(lyndon_info_capsule);
         if (mode == LogSignatureMode::Words) {
-            fla_ops::LyndonWords lyndon_words(sigspec, fla_ops::LyndonWords::word_tag);
-            logsignature = fla_ops::compress(lyndon_words, logsignature, sigspec);
+            logsignature = fla_ops::compress(lyndon_info->lyndon_words, logsignature, sigspec);
         }
         else if (mode == LogSignatureMode::Brackets){
-            fla_ops::LyndonWords lyndon_words(sigspec, fla_ops::LyndonWords::bracket_tag);
-            logsignature = fla_ops::compress(lyndon_words, logsignature, sigspec);
-
-            // First find all the transforms
-            lyndon_words.to_lyndon_basis(transforms);
+            logsignature = fla_ops::compress(lyndon_info->lyndon_words, logsignature, sigspec);
             // Then apply the transforms. We rely on the triangularity property of the Lyndon basis for this to work.
-            for (const auto& transform : transforms) {
+            for (const auto& transform : lyndon_info->transforms) {
                 int64_t source_index = std::get<0>(transform);
                 int64_t target_index = std::get<1>(transform);
                 int64_t coefficient = std::get<2>(transform);
@@ -84,14 +122,12 @@ namespace signatory {
             }
         }
 
-        // I'm not an experienced enough C++ programmer to know if these moves are actually helpful here.
-        // backwards_info points to a heap object and signature_vector et al are stack objects. Does that mean that a
-        // copy needs to be performed anyway, to move from stack to heap?
-        // All the things being moved are vectors, which hold the nontrivial part of their memory on the heap anyway, so
-        // this probably shouldn't be a performance issue, as the already-on-the-heap elements of the vector certainly
-        // won't need to be copied.
         backwards_info->set_logsignature_data(std::move(signature_vector),
-                                              std::move(transforms),
+                                              // Important: the capsule, not the lyndon_info itself! Then the resource
+                                              // (i.e. the lyndon_info) is managed Python-style, so it doesn't matter
+                                              // whether this is a capsule that was given to us, or that we generated
+                                              // ourselves.
+                                              lyndon_info_capsule,
                                               mode,
                                               logsignature.size(sigspec.output_channel_dim));
 
@@ -102,7 +138,7 @@ namespace signatory {
     std::tuple<torch::Tensor, torch::Tensor>
     logsignature_backward(torch::Tensor grad_logsignature, py::object backwards_info_capsule) {
         // Unpack sigspec
-        misc::BackwardsInfo* backwards_info = misc::get_backwards_info(backwards_info_capsule);
+        misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<BackwardsInfo>(backwards_info_capsule);
         const misc::SigSpec& sigspec = backwards_info->sigspec;
         if (sigspec.depth == 1) {
             return signature_backward(grad_logsignature, backwards_info_capsule);
@@ -111,7 +147,8 @@ namespace signatory {
         // Unpack everything else from backwards_info
         torch::Tensor signature = backwards_info->out;
         const std::vector<torch::Tensor>& signature_vector = backwards_info->signature_vector;
-        const std::vector<std::tuple<int64_t, int64_t, int64_t>>& transforms = backwards_info->transforms;
+        detail::LyndonInfo* lyndon_info = misc::unwrap_capsule<detail::LyndonInfo>(backwards_info->lyndon_info_capsule);
+        const std::vector<std::tuple<int64_t, int64_t, int64_t>>& transforms_backward = lyndon_info->transforms_backward;
         LogSignatureMode mode = backwards_info->mode;
         int64_t logsignature_channels = backwards_info->logsignature_channels;
 
@@ -127,33 +164,32 @@ namespace signatory {
             grad_logsignature = grad_logsignature.clone();  // Clone so we don't leak changes through grad_logsignature.
         }
         else if (mode == LogSignatureMode::Words){
-            // Don't need to clone grad_logsignature as it gets put into new memory when decompressing
-
             grad_logsignature = fla_ops::compress_backward(grad_logsignature, sigspec);
         }
         else {  // mode == LogSignatureMode::Brackets
-            // TODO: have transforms record the tensor algebra indices as well so we can do this after decompressing
-            //       and not need to clone here
-            grad_logsignature = grad_logsignature.clone();  // Clone so we don't leak changes through grad_logsignature.
+            grad_logsignature = fla_ops::compress_backward(grad_logsignature, sigspec);
 
-            for (auto tptr = transforms.rbegin(); tptr != transforms.rend(); ++tptr) {
+            /* This is a deliberate asymmetry between the forwards and backwards: in the forwards pass we applied the
+             * linear transformation after compression, but on the backwards we don't apply the transforms before
+             * decompressing. Instead we apply a different (equivalent) transformation after decompressing. This is
+             * because otherwise we would have to clone the grad_logsignature we were given, to be sure that the
+             * transformations (which necessarily operate in-place) don't leak out. By doing it this way the memory that
+             * we operate on is internal memory that we've claimed, not memory that we've been given in an input.
+             */
+            for (auto tptr = transforms_backward.rbegin(); tptr != transforms_backward.rend(); ++tptr) {
                 int64_t source_index = std::get<0>(*tptr);
                 int64_t target_index = std::get<1>(*tptr);
                 int64_t coefficient = std::get<2>(*tptr);
                 torch::Tensor grad_source = grad_logsignature.narrow(/*dim=*/sigspec.output_channel_dim,
-                        /*start=*/source_index,
-                        /*length=*/1);
+                                                                     /*start=*/source_index,
+                                                                     /*length=*/1);
                 torch::Tensor grad_target = grad_logsignature.narrow(/*dim=*/sigspec.output_channel_dim,
-                        /*start=*/target_index,
-                        /*length=*/1);
+                                                                     /*start=*/target_index,
+                                                                     /*length=*/1);
                 grad_source.sub_(grad_target, coefficient);
             }
-
-            grad_logsignature = fla_ops::compress_backward(grad_logsignature, sigspec);
         }
 
-        // Our old friend.
-        // Memory management.
         torch::Tensor grad_signature = torch::zeros_like(grad_logsignature);
         torch::Tensor scratch = torch::empty({sigspec.output_channels, sigspec.batch_size}, sigspec.opts);
         std::vector<torch::Tensor> grad_logsignature_vector;
@@ -173,8 +209,8 @@ namespace signatory {
                 misc::slice_at_stream(grad_signature_vector, grad_signature_stream_vector, stream_index);
                 misc::slice_at_stream(signature_vector, signature_stream_vector, stream_index);
                 torch::Tensor signature_at_stream = signature.narrow(/*dim=*/0,
-                        /*start=*/stream_index,
-                        /*len=*/1).squeeze(0);
+                                                                     /*start=*/stream_index,
+                                                                     /*len=*/1).squeeze(0);
 
                 ta_ops::compute_log_backward(grad_logsignature_stream_vector, grad_signature_stream_vector,
                                              scratch_vector, signature_stream_vector, scratch,

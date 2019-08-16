@@ -26,7 +26,8 @@ namespace signatory {
     }
 
     std::vector<std::vector<int64_t>> lyndon_words(int64_t channels, int64_t depth) {
-        fla_ops::LyndonWords lyndon_words(misc::LyndonSpec {channels, depth}, fla_ops::LyndonWords::bracket_tag);
+        fla_ops::LyndonWords lyndon_words;
+        lyndon_words.bracket_init(misc::LyndonSpec {channels, depth});
 
         std::vector<std::vector<int64_t>> lyndon_words_as_words;
         lyndon_words_as_words.reserve(lyndon_words.amount);
@@ -41,7 +42,8 @@ namespace signatory {
     }
 
     std::vector<py::object> lyndon_brackets(int64_t channels, int64_t depth) {
-        fla_ops::LyndonWords lyndon_words(misc::LyndonSpec {channels, depth}, fla_ops::LyndonWords::bracket_tag);
+        fla_ops::LyndonWords lyndon_words;
+        lyndon_words.bracket_init(misc::LyndonSpec {channels, depth});
 
         std::vector<py::object> lyndon_words_as_brackets;
         lyndon_words_as_brackets.reserve(lyndon_words.amount);
@@ -77,7 +79,8 @@ namespace signatory {
 
     std::vector<std::tuple<int64_t, int64_t, int64_t>> lyndon_words_to_basis_transform(int64_t channels, int64_t depth)
     {
-        fla_ops::LyndonWords lyndon_words(misc::LyndonSpec {channels, depth}, fla_ops::LyndonWords::bracket_tag);
+        fla_ops::LyndonWords lyndon_words;
+        lyndon_words.bracket_init(misc::LyndonSpec {channels, depth});
         std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
         lyndon_words.to_lyndon_basis(transforms);
         return transforms;

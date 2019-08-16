@@ -21,7 +21,7 @@ class TestSignatureAccuracy(unittest.TestCase):
             iisignature_grad = c.sig_backward()
 
             # strangely iisignature returns float32 in the backward calculation, even if the input was float64, so we
-            # have to reduce the tolerance quite a lot
+            # have to reduce the tolerance quite a lot (https://github.com/bottler/iisignature/issues/7)
             if not signatory_grad.allclose(iisignature_grad, atol=2e-6):
                 self.fail(c.diff_fail(signatory_grad=signatory_grad, iisignature_grad=iisignature_grad))
 
@@ -76,6 +76,9 @@ class TestLogSignatureAccuracy(unittest.TestCase):
                 if not close:
                     self.fail(c.fail(subrange=subrange, subout=subout, narrowed=narrowed, signatory_out=signatory_out))
 
+    # bug in iisignature for this operation (https://github.com/bottler/iisignature/issues/8) so we can't test against
+    # them. In any case we have gradchecks in test_gradient.py so this isn't a huge issue.
+    @unittest.skip
     def test_backward(self):
         for c in utils.ConfigIter(mode=(utils.expand, utils.brackets),
                                   stream=False,  # iisignature doesn't support logsignatures for stream=True
@@ -86,6 +89,6 @@ class TestLogSignatureAccuracy(unittest.TestCase):
             signatory_grad = c.logsignature_backward()
             iisignature_grad = c.logsig_backward()
             # strangely iisignature returns float32 in the backward calculation, even if the input was float64, so we
-            # have to reduce the tolerance slightly
+            # have to reduce the tolerance slightly (https://github.com/bottler/iisignature/issues/7)
             if not signatory_grad.allclose(iisignature_grad, atol=2e-6):
                 self.fail(c.diff_fail(signatory_grad=signatory_grad, iisignature_grad=iisignature_grad))
