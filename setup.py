@@ -17,7 +17,8 @@ ext_modules = [cpp.CppExtension(name='_impl',
                                          'src/tensor_algebra_ops.hpp',
                                          'src/free_lie_algebra_ops.hpp',
                                          'src/signature.hpp',
-                                         'src/logsignature.hpp'])]
+                                         'src/logsignature.hpp'],
+                                extra_compile_args=['-fvisibility=hidden'])]
 
 
 setuptools.setup(name=metadata.project,

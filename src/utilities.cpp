@@ -26,8 +26,7 @@ namespace signatory {
     }
 
     std::vector<std::vector<int64_t>> lyndon_words(int64_t channels, int64_t depth) {
-        fla_ops::LyndonWords lyndon_words;
-        lyndon_words.bracket_init(misc::LyndonSpec {channels, depth});
+        fla_ops::LyndonWords lyndon_words(misc::LyndonSpec {channels, depth}, fla_ops::LyndonWords::bracket_tag);
 
         std::vector<std::vector<int64_t>> lyndon_words_as_words;
         lyndon_words_as_words.reserve(lyndon_words.amount);
@@ -42,8 +41,7 @@ namespace signatory {
     }
 
     std::vector<py::object> lyndon_brackets(int64_t channels, int64_t depth) {
-        fla_ops::LyndonWords lyndon_words;
-        lyndon_words.bracket_init(misc::LyndonSpec {channels, depth});
+        fla_ops::LyndonWords lyndon_words(misc::LyndonSpec {channels, depth}, fla_ops::LyndonWords::bracket_tag);
 
         std::vector<py::object> lyndon_words_as_brackets;
         lyndon_words_as_brackets.reserve(lyndon_words.amount);
@@ -65,8 +63,7 @@ namespace signatory {
                     // Except that lists use square [] brackets and tuples use round () brackets, and the commutators
                     // that these object represent are traditionally written with square [] brackets, so this looks more
                     // immediately understandable to any mathematician looking at this.
-                    // This is possibly the oddest reason anyone has ever had for how they chose to represent their
-                    // data!
+                    // Possibly one of the odder reasons anyone has ever had for how they chose to represent their data.
                     py::list lyndon_bracket;
                     lyndon_bracket.append(first_child);
                     lyndon_bracket.append(second_child);
@@ -79,10 +76,10 @@ namespace signatory {
 
     std::vector<std::tuple<int64_t, int64_t, int64_t>> lyndon_words_to_basis_transform(int64_t channels, int64_t depth)
     {
-        fla_ops::LyndonWords lyndon_words;
-        lyndon_words.bracket_init(misc::LyndonSpec {channels, depth});
+        fla_ops::LyndonWords lyndon_words(misc::LyndonSpec {channels, depth}, fla_ops::LyndonWords::bracket_tag);
         std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
-        lyndon_words.to_lyndon_basis(transforms);
+        std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms_backward;
+        lyndon_words.to_lyndon_basis(transforms, transforms_backward);
         return transforms;
     }
 }  // namespace signatory

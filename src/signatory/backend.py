@@ -59,6 +59,8 @@ class _SignatureFunction(autograd.Function):
 class _LogSignatureFunction(_SignatureFunction):
     @staticmethod
     def forward(ctx, path, depth, stream, basepoint, mode, lyndon_info):
+        # lyndon_info isn't a documented parameter because it's only used internally in the package.
+        # It must be either None or the result of a call to _impl._make_lyndon_info
         if mode == "expand":
             mode = _LogSignatureMode.Expand
         elif mode == "brackets":
@@ -248,4 +250,4 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
         of the coefficients corresponds to the lexicographic ordering of the Lyndon words.
     """
     # noinspection PyUnresolvedReferences
-    return _LogSignatureFunction.apply(path, depth, stream, basepoint, mode)
+    return _LogSignatureFunction.apply(path, depth, stream, basepoint, mode, None)

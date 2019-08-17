@@ -5,8 +5,8 @@
 
 
 namespace signatory { namespace misc {
-    template <typename T, typename ...Ts>
-    inline py::object wrap_capsule(Ts... args);
+    template <typename T, typename ...Args>
+    inline py::object wrap_capsule(Args&&... args);
 
     template <typename T>
     inline T* unwrap_capsule(py::object capsule);

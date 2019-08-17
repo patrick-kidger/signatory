@@ -2,13 +2,11 @@ import iisignature
 import signatory
 import unittest
 
-import utils
-
 
 class TestLyndon(unittest.TestCase):
     def test_brackets(self):
         for channels in range(2, 10):  # iisignature supports channels with unique symbols in the range 2 to 9 inclusive
-            for depth in range(1, 7):
+            for depth in range(1, 6):
                 iisignature_brackets = iisignature.basis(iisignature.prepare(channels, depth))
                 signatory_brackets = signatory.lyndon_brackets(channels, depth)
                 for ii_elem, sig_elem in zip(iisignature_brackets, signatory_brackets):
@@ -21,7 +19,7 @@ class TestLyndon(unittest.TestCase):
 
     def test_words(self):
         for channels in range(2, 10):  # iisignature supports channels with unique symbols in the range 2 to 9 inclusive
-            for depth in range(1, 7):
+            for depth in range(1, 6):
                 iisignature_brackets = iisignature.basis(iisignature.prepare(channels, depth))
                 signatory_words = signatory.lyndon_brackets(channels, depth)
                 for ii_elem, sig_elem in zip(iisignature_brackets, signatory_words):
@@ -36,7 +34,7 @@ class TestLyndon(unittest.TestCase):
 
     def test_amount(self):
         for channels in range(1, 10):
-            for depth in range(1, 7):
+            for depth in range(1, 6):
                 words = len(signatory.lyndon_words(channels, depth))
                 brackets = len(signatory.lyndon_brackets(channels, depth))
                 if words != brackets:
@@ -61,8 +59,8 @@ class TestChannels(unittest.TestCase):
                               .format(channels=channels, depth=depth, result=result, sum_over=sum_over))
 
     def test_logsignature_channels(self):
-        for channels in range(1, 20):
-            for depth in range(1, 20):
+        for channels in range(1, 10):
+            for depth in range(1, 6):
                 result = signatory.logsignature_channels(channels, depth)
                 from_words = len(signatory.lyndon_words(channels, depth))
                 if result != from_words:

@@ -8,9 +8,13 @@
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
 
+// TODO: add tests for LogSignature class
 // TODO: test on GPU
 // TODO: profile for memory leaks, just in case!
 
+// TODO: adjust LogSignature so that it keeps track of its infos at the class level; as many as it current has instances
+// TODO: check for interrupts
+// TODO: time how long each test takes and adjust them if necessary?
 // TODO: rationalise backwards_info. Can we combine out_vector and signature_vector?
 // TODO: rename out_* to signature_*
 // TODO: switch to negative indexing axes
@@ -187,7 +191,7 @@ namespace signatory {
 
     std::tuple<torch::Tensor, torch::Tensor>
     signature_backward(torch::Tensor grad_out, py::object backwards_info_capsule, bool clone) {
-        misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<BackwardsInfo>(backwards_info_capsule);
+        misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<misc::BackwardsInfo>(backwards_info_capsule);
 
         // Unpacked backwards_info
         const misc::SigSpec& sigspec = backwards_info->sigspec;

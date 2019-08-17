@@ -19,27 +19,23 @@ namespace signatory { namespace fla_ops {
      *           /----------------------------------\
      *    All Lyndon words of a particular depth, ordered lexicographically
      *                       /---------------------\                          */
-    #define BASE std::vector<std::vector<LyndonWord>>;
+    #define BASE std::vector<std::vector<LyndonWord>>
     struct LyndonWords : private BASE {
-        LyndonWords() : BASE() {};
-        LyndonWords(LyndonWords&& lyndon_words) :
-            BASE(lyndon_words),
-            amount{lyndon_words.amount},
-            lyndonspec{lyndon_words.lyndonspec}
-        {};
+        constexpr static struct WordTag {} word_tag {};
+        constexpr static struct BracketTag {} bracket_tag {};
 
         /* Implements Duval's algorithm for generating Lyndon words
          * J.-P. Duval, Theor. Comput. Sci. 1988, doi:10.1016/0304-3975(88)90113-2.
          * Each LyndonWord we produce does _not_ have any ExtraLyndonInformation set.
          */
-        static LyndonWords word_init(const misc::LyndonSpec& lyndonspec);
+        LyndonWords(const misc::LyndonSpec& lyndonspec, WordTag);
 
         /* Generates Lyndon words with their standard bracketing. No reference for this algorithm I'm afraid,
          * I made it up myself.
          * Each LyndonWord we produce _does_ have ExtraLyndonInformation set. After it has been used for whatever,
          * consider calling LyndonWords::delete_extra(), to reclaim the memory corresponding to ExtraLyndonInformation.
          */
-        static LyndonWords bracket_init(const misc::LyndonSpec& lyndonspec);
+        LyndonWords(const misc::LyndonSpec& lyndonspec, BracketTag);
 
         using BASE::operator[];
         using BASE::begin;
@@ -49,7 +45,8 @@ namespace signatory { namespace fla_ops {
          * coefficients of the Lyndon basis.
          * The transforms are returned in the transforms argument.
          */
-        void to_lyndon_basis(std::vector<std::tuple<int64_t, int64_t, int64_t>>& transforms);
+        void to_lyndon_basis(std::vector<std::tuple<int64_t, int64_t, int64_t>>& transforms,
+                             std::vector <std::tuple<int64_t, int64_t, int64_t>>& transforms_backward);
         /* Deletes the ExtraLyndonInformation associated with each word, if it is present. This is to reclaim memory
          * when we know we don't need it any more.
          */
@@ -61,6 +58,7 @@ namespace signatory { namespace fla_ops {
 
         misc::LyndonSpec lyndonspec;
     };
+    #undef BASE
 
     /* Represents a single Lyndon word. It is primarily represented by a pair of indices, corresponding to how
      * far into the list of all words and the list of all Lyndon words it is. (In both cases ordered by depth
@@ -75,7 +73,7 @@ namespace signatory { namespace fla_ops {
                                    LyndonWord* first_child_,
                                    LyndonWord* second_child_);
 
-            // Information set at creation time in LyndonWords::bracket_init
+            // Information set at creation time in LyndonWords(..., LyndonWords::bracket_tag)
             std::vector<int64_t> word;
             LyndonWord* first_child;
             LyndonWord* second_child;
@@ -83,8 +81,8 @@ namespace signatory { namespace fla_ops {
             friend class LyndonWords;
             friend class LyndonWord;
         private:
-            // Information set once all Lyndon words are known. At present it is used exclusively in
-            // LyndonWords::to_lyndon_basis
+            // Information set once all Lyndon words are known. At present it is set and used exclusively in
+            // LyndonWords::to_lyndon_basis.
             std::vector<LyndonWord*>* anagram_class;
             std::vector<LyndonWord*>::iterator anagram_limit;
             std::map<std::vector<int64_t>, int64_t> expansion;
@@ -93,10 +91,9 @@ namespace signatory { namespace fla_ops {
         LyndonWord(const std::vector<int64_t>& word, bool extra, const misc::LyndonSpec& lyndonspec);
         LyndonWord(LyndonWord* first_child, LyndonWord* second_child, const misc::LyndonSpec& lyndonspec);
 
-        /* The index of this element in the sequence of all Lyndon words i.e. given some lyndonspec:
+        /* The index of this element in the sequence of all Lyndon words i.e. given some lyndonspec and tag:
          *
-         * LyndonWords lyndon_words;
-         * lyndon_words.word_init(lyndonspec);
+         * LyndonWords lyndon_words(lyndonspec, tag);
          * s_size_type counter = 0
          * for (auto& depth_class : lyndon_words) {
          *     for (auto& lyndon_word : depth_class) {
@@ -124,7 +121,8 @@ namespace signatory { namespace fla_ops {
     torch::Tensor compress(const LyndonWords& lyndon_words, torch::Tensor input,
                            const misc::SigSpec& sigspec);
 
-    torch::Tensor compress_backward(torch::Tensor grad_logsignature, const misc::SigSpec& sigspec);
+    torch::Tensor compress_backward(torch::Tensor grad_logsignature, const LyndonWords& lyndon_words,
+                                    const misc::SigSpec& sigspec);
 }  /* namespace signatory::fla_ops */ }  // namespace signatory
 
 #endif //SIGNATORY_FREE_LIE_ALGEBRA_OPS_HPP

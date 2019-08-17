@@ -1,5 +1,6 @@
 #include <torch/extension.h>
 #include <cstdint>    // int64_t
+#include <memory>     // std::unique_ptr
 #include <stdexcept>  // std::invalid_argument
 #include <tuple>      // std::tie, std::tuple
 #include <vector>     // std::vector
@@ -15,16 +16,16 @@
 namespace signatory {
     namespace detail {
         struct LyndonInfo {
-            LyndonInfo(fla_ops::LyndonWords&& lyndon_words,
+            LyndonInfo(std::unique_ptr<fla_ops::LyndonWords> lyndon_words,
                        std::vector<std::tuple<int64_t, int64_t, int64_t>>&& transforms,
                        std::vector<std::tuple<int64_t, int64_t, int64_t>>&& transforms_backward) :
-                lyndon_words{lyndon_words},
-                transforms{transforms}
-                transforms_backward{transforms_backward};
+                lyndon_words{std::move(lyndon_words)},
+                transforms{transforms},
+                transforms_backward{transforms_backward}
             {};
 
-            fla_ops::LyndonWords lyndon_words;
-            std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms
+            std::unique_ptr<fla_ops::LyndonWords> lyndon_words;
+            std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
             std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms_backward;
 
             constexpr static auto capsule_name = "signatory.LyndonInfoCapsule";
@@ -32,18 +33,19 @@ namespace signatory {
     }  // namespace signatory::detail
 
     py::object make_lyndon_info(int64_t input_channels, s_size_type depth, LogSignatureMode mode) {
-        fla_ops::LyndonWords lyndon_words;
+        std::unique_ptr<fla_ops::LyndonWords> lyndon_words;
         std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
         std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms_backward;
         misc::LyndonSpec lyndonspec{input_channels, depth};
 
+        // no make_unique in C++11
         if (mode == LogSignatureMode::Words) {
-            lyndon_words.word_init(lyndonspec);
+            lyndon_words.reset(new fla_ops::LyndonWords(lyndonspec, fla_ops::LyndonWords::word_tag));
         }
         else if (mode == LogSignatureMode::Brackets) {
-            lyndon_words.bracket_init(lyndonspec);
-            lyndon_words.to_lyndon_basis(transforms, transforms_backward);
-            lyndon_words.delete_extra();
+            lyndon_words.reset(new fla_ops::LyndonWords(lyndonspec, fla_ops::LyndonWords::bracket_tag));
+            lyndon_words->to_lyndon_basis(transforms, transforms_backward);
+            lyndon_words->delete_extra();
         }
 
         return misc::wrap_capsule<detail::LyndonInfo>(std::move(lyndon_words), std::move(transforms),
@@ -52,7 +54,7 @@ namespace signatory {
 
     std::tuple<torch::Tensor, py::object>
     logsignature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint,
-                         torch::Tensor basepoint_value, LogSignatureMode mode, py::object lyndon_info_capsule=py::none)
+                         torch::Tensor basepoint_value, LogSignatureMode mode, py::object lyndon_info_capsule)
     {
         if (depth == 1) {
             return signature_forward(path, depth, stream, basepoint, basepoint_value);
@@ -66,7 +68,7 @@ namespace signatory {
                                                                         basepoint_value);
 
         // unpack sigspec
-        misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<BackwardsInfo>(backwards_info_capsule);
+        misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<misc::BackwardsInfo>(backwards_info_capsule);
         const misc::SigSpec& sigspec = backwards_info->sigspec;
 
         // undo the transposing we just did in signature_forward...
@@ -103,10 +105,10 @@ namespace signatory {
         }
         detail::LyndonInfo* lyndon_info = misc::unwrap_capsule<detail::LyndonInfo>(lyndon_info_capsule);
         if (mode == LogSignatureMode::Words) {
-            logsignature = fla_ops::compress(lyndon_info->lyndon_words, logsignature, sigspec);
+            logsignature = fla_ops::compress(*lyndon_info->lyndon_words, logsignature, sigspec);
         }
         else if (mode == LogSignatureMode::Brackets){
-            logsignature = fla_ops::compress(lyndon_info->lyndon_words, logsignature, sigspec);
+            logsignature = fla_ops::compress(*lyndon_info->lyndon_words, logsignature, sigspec);
             // Then apply the transforms. We rely on the triangularity property of the Lyndon basis for this to work.
             for (const auto& transform : lyndon_info->transforms) {
                 int64_t source_index = std::get<0>(transform);
@@ -138,7 +140,7 @@ namespace signatory {
     std::tuple<torch::Tensor, torch::Tensor>
     logsignature_backward(torch::Tensor grad_logsignature, py::object backwards_info_capsule) {
         // Unpack sigspec
-        misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<BackwardsInfo>(backwards_info_capsule);
+        misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<misc::BackwardsInfo>(backwards_info_capsule);
         const misc::SigSpec& sigspec = backwards_info->sigspec;
         if (sigspec.depth == 1) {
             return signature_backward(grad_logsignature, backwards_info_capsule);
@@ -147,10 +149,10 @@ namespace signatory {
         // Unpack everything else from backwards_info
         torch::Tensor signature = backwards_info->out;
         const std::vector<torch::Tensor>& signature_vector = backwards_info->signature_vector;
-        detail::LyndonInfo* lyndon_info = misc::unwrap_capsule<detail::LyndonInfo>(backwards_info->lyndon_info_capsule);
-        const std::vector<std::tuple<int64_t, int64_t, int64_t>>& transforms_backward = lyndon_info->transforms_backward;
         LogSignatureMode mode = backwards_info->mode;
         int64_t logsignature_channels = backwards_info->logsignature_channels;
+        detail::LyndonInfo* lyndon_info = misc::unwrap_capsule<detail::LyndonInfo>(backwards_info->lyndon_info_capsule);
+        const std::vector<std::tuple<int64_t, int64_t, int64_t>>& transforms_backward = lyndon_info->transforms_backward;
 
         misc::checkargs_backward(grad_logsignature, sigspec, logsignature_channels);
 
@@ -164,10 +166,10 @@ namespace signatory {
             grad_logsignature = grad_logsignature.clone();  // Clone so we don't leak changes through grad_logsignature.
         }
         else if (mode == LogSignatureMode::Words){
-            grad_logsignature = fla_ops::compress_backward(grad_logsignature, sigspec);
+            grad_logsignature = fla_ops::compress_backward(grad_logsignature, *lyndon_info->lyndon_words, sigspec);
         }
         else {  // mode == LogSignatureMode::Brackets
-            grad_logsignature = fla_ops::compress_backward(grad_logsignature, sigspec);
+            grad_logsignature = fla_ops::compress_backward(grad_logsignature, *lyndon_info->lyndon_words, sigspec);
 
             /* This is a deliberate asymmetry between the forwards and backwards: in the forwards pass we applied the
              * linear transformation after compression, but on the backwards we don't apply the transforms before

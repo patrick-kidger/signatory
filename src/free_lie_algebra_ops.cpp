@@ -41,8 +41,7 @@ namespace signatory { namespace fla_ops {
         constexpr CompareWords compare_words {};
     }  // namespace signatory::fla_ops::detail
 
-    void LyndonWords::word_init(const misc::LyndonSpec& lyndonspec) {
-        this->lyndonspec = lyndonspec;
+    LyndonWords::LyndonWords(const misc::LyndonSpec& lyndonspec, WordTag) : lyndonspec{lyndonspec} {
         this->reserve(lyndonspec.depth);
         for (s_size_type depth_index = 0; depth_index < lyndonspec.depth; ++depth_index) {
             this->emplace_back();
@@ -67,7 +66,7 @@ namespace signatory { namespace fla_ops {
         finalise();
     }
 
-    void LyndonWords::bracket_init(const misc::LyndonSpec& lyndonspec) {
+    LyndonWords::LyndonWords(const misc::LyndonSpec& lyndonspec, BracketTag) : lyndonspec{lyndonspec} {
         this->reserve(lyndonspec.depth);
         for (s_size_type depth_index = 0; depth_index < lyndonspec.depth; ++depth_index) {
             this->emplace_back();
@@ -282,14 +281,14 @@ namespace signatory { namespace fla_ops {
             second_child{second_child_}
     {};
 
-    // Constructor for LyndonWords::word_init (with extra==false) and
-    // constructor for LyndonWords::bracket_init for the depth == 1 words (with extra==true).
+    // Constructor for LyndonWords(..., LyndonWords::word_tag) (with extra==false) and
+    // constructor for LyndonWords(..., LyndonWords::bracket_tag) for the depth == 1 words (with extra==true).
     LyndonWord::LyndonWord(const std::vector<int64_t>& word, bool extra, const misc::LyndonSpec& lyndonspec)
     {
         init(word, extra, nullptr, nullptr, lyndonspec);
     };
 
-    // Constructor for LyndonWords::bracket_init for the depth > 1 words.
+    // Constructor for LyndonWords(..., LyndonWords::bracket_tag) for the depth > 1 words.
     LyndonWord::LyndonWord(LyndonWord* first_child, LyndonWord* second_child, const misc::LyndonSpec& lyndonspec)
     {
         std::vector<int64_t> word = detail::concat_vectors(first_child->extra->word, second_child->extra->word);
@@ -298,7 +297,7 @@ namespace signatory { namespace fla_ops {
 
     // Checks if the given 'word' is:
     // (a) later in the lexicographic order than 'this'
-    // (b) also a Lyndon word it self
+    // (b) also a Lyndon word itself
     // (c) an anagram of 'this'
     bool LyndonWord::is_lyndon_anagram (const std::vector<int64_t>& word) const {
         return std::binary_search(this->extra->anagram_limit,  this->extra->anagram_class->end(), word,
@@ -321,8 +320,7 @@ namespace signatory { namespace fla_ops {
 
         if (extra_) {
             // no make_unique in C++11
-            extra = std::unique_ptr<LyndonWord::ExtraLyndonInformation>(
-                    new LyndonWord::ExtraLyndonInformation(word, first_child, second_child));
+            extra.reset(new LyndonWord::ExtraLyndonInformation(word, first_child, second_child));
         }
     }
 
@@ -358,7 +356,8 @@ namespace signatory { namespace fla_ops {
         return compressed;
     }
 
-    torch::Tensor compress_backward(torch::Tensor grad_compressed, const misc::SigSpec& sigspec) {
+    torch::Tensor compress_backward(torch::Tensor grad_compressed, const LyndonWords& lyndon_words,
+                                    const misc::SigSpec& sigspec) {
         torch::Tensor grad_expanded;
         if (sigspec.stream) {
             grad_expanded = torch::zeros({sigspec.output_stream_size,
@@ -371,16 +370,6 @@ namespace signatory { namespace fla_ops {
                                          sigspec.batch_size},
                                         sigspec.opts);
         }
-
-        // On the forward pass we had to calculate the Lyndon words for
-        // (a) the expand->word compression
-        // (b) the word->bracket transform
-        // The size of all the Lyndon words needed to perform (a) is reasonably large (but not super large), and at
-        // the same time they are reasonably quick to generate, so we don't cache them for the backward pass, and
-        // instead regenerate them here.
-        // (Calculating the transform in (b) takes a lot of work, but the transform itself is quite small, so we do
-        // save that for the backward pass; it's applied outside this function.)
-        LyndonWords lyndon_words(sigspec, LyndonWords::word_tag);
 
         for (s_size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index){
             for (auto& lyndon_word: lyndon_words[depth_index]) {
