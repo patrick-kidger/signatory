@@ -6,10 +6,25 @@
 #include <vector>     // std::vector
 
 #include "misc.hpp"
-#include "utilities.hpp"
 
 
 namespace signatory {
+    int64_t signature_channels(int64_t input_channels, int64_t depth) {
+        if (input_channels < 1) {
+            throw std::invalid_argument("input_channels must be at least 1");
+        }
+        if (depth < 1) {
+            throw std::invalid_argument("depth must be at least 1");
+        }
+
+        if (input_channels == 1) {
+            return depth;
+        }
+        else {
+            return input_channels * ((pow(input_channels, depth) - 1) / (input_channels - 1));
+        }
+    }
+
     namespace misc {
         LyndonSpec::LyndonSpec(int64_t input_channels, s_size_type depth) :
             input_channels{input_channels},
@@ -49,6 +64,15 @@ namespace signatory {
             lyndon_info_capsule = lyndon_info_capsule_;
             mode = mode_;
             logsignature_channels = logsignature_channels_;
+        }
+
+        void checkargs_channels_depth(int64_t channels, s_size_type depth) {
+            if (channels < 1) {
+                throw std::invalid_argument("Argument 'channels' must be at least one.");
+            }
+            if (depth < 1) {
+                throw std::invalid_argument("Argument 'depth' must be an integer greater than or equal to one.");
+            }
         }
 
         void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value) {

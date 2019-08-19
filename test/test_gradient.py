@@ -2,10 +2,10 @@ import signatory
 import torch.autograd as autograd
 import unittest
 
-import utils
+import utils_testing as utils
 
 
-class TestSignatureGrad(unittest.TestCase):
+class TestSignatureGrad(utils.TimedUnitTest):
     @staticmethod
     def gradcheck(path, depth, stream, basepoint, **kwargs):
         return autograd.gradcheck(signatory.signature, (path, depth, stream, basepoint), **kwargs)
@@ -48,7 +48,7 @@ class TestSignatureGrad(unittest.TestCase):
     # efficiency, so it's not automatically differentiable. (And I'm not writing a custom double backward function...)
 
 
-class TestLogSignatureGrad(unittest.TestCase):
+class TestLogSignatureGrad(utils.TimedUnitTest):
     @staticmethod
     def gradcheck(path, depth, stream, basepoint, mode, **kwargs):
         return autograd.gradcheck(signatory.logsignature, (path, depth, stream, basepoint, mode), **kwargs)
@@ -81,7 +81,7 @@ class TestLogSignatureGrad(unittest.TestCase):
             except RuntimeError:
                 self.fail(c.fail())
 
-    def test_gradcheck_depth(self):
+    def test_gradcheck_large(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   requires_grad=True,
                                   size=utils.large_size(),

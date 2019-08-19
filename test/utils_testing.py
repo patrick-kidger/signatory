@@ -7,8 +7,13 @@ iisignature.sigbackprop, iisignature.logsigbackprop all except more or less the 
 import collections as co
 import functools as ft
 import iisignature
+import random
 import signatory
+import sys
+import time
 import torch
+import unittest
+import warnings
 
 
 try:
@@ -39,7 +44,7 @@ def random_size(num=20):
 
 def large_size():
     for _ in range(5):
-        batch_size = int(torch.randint(low=4, high=64, size=(1,)))
+        batch_size = int(torch.randint(low=4, high=4, size=(1,)))
         stream_size = int(torch.randint(low=10, high=50, size=(1,)))
         channel_size = int(torch.randint(low=3, high=8, size=(1,)))
         yield batch_size, stream_size, channel_size
@@ -55,7 +60,7 @@ class Config(object):
     call these functions in an appropriate, comparable, manner.
     """
 
-    def __init__(self, mode, stream, size, depth, prep, basepoint, requires_grad):
+    def __init__(self, mode, logsignature_class, stream, size, depth, prep, basepoint, requires_grad, device):
         self.signature_or_logsignature = None
         if mode is expand:
             self.signatory_mode = "expand"
@@ -72,26 +77,35 @@ class Config(object):
         elif mode is None:
             self.signatory_mode = None
             self.iisignature_mode = None
+            self.using_signature()
         else:
             raise RuntimeError
 
+        self.logsignature_class = logsignature_class
         self.stream = stream
         self.size = size
         N, L, C = size
         self.N = N
         self.L = L
         self.C = C
-        self.path = torch.rand(size, requires_grad=requires_grad, dtype=torch.double)
+        self.device = device
+        self.path = torch.rand(size, requires_grad=requires_grad, dtype=torch.double, device=device)
+        self.path_cpu = self.path.detach().cpu()
         self.depth = depth
         self.prep = prep
         self.basepoint_size = size[0], size[2]
 
         if basepoint is with_grad:
-            basepoint = torch.rand(self.basepoint_size, requires_grad=True, dtype=torch.double)
+            basepoint = torch.rand(self.basepoint_size, requires_grad=True, dtype=torch.double, device=device)
+            basepoint_cpu = basepoint.detach().cpu()
         elif basepoint is without_grad:
-            basepoint = torch.rand(self.basepoint_size, requires_grad=False, dtype=torch.double)
+            basepoint = torch.rand(self.basepoint_size, requires_grad=False, dtype=torch.double, device=device)
+            basepoint_cpu = basepoint.detach().cpu()
+        else:  # isinstance(basepoint, bool) == True
+            basepoint_cpu = property(lambda self: exec('raise NotImplementedError'))
 
         self.basepoint = basepoint
+        self.basepoint_cpu = basepoint_cpu
 
     def has_basepoint(self):
         return isinstance(self.basepoint, torch.Tensor) or self.basepoint
@@ -117,6 +131,17 @@ class Config(object):
     @grad.setter
     def grad(self, val):
         self._grad = val
+
+    @property
+    def grad_cpu(self):
+        try:
+            return self._grad_cpu
+        except AttributeError:
+            raise AttributeError("Must call signature_backward() or logsignature_backward() first.")
+
+    @grad_cpu.setter
+    def grad_cpu(self, val):
+        self._grad_cpu = val
 
     @property
     def signatory_grad(self):
@@ -164,7 +189,10 @@ class Config(object):
     def signature(self):
         """Calls signatory.signature"""
         self.using_signature()
-        signatory_out = signatory.signature(self.path, self.depth, self.stream, self.basepoint)
+        if random.choice([True, False]):
+            signatory_out = signatory.signature(self.path, self.depth, self.stream, self.basepoint)
+        else:
+            signatory_out = signatory.Signature(self.depth, self.stream, self.basepoint)(self.path)
         self.signatory_out = signatory_out
         return signatory_out
 
@@ -174,6 +202,7 @@ class Config(object):
         if grad is None:
             grad = torch.rand_like(self.signatory_out)
         self.grad = grad
+        self.grad_cpu = grad.detach().cpu()
         self.signatory_out.backward(grad)
         if isinstance(self.basepoint, torch.Tensor) and self.basepoint.requires_grad:
             # get the gradient on the basepoint as well
@@ -187,33 +216,39 @@ class Config(object):
         """Calls iisignature.sig"""
         self.using_signature()
         if self.basepoint is True:
-            basepointed_path = torch.cat([torch.zeros(self.N, 1, self.C, dtype=torch.double), self.path.detach()],
+            basepointed_path = torch.cat([torch.zeros(self.N, 1, self.C, dtype=torch.double), self.path_cpu],
                                          dim=1)
         elif self.basepoint is False:
-            basepointed_path = self.path.detach()
+            basepointed_path = self.path_cpu
         else:  # isinstance(self.basepoint, torch.Tensor) == True
-            basepointed_path = torch.cat([self.basepoint.unsqueeze(1).detach(), self.path.detach()], dim=1)
+            basepointed_path = torch.cat([self.basepoint_cpu.unsqueeze(1), self.path_cpu], dim=1)
         self.basepointed_path = basepointed_path
-        return torch.tensor(iisignature.sig(basepointed_path, self.depth, 2 if self.stream else 0), dtype=torch.double)
+        return torch.tensor(iisignature.sig(basepointed_path, self.depth, 2 if self.stream else 0), dtype=torch.double,
+                            device=self.device)
 
     def sig_backward(self):
         """Calls iisignature.sigbackprop"""
         self.using_signature()
         if self.stream:
             raise RuntimeError("iisignature.sigbackprop does not support stream=True")
-        iisignature_grad = iisignature.sigbackprop(self.grad, self.basepointed_path, self.depth)
+        iisignature_grad = iisignature.sigbackprop(self.grad_cpu, self.basepointed_path, self.depth)
         if self.basepoint is True or (isinstance(self.basepoint, torch.Tensor) and not self.basepoint.requires_grad):
             # if we don't have a gradient through the basepoint then discard the corresponding basepoint
             # part of the iisig_backward result
             iisignature_grad = iisignature_grad[:, 1:, :]
-        iisignature_grad = torch.tensor(iisignature_grad, dtype=torch.double)
+        iisignature_grad = torch.tensor(iisignature_grad, dtype=torch.double, device=self.device)
         self.iisignature_grad = iisignature_grad
         return iisignature_grad
 
     def logsignature(self):
         """Calls signatory.logsignature"""
         self.using_logsignature()
-        signatory_out = signatory.logsignature(self.path, self.depth, self.stream, self.basepoint, self.signatory_mode)
+        if self.logsignature_class:
+            signatory_out = signatory.LogSignature(self.depth, self.stream,
+                                                   self.basepoint, self.signatory_mode)(self.path)
+        else:
+            signatory_out = signatory.logsignature(self.path, self.depth, self.stream, self.basepoint,
+                                                   self.signatory_mode)
         self.signatory_out = signatory_out
         return signatory_out
 
@@ -223,6 +258,7 @@ class Config(object):
         if grad is None:
             grad = torch.rand_like(self.signatory_out)
         self.grad = grad
+        self.grad_cpu = grad.detach().cpu()
         self.signatory_out.backward(grad)
         if isinstance(self.basepoint, torch.Tensor) and self.basepoint.requires_grad:
             # get the gradient on the basepoint as well
@@ -238,28 +274,28 @@ class Config(object):
         if self.stream:
             raise RuntimeError("iisignature.logsig does not support stream=True")
         if self.basepoint is True:
-            basepointed_path = torch.cat([torch.zeros(self.N, 1, self.C, dtype=torch.double), self.path.detach()],
+            basepointed_path = torch.cat([torch.zeros(self.N, 1, self.C, dtype=torch.double), self.path_cpu],
                                          dim=1)
         elif self.basepoint is False:
-            basepointed_path = self.path.detach()
+            basepointed_path = self.path_cpu
         else:  # isinstance(self.basepoint, torch.Tensor) == True
-            basepointed_path = torch.cat([self.basepoint.unsqueeze(1).detach(), self.path.detach()], dim=1)
+            basepointed_path = torch.cat([self.basepoint_cpu.unsqueeze(1), self.path_cpu], dim=1)
         self.basepointed_path = basepointed_path
         return torch.tensor(iisignature.logsig(basepointed_path, self.prep(), self.iisignature_mode),
-                            dtype=torch.double)
+                            dtype=torch.double, device=self.device)
 
     def logsig_backward(self):
         """Calls iisignature.logsigbackprop"""
         self.using_logsignature()
         if self.stream:
             raise RuntimeError("iisignature.logsigbackprop does not support stream=True")
-        iisignature_grad = iisignature.logsigbackprop(self.grad, self.basepointed_path, self.prep(),
+        iisignature_grad = iisignature.logsigbackprop(self.grad_cpu, self.basepointed_path, self.prep(),
                                                       self.iisignature_mode)
         if self.basepoint is True or (isinstance(self.basepoint, torch.Tensor) and not self.basepoint.requires_grad):
             # if we don't have a gradient through the basepoint then discard the corresponding basepoint
             # part of the iisig_backward result
             iisignature_grad = iisignature_grad[:, 1:, :]
-        iisignature_grad = torch.tensor(iisignature_grad, dtype=torch.double)
+        iisignature_grad = torch.tensor(iisignature_grad, dtype=torch.double, device=self.device)
         self.iisignature_grad = iisignature_grad
         return iisignature_grad
 
@@ -272,9 +308,12 @@ class Config(object):
                      "size={size}\n"
                      "path.requires_grad={requires_grad}\n"
                      "depth={depth}\n"
-                     "basepoint={basepoint}"
+                     "basepoint={basepoint}\n"
+                     "device={device}\n"
+                     "logsignature_class={logsignature_class}"
                      .format(mode=self.signatory_mode, stream=self.stream, size=self.size,
-                             requires_grad=self.path.requires_grad, depth=self.depth, basepoint=self.basepoint))
+                             requires_grad=self.path.requires_grad, depth=self.depth, basepoint=self.basepoint,
+                             device=self.device, logsignature_class=self.logsignature_class))
         for key, value in kwargs.items():
             returnval += '\n{key}={value}'.format(key=key, value=value)
 
@@ -314,6 +353,8 @@ class ConfigIter(object):
     """Iterates over a prescibed collection of inputs."""
 
     def __init__(self, *,
+                 device=('cpu', 'cuda'),
+                 logsignature_class=(True, False),
                  stream=(True, False),
                  basepoint=None,
                  N=(1, 2, 3, 10),        # |
@@ -338,13 +379,25 @@ class ConfigIter(object):
         if isinstance(mode, stringtype) or mode in (expand, brackets, words, None):
             mode = (mode,)
 
+        if mode[0] is None:
+            logsignature_class = (None,)
+
+        if 'cuda' in device:
+            if not torch.cuda.is_available():
+                warnings.warn("CUDA not available; skipping CUDA tests.")
+                device = list(device)
+                device.remove('cuda')
+                device = tuple(device)
+
+        self.device = device
+        self.mode = mode
+        self.logsignature_class = logsignature_class
         self.stream = stream
         self.N = N
         self.L = L
         self.C = C
         self.depth = depth
         self.size = size
-        self.mode = mode
         self.requires_grad = requires_grad
         self.basepoint = basepoint
 
@@ -365,11 +418,32 @@ class ConfigIter(object):
                 # a lambda gives an efficiency boost over just doing passing the result of self.prepare(...), as it's
                 # only recalculated (because of the lru_cache) precisely when it needs to be.
                 prepare = lambda: self.prepare(size[2], depth)
-                for mode in self.mode:
-                    for stream in self.stream:
-                        for basepoint in self.basepoint:
-                            yield Config(mode, stream, size, depth, prepare, basepoint, self.requires_grad)
+                for device in self.device:
+                    for mode in self.mode:
+                        for logsignature_class in self.logsignature_class:
+                            for stream in self.stream:
+                                for basepoint in self.basepoint:
+                                    yield Config(mode, logsignature_class, stream, size, depth, prepare, basepoint,
+                                                 self.requires_grad, device)
 
     @ft.lru_cache(maxsize=1)
     def prepare(self, channels, depth):
         return iisignature.prepare(channels, depth)
+
+
+# What an ugly hack. I don't see nice ways to record extra diagnostic information in tests, though.
+unittest.test_times = []
+
+
+class TimedUnitTest(unittest.TestCase):
+    def setUp(self):
+        self.start_time = time.time()
+
+    def tearDown(self):
+        t = time.time() - self.start_time
+        if not hasattr(unittest, 'record_test_times') or unittest.record_test_times:
+            test_str = '{id}: {t}'.format(id=self.id(), t=t)
+            exc_info = sys.exc_info()
+            if exc_info[0] is not None:
+                test_str += ' TEST ABORTED DUE TO {}'.format(exc_info[0])
+            unittest.test_times.append(test_str)

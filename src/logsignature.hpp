@@ -8,7 +8,7 @@
 #include "misc.hpp"
 
 namespace signatory {
-    py::object make_lyndon_info(int64_t input_channels, s_size_type depth, LogSignatureMode mode);
+    py::object make_lyndon_info(int64_t channels, s_size_type depth, LogSignatureMode mode);
 
     std::tuple<torch::Tensor, py::object>
     logsignature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint,

@@ -32,11 +32,12 @@ namespace signatory {
         };
     }  // namespace signatory::detail
 
-    py::object make_lyndon_info(int64_t input_channels, s_size_type depth, LogSignatureMode mode) {
+    py::object make_lyndon_info(int64_t channels, s_size_type depth, LogSignatureMode mode) {
+        misc::checkargs_channels_depth(channels, depth);
         std::unique_ptr<fla_ops::LyndonWords> lyndon_words;
         std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
         std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms_backward;
-        misc::LyndonSpec lyndonspec{input_channels, depth};
+        misc::LyndonSpec lyndonspec{channels, depth};
 
         // no make_unique in C++11
         if (mode == LogSignatureMode::Words) {

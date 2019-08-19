@@ -5,8 +5,6 @@
 
 
 namespace signatory {
-    int64_t signature_channels(int64_t input_channels, int64_t depth);
-
     std::vector<std::vector<int64_t>> lyndon_words(int64_t channels, int64_t depth);
 
     std::vector<py::object> lyndon_brackets(int64_t channels, int64_t depth);

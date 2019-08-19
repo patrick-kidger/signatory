@@ -1,17 +1,17 @@
 import torch  # must be imported before anything from signatory
 
-from .backend import (signature,
-                      logsignature)
-from .modules import (Signature,
-                      LogSignature,
-                      Augment)
-from .utility import (signature_channels,
-                      logsignature_channels,
-                      extract_term,
-                      lyndon_words,
-                      lyndon_brackets)
+from .augment import Augment
+from .logsignature_module import (logsignature,
+                                  LogSignature,
+                                  logsignature_channels)
+from .signature_module import (signature,
+                               Signature,
+                               signature_channels,
+                               extract_signature_term)
+from .lyndon import (lyndon_words,
+                     lyndon_brackets)
 
 
-__version__ = "0.3.0"
+__version__ = "1.0.0"
 
 del torch

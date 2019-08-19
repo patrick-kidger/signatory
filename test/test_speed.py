@@ -2,11 +2,12 @@ import signatory
 import iisignature
 import timeit
 import torch
-import unittest
 import warnings
 
+import utils_testing as utils
 
-class TestSignatureSpeed(unittest.TestCase):
+
+class TestSignatureSpeed(utils.TimedUnitTest):
     @staticmethod
     def speed(batch_size=1000, number=20, depth=3, stream=True, backward=False):
         # We speed test by testing against another library
@@ -18,16 +19,17 @@ class TestSignatureSpeed(unittest.TestCase):
                              "compare against them.")
         signatory_x = torch.rand(batch_size, 100, 10, requires_grad=backward)
         iisignature_x = signatory_x.detach().numpy()
+        grad_seed = torch.rand_like(signatory.signature(signatory_x, depth, stream=stream))
 
         def signatory_fn():
             y = signatory.signature(signatory_x, depth, stream=stream)
             if backward:
-                y.backward(torch.rand_like(y))
+                y.backward(grad_seed)
 
         def iisignature_fn():
-            y = iisignature.sig(iisignature_x, depth, 2 if stream else 0)
+            iisignature.sig(iisignature_x, depth, 2 if stream else 0)
             if backward:
-                iisignature.sigbackprop(torch.rand_like(torch.tensor(y)), iisignature_x, depth)
+                iisignature.sigbackprop(grad_seed, iisignature_x, depth)
 
         signatory_time = timeit.timeit(signatory_fn, number=number)
         iisignature_time = timeit.timeit(iisignature_fn, number=number)
@@ -35,7 +37,6 @@ class TestSignatureSpeed(unittest.TestCase):
 
     def wrapped_speed_test(self, stream, backward):
         signatory_time, iisignature_time, ratio = self.speed(stream=stream, backward=backward)
-        self.assertLess(ratio, 1.0)
 
         # normal speeds are about:
         # if backward:
@@ -50,23 +51,24 @@ class TestSignatureSpeed(unittest.TestCase):
         #         0.3
         #
         # but we give ourselves some margin
-        if ratio > (0.8 if backward else 0.4):
+
+        self.assertLess(ratio, 1.0)
+        if ratio > (0.9 if backward else 0.5):
             warnings.warn("Speed was unusually slow: signatory time: {stime} iisignature time: {itime}, ratio: {ratio} "
                           "stream: {stream}, backward: {backward}".format(stime=signatory_time, itime=iisignature_time,
                                                                           ratio=ratio, stream=stream,
                                                                           backward=backward))
 
-    def test_speed_forward_nostream(self):
-        self.wrapped_speed_test(stream=False, backward=False)
+    def test_speed(self):
+        self.speed(batch_size=100, number=10, backward=True)  # warm up
+        for stream in (True, False):
+            for backward in (True, False):
+                if stream and backward:
+                    continue
+                self.wrapped_speed_test(stream=stream, backward=backward)
 
-    def test_speed_forward_stream(self):
-        self.wrapped_speed_test(stream=True, backward=False)
 
-    def test_speed_backward(self):
-        self.wrapped_speed_test(stream=False, backward=True)
-
-
-class TestLogSignatureSpeed(unittest.TestCase):
+class TestLogSignatureSpeed(utils.TimedUnitTest):
     @classmethod
     def speed(cls, batch_size=1000, number=20, depth=3, backward=False, signatory_mode="brackets"):
         # We speed test by testing against another library
@@ -78,19 +80,20 @@ class TestLogSignatureSpeed(unittest.TestCase):
 
         iisignature_mode = {"expand": "x", "brackets": "d"}[signatory_mode]
 
-        # TODO: allow signatory.logsignature time to factor out its preparation as well
-
+        signatory_logsignature = signatory.LogSignature(depth, mode=signatory_mode)
+        u = signatory_logsignature(signatory_x)  # to do the equivalent of prepare for iisignature
+        grad_seed = torch.rand_like(u)
         prep = iisignature.prepare(10, depth)
 
         def signatory_fn():
-            y = signatory.logsignature(signatory_x, depth, mode=signatory_mode)
+            y = signatory_logsignature(signatory_x)
             if backward:
-                y.backward(torch.rand_like(y))
+                y.backward(grad_seed)
 
         def iisignature_fn():
-            y = iisignature.logsig(iisignature_x, prep, iisignature_mode)
+            iisignature.logsig(iisignature_x, prep, iisignature_mode)
             if backward:
-                iisignature.logsigbackprop(torch.rand_like(torch.tensor(y)), iisignature_x, prep, iisignature_mode)
+                iisignature.logsigbackprop(grad_seed, iisignature_x, prep, iisignature_mode)
 
         signatory_time = timeit.timeit(signatory_fn, number=number)
         iisignature_time = timeit.timeit(iisignature_fn, number=number)
@@ -98,28 +101,40 @@ class TestLogSignatureSpeed(unittest.TestCase):
 
     def wrapped_speed_test(self, backward, mode):
         signatory_time, iisignature_time, ratio = self.speed(backward=backward, signatory_mode=mode)
-        self.assertLess(ratio, 1.0)
 
         # normal speeds are about:
         # if backward:
         #     if mode == "expand":
-        #         ?
+        #         0.84
         #     elif mode == "brackets":
-        #         ?
+        #         0.83
         # else:
         #     if mode == "expand":
-        #         ?
+        #         0.59
         #     elif mode == "brackets":
-        #         ?
+        #         0.64
         #
-        # but we give ourselves some margin
-        # TODO: enable these warnings once we know what typical values are
-        if ratio > (1 if backward else 1):
+        # but there can be quite a lot of variation, so
+        # we give ourselves a large margin
+        if backward:
+            if mode == "expand":
+                expected_ratio = 1.0
+            elif mode == "brackets":
+                expected_ratio = 1.0
+        else:
+            if mode == "expand":
+                expected_ratio = 0.8
+            elif mode == "brackets":
+                expected_ratio = 0.85
+
+        self.assertLess(ratio, 1.2)
+        if ratio > expected_ratio:
             warnings.warn("Speed was unusually slow: signatory time: {stime} iisignature time: {itime}, ratio: {ratio} "
                           "mode: {mode}, backward: {backward}".format(stime=signatory_time, itime=iisignature_time,
                                                                       ratio=ratio, mode=mode, backward=backward))
 
     def test_speed(self):
+        self.speed(batch_size=100, number=10, backward=True, signatory_mode="brackets")  # warm up
         for backward in (True, False):
             for mode in ("brackets", "expand"):
                 self.wrapped_speed_test(backward, mode)

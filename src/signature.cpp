@@ -8,11 +8,7 @@
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
 
-// TODO: add tests for LogSignature class
-// TODO: test on GPU
-// TODO: profile for memory leaks, just in case!
-
-// TODO: adjust LogSignature so that it keeps track of its infos at the class level; as many as it current has instances
+// TODO: add testing the examples to the tests
 // TODO: check for interrupts
 // TODO: time how long each test takes and adjust them if necessary?
 // TODO: rationalise backwards_info. Can we combine out_vector and signature_vector?

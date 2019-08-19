@@ -1,9 +1,10 @@
 import iisignature
 import signatory
-import unittest
+
+import utils_testing as utils
 
 
-class TestLyndon(unittest.TestCase):
+class TestLyndon(utils.TimedUnitTest):
     def test_brackets(self):
         for channels in range(2, 10):  # iisignature supports channels with unique symbols in the range 2 to 9 inclusive
             for depth in range(1, 6):
@@ -45,7 +46,7 @@ class TestLyndon(unittest.TestCase):
                               .format(channels=channels, depth=depth, words=words, brackets=brackets))
 
 
-class TestChannels(unittest.TestCase):
+class TestChannels(utils.TimedUnitTest):
     def test_signature_channels(self):
         for channels in range(1, 20):
             for depth in range(1, 20):

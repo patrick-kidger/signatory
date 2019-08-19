@@ -1,11 +1,10 @@
 import signatory
 import torch
-import unittest
 
-import utils
+import utils_testing as utils
 
 
-class TestSignatureArguments(unittest.TestCase):
+class TestSignatureArguments(utils.TimedUnitTest):
     def test_minimal_axes(self):
         for c in utils.ConfigIter(basepoint=False,
                                   depth=(1, 2, 3),
@@ -55,7 +54,7 @@ class TestSignatureArguments(unittest.TestCase):
                     self.fail(c.fail())
 
 
-class TestSignatureShapes(unittest.TestCase):
+class TestSignatureShapes(utils.TimedUnitTest):
     @staticmethod
     def correct_shape(size, depth, stream, basepoint):
         N, L, C = size
@@ -74,7 +73,7 @@ class TestSignatureShapes(unittest.TestCase):
             self.assertEqual(signatory_out.shape, correct_shape, c.fail())
 
 
-class TestLogSignatureArguments(unittest.TestCase):
+class TestLogSignatureArguments(utils.TimedUnitTest):
     def test_minimal_axes(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   basepoint=False,
@@ -129,7 +128,7 @@ class TestLogSignatureArguments(unittest.TestCase):
                     self.fail(c.fail())
 
 
-class TestLogSignatureShapes(unittest.TestCase):
+class TestLogSignatureShapes(utils.TimedUnitTest):
     @staticmethod
     def correct_shape(size, depth, stream, basepoint, mode):
         N, L, C = size

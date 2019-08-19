@@ -8,3 +8,5 @@ We also provide for computations of logsignatures. Note that if performing many 
 .. autofunction:: signatory.logsignature
 
 .. autoclass:: signatory.LogSignature
+
+.. autofunction:: signatory.logsignature_channels

@@ -1,10 +1,10 @@
 import torch
 import unittest
 
-import utils
+import utils_testing as utils
 
 
-class TestSignatureMemory(unittest.TestCase):
+class TestSignatureMemory(utils.TimedUnitTest):
     def test_memory(self):
         for c in utils.ConfigIter(requires_grad=True):
             path_copy = c.path.clone()
@@ -28,7 +28,7 @@ class TestSignatureMemory(unittest.TestCase):
                 c.signature_backward()
 
 
-class TestLogSignatureMemory(unittest.TestCase):
+class TestLogSignatureMemory(utils.TimedUnitTest):
     def test_memory(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   requires_grad=True):

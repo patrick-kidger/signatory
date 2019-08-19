@@ -18,6 +18,8 @@ namespace signatory {
     using s_size_type = std::make_signed<std::vector<torch::Tensor>::size_type>::type;
     using u_size_type = std::make_unsigned<s_size_type>::type;
 
+    int64_t signature_channels(int64_t input_channels, int64_t depth);
+
     namespace misc {
         // Encapsulates the things necessary for Lyndon word etc. computations
         struct LyndonSpec {
@@ -92,11 +94,16 @@ namespace signatory {
         py::object make_backwards_info(std::vector<torch::Tensor>& out_vector, torch::Tensor out,
                                        torch::Tensor path_increments, SigSpec& sigspec);
 
-        // Checks the arguments for the forwards pass
+        // Checks the arguments for a bunch of functions only depending on channels and depth.
+        void checkargs_channels_depth(int64_t channels, s_size_type depth);
+
+        // Checks the arguments for the forwards pass in the signature function (kept here for consistency with the
+        // other checkarg functions).
         void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value);
 
-        // Checks the arguments for the backwards pass. Only grad_out is checked to make sure it is as expected.
-        // The objects we get from the PyCapsule-wrapped BackwardsInfo object are assumed to be correct.
+        // Checks the arguments for the backwards pass in the signature and logsignature function. Only grad_out is
+        // checked to make sure it is as expected. The objects we get from the PyCapsule-wrapped BackwardsInfo object
+        // are assumed to be correct.
         void checkargs_backward(torch::Tensor grad_out, const SigSpec& sigspec, int64_t num_channels=-1);
     }  // namespace signatory::misc
 }  // namespace signatory

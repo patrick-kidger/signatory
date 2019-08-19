@@ -6,26 +6,11 @@
 
 #include "free_lie_algebra_ops.hpp"
 #include "misc.hpp"
-#include "utilities.hpp"
+#include "lyndon.hpp"
 
 namespace signatory {
-    int64_t signature_channels(int64_t input_channels, int64_t depth) {
-        if (input_channels < 1) {
-            throw std::invalid_argument("input_channels must be at least 1");
-        }
-        if (depth < 1) {
-            throw std::invalid_argument("depth must be at least 1");
-        }
-
-        if (input_channels == 1) {
-            return depth;
-        }
-        else {
-            return input_channels * ((pow(input_channels, depth) - 1) / (input_channels - 1));
-        }
-    }
-
     std::vector<std::vector<int64_t>> lyndon_words(int64_t channels, int64_t depth) {
+        misc::checkargs_channels_depth(channels, depth);
         fla_ops::LyndonWords lyndon_words(misc::LyndonSpec {channels, depth}, fla_ops::LyndonWords::bracket_tag);
 
         std::vector<std::vector<int64_t>> lyndon_words_as_words;
@@ -41,6 +26,7 @@ namespace signatory {
     }
 
     std::vector<py::object> lyndon_brackets(int64_t channels, int64_t depth) {
+        misc::checkargs_channels_depth(channels, depth);
         fla_ops::LyndonWords lyndon_words(misc::LyndonSpec {channels, depth}, fla_ops::LyndonWords::bracket_tag);
 
         std::vector<py::object> lyndon_words_as_brackets;
@@ -76,6 +62,7 @@ namespace signatory {
 
     std::vector<std::tuple<int64_t, int64_t, int64_t>> lyndon_words_to_basis_transform(int64_t channels, int64_t depth)
     {
+        misc::checkargs_channels_depth(channels, depth);
         fla_ops::LyndonWords lyndon_words(misc::LyndonSpec {channels, depth}, fla_ops::LyndonWords::bracket_tag);
         std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
         std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms_backward;

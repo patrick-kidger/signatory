@@ -1,6 +1,8 @@
-0.3.0
+1.0.0
 -----
-Added logsignatures. (No small undertaking!)
+Added logsignatures.
+Added to the documentation.
+Added utilities for computing Lyndon words and Lyndon brackets.
 
 0.2.0
 -----
