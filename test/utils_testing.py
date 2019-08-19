@@ -9,7 +9,6 @@ import functools as ft
 import iisignature
 import random
 import signatory
-import sys
 import time
 import torch
 import unittest
@@ -44,7 +43,7 @@ def random_size(num=20):
 
 def large_size():
     for _ in range(5):
-        batch_size = int(torch.randint(low=4, high=4, size=(1,)))
+        batch_size = int(torch.randint(low=4, high=5, size=(1,)))
         stream_size = int(torch.randint(low=10, high=50, size=(1,)))
         channel_size = int(torch.randint(low=3, high=8, size=(1,)))
         yield batch_size, stream_size, channel_size
@@ -443,7 +442,4 @@ class TimedUnitTest(unittest.TestCase):
         t = time.time() - self.start_time
         if not hasattr(unittest, 'record_test_times') or unittest.record_test_times:
             test_str = '{id}: {t}'.format(id=self.id(), t=t)
-            exc_info = sys.exc_info()
-            if exc_info[0] is not None:
-                test_str += ' TEST ABORTED DUE TO {}'.format(exc_info[0])
             unittest.test_times.append(test_str)

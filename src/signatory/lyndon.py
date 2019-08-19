@@ -5,7 +5,9 @@ from . import _impl
 # noinspection PyUnreachableCode
 if False:
     from typing import List, Tuple, Union
-    LyndonBracket = Union[int, Tuple['LyndonBracket', 'LyndonBracket']]
+    # what we actually want, but can't make sense of in the auto-generated documentation
+    # LyndonBracket = Union[int, Tuple['LyndonBracket', 'LyndonBracket']]
+    LyndonBracket = Union[int, Tuple]
 
 
 def lyndon_words(channels, depth):

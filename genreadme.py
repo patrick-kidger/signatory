@@ -33,19 +33,22 @@ def main():
                 out_data.append(out_line)
         return ''.join(out_data)
 
+    here = os.path.realpath(os.path.dirname(__file__))
+
     def read_from_files(filenames):
         for filename in filenames:
+            filename = os.path.join(here, filename)
             outs.append(parse_file(filename))
 
-    read_from_files(['./docs/fragments/title.rst', './docs/pages/info.rst', './docs/pages/installation.rst'])
+    read_from_files(['docs/fragments/title.rst', 'docs/pages/info.rst', 'docs/pages/installation.rst'])
 
     outs.append("Documentation\n"
                 "-------------\n"
                 "The documentation is available `here <https://signatory.readthedocs.io>`__.")
 
-    read_from_files(['./docs/pages/faq.rst', './docs/pages/citation.rst', './docs/pages/acknowledgements.rst'])
+    read_from_files(['docs/pages/faq.rst', 'docs/pages/citation.rst', 'docs/pages/acknowledgements.rst'])
 
-    with io.open('./README.rst', 'w', encoding='utf-8') as f:
+    with io.open(os.path.join(here, 'README.rst'), 'w', encoding='utf-8') as f:
         f.write('\n\n'.join(outs))
 
 

@@ -1,5 +1,5 @@
-#ifndef SIGNATORY_UTILITIES_HPP
-#define SIGNATORY_UTILITIES_HPP
+#ifndef SIGNATORY_LYNDON_HPP
+#define SIGNATORY_LYNDON_HPP
 
 #include <cstdint>    // int64_t
 
@@ -12,4 +12,4 @@ namespace signatory {
     std::vector<std::tuple<int64_t, int64_t, int64_t>> lyndon_words_to_basis_transform(int64_t channels, int64_t depth);
 }  // namespace signatory
 
-#endif //SIGNATORY_UTILITIES_HPP
+#endif //SIGNATORY_LYNDON_HPP

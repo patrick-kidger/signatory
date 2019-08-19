@@ -97,6 +97,9 @@ def signature(path, depth, stream=False, basepoint=False):
             else:
                 return torch.Tensor of shape (N, C + C^2 + ... + C^depth)
 
+        Note that the number of output channels may be calculated via the convenience function
+        :func:`signatory.signature_channels`.
+
     """
     # noinspection PyUnresolvedReferences
     return _SignatureFunction.apply(path, depth, stream, basepoint)
