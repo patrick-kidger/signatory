@@ -13,15 +13,16 @@ if False:
 def lyndon_words(channels, depth):
     # type: (int, int) -> List[List[int]]
     r"""Computes the collection of all Lyndon words up to length :attr:`depth` in an alphabet of size
-    :attr:`in_channels`. Each letter is represented by an integer :math:`i` in the range
-    :math:`0 \leq i < \text{in_channels}`.
+    :attr:`channels`. Each letter is represented by an integer :math:`i` in the range
+    :math:`0 \leq i < \text{channels}`.
 
     Arguments:
         channels (int): The size of the alphabet.
         depth (int): The maximum word length.
 
     Returns:
-        A list of lists of integers. Each sub-list corresponds to one Lyndon word.
+        A list of lists of integers. Each sub-list corresponds to one Lyndon word. The words are ordered by length, and
+        then ordered lexicographically within each length class.
     """
 
     return _impl.lyndon_words(channels, depth)
@@ -30,15 +31,16 @@ def lyndon_words(channels, depth):
 def lyndon_brackets(channels, depth):
     # type: (int, int) -> List[LyndonBracket]
     r"""Computes the collection of all Lyndon words, in their standard bracketing, up to length :attr:`depth` in an
-    alphabet of size :attr:`in_channels`. Each letter is represented by an integer :math:`i` in the range
-    :math:`0 \leq i < \text{in_channels}`.
+    alphabet of size :attr:`channels`. Each letter is represented by an integer :math:`i` in the range
+    :math:`0 \leq i < \text{channels}`.
 
     Arguments:
         channels (int): The size of the alphabet.
         depth (int): The maximum word length.
 
     Returns:
-        A list. Each element corresponds to a single Lyndon word with its standard bracketing."""
+        A list. Each element corresponds to a single Lyndon word with its standard bracketing. The words are ordered by
+        length, and then ordered lexicographically within each length class."""
 
     return _impl.lyndon_brackets(channels, depth)
 

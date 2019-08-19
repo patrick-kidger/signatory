@@ -135,12 +135,15 @@ class Signature(nn.Module):
 
 
 # A wrapper for the sake of consistent documentation
-def signature_channels(in_channels, depth):
+def signature_channels(channels, depth):
     # type: (int, int) -> int
-    """Computes the number of output channels from a signature call.
+    r"""Computes the number of output channels from a signature call. Specifically, it computes
+
+    .. math::
+        \text{channels} + \text{channels}^2 + \cdots + \text{channels}^\text{depth}.
 
     Arguments:
-        in_channels (int): The number of channels in the input; that is, the dimension of the space that the input path
+        channels (int): The number of channels in the input; that is, the dimension of the space that the input path
             resides in.
 
         depth (int): The depth of the signature that is being computed.
@@ -149,10 +152,10 @@ def signature_channels(in_channels, depth):
         An int specifying the number of channels in the signature of the path.
     """
 
-    return _impl.signature_channels(in_channels, depth)
+    return _impl.signature_channels(channels, depth)
 
 
-def extract_signature_term(sig_tensor, in_channels, depth):
+def extract_signature_term(sig_tensor, channels, depth):
     # type: (torch.Tensor, int, int) -> torch.Tensor
     r"""Extracts a particular term from a signature.
 
@@ -164,7 +167,8 @@ def extract_signature_term(sig_tensor, in_channels, depth):
         sig_tensor (:class:`torch.Tensor`): The signature to extract the term from. Should be the result of the
             :func:`signatory.signature` function.
 
-        in_channels (int): The number of input channels :math:`C`.
+        channels (int): The number of input channels :math:`C`. (In principle this is determined by the size of
+            :attr:`sig_tensor`, but it is hard to compute from this.)
 
         depth (int): The depth of the term to be extracted from the signature.
 
@@ -172,11 +176,11 @@ def extract_signature_term(sig_tensor, in_channels, depth):
         The :class:`torch.Tensor` corresponding to the :attr:`depth` term of the signature.
     """
 
-    if in_channels < 1:
+    if channels < 1:
         raise ValueError("in_channels must be at least 1")
 
     if depth == 1:
         start = 0
     else:
-        start = signature_channels(in_channels, depth - 1)
-    return sig_tensor.narrow(dim=-1, start=start, length=in_channels ** depth)
+        start = signature_channels(channels, depth - 1)
+    return sig_tensor.narrow(dim=-1, start=start, length=channels ** depth)

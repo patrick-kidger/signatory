@@ -1,4 +1,4 @@
-.. currentmodule:: sourcecode
+.. currentmodule:: extras-sourcecode
 
 Source Code
 -----------

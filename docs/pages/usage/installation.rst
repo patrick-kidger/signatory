@@ -1,4 +1,4 @@
-.. currentmodule:: installation
+.. currentmodule:: usage-installation
 
 Installation
 ------------

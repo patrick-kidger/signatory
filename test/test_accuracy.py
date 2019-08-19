@@ -3,7 +3,7 @@ import unittest
 
 import utils_testing as utils
 
-@unittest.skip
+
 class TestSignatureAccuracy(utils.TimedUnitTest):
     def test_forward(self):
         for c in utils.ConfigIter():
@@ -25,7 +25,7 @@ class TestSignatureAccuracy(utils.TimedUnitTest):
             if not signatory_grad.allclose(iisignature_grad, atol=5e-6):
                 self.fail(c.diff_fail(signatory_grad=signatory_grad, iisignature_grad=iisignature_grad))
 
-@unittest.skip
+
 class TestLogSignatureAccuracy(utils.TimedUnitTest):
     def test_forward(self):
         for c in utils.ConfigIter(mode=(utils.expand, utils.brackets),  # Can't compare mode="words" against iisignature

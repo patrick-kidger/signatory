@@ -1,4 +1,4 @@
-.. currentmodule:: examples
+.. currentmodule:: usage-examples
 
 Examples
 --------

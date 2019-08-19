@@ -1,4 +1,4 @@
-.. currentmodule:: faq
+.. currentmodule:: extras-faq
 
 FAQ
 ---

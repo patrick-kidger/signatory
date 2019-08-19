@@ -37,7 +37,7 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
 
     The :attr:`modes` argument determines how the logsignature is represented.
 
-    Note that if performing many logsignature calculations for the same depth and size of input, then you will likely
+    Note that if performing many logsignature calculations for the same depth and size of input, then you will
     see a performance boost by using :class:`signatory.LogSignature` over :class:`signatory.logsignature`.
 
     Arguments:
@@ -49,16 +49,16 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
 
         basepoint (bool or :class:`torch.Tensor`, optional): as :func:`signatory.signature`.
 
-        mode (str, optional): How the output should be presented. Valid values are "words", "brackets", or
-            "expand". Precisely what each of these options mean is described in the "Returns" section below. As a rule
-            of thumb: use "words" for new projects (as it is the fastest), and use "brackets" for compatibility with
-            other projects which do not provide equivalent functionality to "words". (Such as `iisignature
-            <https://github.com/bottler/iisignature>`__). The mode "expand" is mostly only interesting for
-            mathematicians.
+        mode (str, optional): How the output should be presented. Valid values are :attr:`"expand"`, :attr:`"brackets"`,
+            or :attr:`"words"`. Precisely what each of these options mean is described in the "Returns" section below.
+            As a rule of thumb: use :attr:`"words"` for new projects (as it is the fastest), and use :attr:`"brackets"`
+            for compatibility with other projects which do not provide equivalent functionality to :attr:`"words"`.
+            (Such as `iisignature <https://github.com/bottler/iisignature>`__). The mode :attr:`"expand"` is mostly only
+            interesting for mathematicians.
 
     Returns:
         A :class:`torch.Tensor`. If :attr:`mode == "expand"` then it will be of the same shape as the returned tensor
-        from :func:`signatory.signature`. If :attr:`mode in ("words", "brackets")` then it will again be of the
+        from :func:`signatory.signature`. If :attr:`mode in ("brackets", "words")` then it will again be of the
         same shape, except that the channel dimension will instead be of size
         :attr:`signatory.logsignature_channels(C, depth)`, where :attr:`C` is the number of input channels, i.e.
         :attr:`path.size(2)`.
@@ -67,66 +67,24 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
 
         We now go on to explain what the different values for :attr:`mode` mean. This discussion is in the "Returns"
         section a the value of :attr:`mode` essentially just determines how the output is represented; the
-        mathematical meaning is the same in all cases. We start with an explanation for the reader who is not familiar
-        with notions such as free Lie algebras and Lyndon words. Which is most people! For the more mathematically
-        inclined reader, we have an more in-depth explanation later.
+        mathematical meaning is the same in all cases.
 
-        First the low-math explanation.
+        If :attr:`mode == "expand"` then the logsignature is presented as a member of the tensor algebra; the numbers
+        returned correspond to the coefficients of all words in the tensor algebra.
 
-        The signatures computed by the :func:`signatory.signature` function are a large collection of numbers; that is,
-        they live in a high-dimensional Euclidean space (formally called the "truncated tensor algebra"). This space has
-        a a particular notion of "logarithm", and when called with :attr:`mode == "expand"` then the logsignature will
-        also be displayed as a member of the truncated tensor algebra.
+        If :attr:`mode == "brackets"` then the logsignature is presented in terms of the coefficients of the Lyndon
+        basis of the free Lie algebra.
 
-        However it turns out that this is space-inefficient: the logsignature may be represented by a smaller collection
-        of numbers, that is, it's really a member of a smaller-dimensional Euclidean space (formally it is a "free Lie
-        algebra"). Its representation in the high-dimensional truncated tensor algebra is simply a projection from this
-        small space into the larger space. As such this probably isn't a useful value for :attr:`mode` when doing
-        machine learning; you instead want a representation in the smaller space..
+        If :attr:`mode == "words"` then the logsignature is presented in terms of the coefficients of a particular
+        basis of the free Lie algebra that is not a Hall basis. Every basis element is given as a sum of Lyndon
+        brackets. When each bracket is expanded out and the sum computed, the sum will contains precisely one Lyndon
+        word (and some collection of non-Lyndon words). Moreover
+        every Lyndon word is represented uniquely in this way. We identify these basis elements with each corresponding
+        Lyndon word. This is natural as the coefficients in this basis are found just by extracting the coefficients of
+        all Lyndon words from the tensor algebra representation of the logsignature.
 
-        A representation in this smaller space is what will be returned if :attr:`mode in ("words", "brackets")`.
-        (The keen-eyed reader will notice that since the logarithm is bijective, then this also means that the signature
-        itself is also using more space than necessary to represent itself -- as it can just be represented by its
-        corresponding logsignature, which lives in a smaller dimensional space. This is completely correct. However in
-        some sense this larger representation is the whole point of the signature: the dependency between its terms is
-        nonlinear, which give lots of interesting features to learn machine learning models on. The same larger
-        representation for the logsignature only has linear dependencies amongst its terms, so the same statement isn't
-        true there.)
-
-        The smaller space has multiple different possible bases. That is, there are multiple ways to represent elements
-        of this smaller space. We offer three different bases; all of them are just linear transformations of each
-        other.
-
-        A popular basis is called the "Lyndon basis", and this is the basis that is used if :attr:`mode == "brackets"`.
-        This is thus the default choice, as it is the result that is typically expected.
-
-        However it turns out that there is a more computationally efficient basis which may be used: this is what is
-        used if :attr:`mode == "words"`. Thus this is the recommended choice for new projects.
-
-        Now the high-math explanation.
-
-        The explanation will now assume that you are familiar with Lyndon words, the Lyndon basis, and Hall bases.
-
-        As already explained, :attr:`mode == "expand"` represents the logsignature in the truncated tensor algebra, so
-        that the numbers you see are the coefficients of all possible words. These words are first ordered by length,
-        and within each length class they are ordered lexicographically.
-
-        Next, :attr:`mode == "brackets"` represents the logsignature as coefficients of the Lyndon basis. The order of
-        the coefficients corresponds to an ordering of the foliage of the elements of the Lyndon basis (i.e. the Lyndon
-        words usually associated with each basis element.) These words are first ordered by length, and within each
-        length class they are ordered lexicographically.
-
-        Now it turns out that the coefficients in the Lyndon basis may be computed by calculated by (a) computing the
-        logsignature in the truncated tensor algebra, (b) extracting the coefficents of all Lyndon words, and (c)
-        applying a unitriangular (i.e. triangular with 1 on the diagonal) linear transformation to them. In particular,
-        this transformation is clearly invertible (as you'd expect, given that we're computing a basis), so we see that
-        the coefficients of all the Lyndon words also contain the same information; the Lyndon words may be interpreted
-        as forming a basis for the free Lie algebra. (And this basis in terms of the Lyndon words is *not* the same as
-        the Lyndon basis!) This gives a non-Hall basis for the free Lie algebra; each basis element is a sum of Lyndon
-        brackets such that when expanded out, each sum contains precisely one Lyndon word, and every Lyndon word is part
-        of such a sum. The representation in this basis is what is computed when :attr:`mode == "words"`. As usual the
-        coefficients are given by an ordering of the words, in which the words are first ordered by length, and within
-        each length class are ordered lexicographically.
+        In all cases, the ordering corresponds to the ordering on words given by first ordering the words by length,
+        and then ordering each length class lexicographically.
     """
     # noinspection PyUnresolvedReferences
     return _LogSignatureFunction.apply(path, depth, stream, basepoint, mode, None)
@@ -135,10 +93,10 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
 class LogSignature(nn.Module):
     """Module wrapper around the :func:`signatory.logsignature` function.
 
-    Calling this module on an input `path` with the same number of channels as the last input `path` it was called with
-    will be faster than the corresponding :func:`signatory.logsignature` function, as this module caches the result of
-    certain computations which depend only on this value. (For larger numbers of channels, this speedup will be
-    substantial.)
+    Calling this module on an input :attr:`path` with the same number of channels as the last input :attr:`path` it was
+    called with will be faster than the corresponding :func:`signatory.logsignature` function, as this module caches the
+    result of certain computations which depend only on this value. (For larger numbers of channels, this speedup will
+    be substantial.)
 
     Arguments:
         depth (int): as :func:`signatory.logsignature`.
@@ -213,7 +171,7 @@ def _mobius_function(x):
 
 def logsignature_channels(in_channels, depth):
     # type: (int, int) -> int
-    """Computes the number of output channels from a logsignature call with :attr::`mode in ("words", "brackets")`.
+    """Computes the number of output channels from a logsignature call with :attr:`mode in ("words", "brackets")`.
 
     Arguments:
         in_channels (int): The number of channels in the input; that is, the dimension of the space that the input path

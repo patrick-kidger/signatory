@@ -1,4 +1,4 @@
-.. currentmodule:: utilities
+.. currentmodule:: reference-utilities
 
 Utilities
 ---------

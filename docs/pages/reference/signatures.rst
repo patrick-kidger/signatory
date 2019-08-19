@@ -1,4 +1,4 @@
-.. currentmodule:: signatures
+.. currentmodule:: reference-signatures
 
 Signatures
 ----------

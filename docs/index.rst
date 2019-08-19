@@ -6,23 +6,31 @@
     :caption: Usage
     :hidden:
 
-    /pages/installation
-    /pages/examples
+    /pages/usage/installation
+    /pages/usage/examples
 
 .. toctree::
     :caption: Reference
     :hidden:
 
-    /pages/signatures
-    /pages/logsignatures
-    /pages/utilities
+    /pages/reference/signatures
+    /pages/reference/logsignatures
+    /pages/reference/utilities
+
+.. toctree::
+    :caption: How to use signatures
+    :hidden:
+
+    /pages/understanding/machinelearning
+    /pages/understanding/neuralnetworks
+    /pages/understanding/kernels
+    /pages/understanding/sigversuslogsig
 
 .. toctree::
     :caption: Extras
     :hidden:
 
-    /pages/info
-    /pages/sourcecode
-    /pages/faq
-    /pages/citation
-    /pages/acknowledgements
+    /pages/extras/sourcecode
+    /pages/extras/faq
+    /pages/extras/citation
+    /pages/extras/acknowledgements

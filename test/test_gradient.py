@@ -35,6 +35,7 @@ class TestSignatureGrad(utils.TimedUnitTest):
             except RuntimeError:
                 self.fail(c.fail())
 
+    @unittest.skip  # takes forever
     def test_gradcheck_large(self):
         for c in utils.ConfigIter(requires_grad=True,
                                   size=utils.large_size(),
@@ -81,6 +82,7 @@ class TestLogSignatureGrad(utils.TimedUnitTest):
             except RuntimeError:
                 self.fail(c.fail())
 
+    @unittest.skip  # takes forever
     def test_gradcheck_large(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   requires_grad=True,

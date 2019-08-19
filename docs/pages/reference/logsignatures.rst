@@ -1,4 +1,4 @@
-.. currentmodule:: logsignatures
+.. currentmodule:: reference-logsignatures
 
 Logsignatures
 -------------

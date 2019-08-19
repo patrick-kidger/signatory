@@ -60,7 +60,7 @@ class TestSignatureSpeed(utils.TimedUnitTest):
                                                                           backward=backward))
 
     def test_speed(self):
-        self.speed(batch_size=100, number=10, backward=True)  # warm up
+        self.speed(batch_size=100, number=10, stream=False, backward=True)  # warm up
         for stream in (True, False):
             for backward in (True, False):
                 if stream and backward:
