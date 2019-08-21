@@ -1,3 +1,14 @@
+1.0.0
+-----
+Added logsignatures. (No small feat!)
+Added to the documentation.
+Added utilities for computing Lyndon words and Lyndon brackets.
+
+0.2.0
+-----
+Rewrote to compute the signature exactly, rather than its Riemann approximation.
+Added better documentation, examples, and tests.
+
 0.1.2
 -----
 Added support for Python 2.7.

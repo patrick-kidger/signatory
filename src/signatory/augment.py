@@ -1,48 +1,10 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-import warnings
 
 # noinspection PyUnreachableCode
 if False:
-    from typing import Any, Callable, Tuple, Union
-
-from . import backend
-
-
-class Signature(nn.Module):
-    """Module wrapper around the signatory.signature function. See :func:`signatory.signature`.
-
-    Arguments:
-        depth: as :func:`signatory.signature`.
-
-        basepoint: as :func:`signatory.signature`.
-
-        stream: as :func:`signatory.signature`.
-
-    Called with a single argument :attr:`path` of type :class:`torch.Tensor`.
-    """
-
-    def __init__(self, depth, basepoint=False, stream=False, **kwargs):
-        # type: (int, bool, bool, **Any) -> None
-        if not isinstance(depth, int) or depth < 1:
-            raise ValueError('Depth must be an integer greater than or equal to one. Given {depth} of type '
-                             '{tdepth}'.format(depth=depth, tdepth=type(depth)))
-        super(Signature, self).__init__(**kwargs)
-        self.depth = depth
-        self.basepoint = basepoint
-        self.stream = stream
-
-    def forward(self, path):
-        # type: (torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]
-        if path.size(1) == 1:
-            warnings.warn('{clsname} called on path with only one channel, so the signature is now just the moments of '
-                          'the path.'.format(clsname=self.__class__.__name__))
-        return backend.signature(path, self.depth, self.stream, self.basepoint)
-
-    def extra_repr(self):
-        return 'depth={depth}, stream={stream}, basepoint={basepoint}'.format(depth=self.depth, stream=self.stream,
-                                                                              basepoint=str(self.basepoint)[:6])
+    from typing import Any, Callable, Tuple
 
 
 class Augment(nn.Module):

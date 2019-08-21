@@ -1,54 +1,93 @@
-import random
 import signatory
-import torch
 import torch.autograd as autograd
-import unittest
+
+import utils_testing as utils
 
 
-class TestGrad(unittest.TestCase):
+class TestSignatureGrad(utils.TimedUnitTest):
     @staticmethod
-    def gradcheck(size=(1, 4, 3), depth=2, stream=False, basepoint=False):
-        path = torch.rand(*size, requires_grad=True, dtype=torch.double)
-        return autograd.gradcheck(signatory.signature, (path, depth, stream, basepoint))
+    def gradcheck(path, depth, stream, basepoint, **kwargs):
+        return autograd.gradcheck(signatory.signature, (path, depth, stream, basepoint), **kwargs)
 
     def test_gradcheck_edge(self):
-        for stream in (True, False):
-            for size in ((1, 2, 1), (1, 4, 4), (4, 2, 4), (4, 4, 1)):
-                basepoint_size = (size[0], size[2])
-                for basepoint in (True,
-                                  False,
-                                  torch.rand(basepoint_size, requires_grad=True, dtype=torch.double),
-                                  torch.rand(basepoint_size, requires_grad=False, dtype=torch.double)):
-                    for depth in (1, 2):
-                        try:
-                            self.gradcheck(size, depth, stream, basepoint)
-                        except RuntimeError:
-                            self.fail("Failed with stream={stream}, basepoint={basepoint}, size={size}, depth={depth}, "
-                                      "basepoint_size={basepoint_size}"
-                                      .format(stream=stream, basepoint=basepoint, size=size, depth=depth,
-                                              basepoint_size=basepoint_size))
+        for c in utils.ConfigIter(depth=(1, 2, 3),
+                                  requires_grad=True,
+                                  size=((1, 2, 1), (1, 4, 4), (4, 2, 4), (4, 4, 1))):
+            try:
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint)
+            except RuntimeError:
+                self.fail(c.fail())
+
+    @utils.skip  # takes forever
+    def test_gradcheck_grid(self):
+        for c in utils.ConfigIter(requires_grad=True):
+            try:
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint)
+            except RuntimeError:
+                self.fail(c.fail())
 
     def test_gradcheck_random(self):
-        for stream in (True, False):
-            for _ in range(5):
-                for basepoint_ in (True, False, None):
-                    size = torch.randint(low=1, high=10, size=(3,))
-                    size[1] += 1  # stream dimension must be at least size 2
-                    basepoint_size = (size[0], size[2])
-                    if basepoint_ is None:
-                        basepoint_grad = random.choice([True, False])
-                        basepoint = torch.rand(basepoint_size, requires_grad=basepoint_grad, dtype=torch.double)
-                    else:
-                        basepoint_grad = None
-                        basepoint = basepoint_
-                    depth = int(torch.randint(low=1, high=4, size=(1,)))
-                    try:
-                        self.gradcheck(size, depth, stream, basepoint)
-                    except Exception:
-                        self.fail("Failed with stream={stream}, basepoint={basepoint}, size={size}, depth={depth}, "
-                                  "basepoint_size={basepoint_size}, basepoint_grad={basepoint_grad}"
-                                  .format(stream=stream, basepoint=basepoint, size=size, depth=depth,
-                                          basepoint_size=basepoint_size, basepoint_grad=basepoint_grad))
+        for c in utils.ConfigIter(requires_grad=True,
+                                  size=utils.random_size()):
+            try:
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint)
+            except RuntimeError:
+                self.fail(c.fail())
+
+    @utils.skip  # takes forever
+    def test_gradcheck_large(self):
+        for c in utils.ConfigIter(requires_grad=True,
+                                  size=utils.large_size(),
+                                  depth=utils.large_depth()):
+            try:
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint)
+            except RuntimeError:
+                self.fail(c.fail())
 
     # We don't do gradgradcheck because our backwards function uses a whole bunch of in-place operations for memory
     # efficiency, so it's not automatically differentiable. (And I'm not writing a custom double backward function...)
+
+
+class TestLogSignatureGrad(utils.TimedUnitTest):
+    @staticmethod
+    def gradcheck(path, depth, stream, basepoint, mode, **kwargs):
+        return autograd.gradcheck(signatory.logsignature, (path, depth, stream, basepoint, mode), **kwargs)
+
+    def test_gradcheck_edge(self):
+        for c in utils.ConfigIter(mode=utils.all_modes,
+                                  depth=(1, 2, 3),
+                                  requires_grad=True,
+                                  size=((1, 2, 1), (1, 4, 4), (4, 2, 4), (4, 4, 1))):
+            try:
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.signatory_mode)
+            except RuntimeError:
+                self.fail(c.fail())
+
+    @utils.skip  # takes forever
+    def test_gradcheck_grid(self):
+        for c in utils.ConfigIter(mode=utils.all_modes,
+                                  requires_grad=True):
+            try:
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.signatory_mode)
+            except RuntimeError:
+                self.fail(c.fail())
+
+    def test_gradcheck_random(self):
+        for c in utils.ConfigIter(mode=utils.all_modes,
+                                  requires_grad=True,
+                                  size=utils.random_size()):
+            try:
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.signatory_mode)
+            except RuntimeError:
+                self.fail(c.fail())
+
+    @utils.skip  # takes forever
+    def test_gradcheck_large(self):
+        for c in utils.ConfigIter(mode=utils.all_modes,
+                                  requires_grad=True,
+                                  size=utils.large_size(),
+                                  depth=utils.large_depth()):
+            try:
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.signatory_mode)
+            except RuntimeError:
+                self.fail(c.fail())

@@ -1,21 +1,28 @@
-import io
-import os
 import setuptools
-import torch.utils.cpp_extension as cpp
+try:
+    import torch.utils.cpp_extension as cpp
+except ImportError:
+    raise ImportError("PyTorch is not installed, and must be installed prior to installing Signatory.")
 
 import metadata
 
 
-ext_modules = [cpp.CppExtension(name='_impl', sources=['src/pytorchbind.cpp', 'src/signature.cpp'],
-                                depends=['src/signature.hpp'])]
+ext_modules = [cpp.CppExtension(name='_impl',
+                                sources=['src/free_lie_algebra_ops.cpp',
+                                         'src/logsignature.cpp',
+                                         'src/lyndon.cpp',
+                                         'src/misc.cpp',
+                                         'src/pytorchbind.cpp',
+                                         'src/signature.cpp',
+                                         'src/tensor_algebra_ops.cpp'],
+                                depends=['src/free_lie_algebra_ops.hpp',
+                                         'src/logsignature.hpp',
+                                         'src/lyndon.hpp',
+                                         'src/misc.hpp',
+                                         'src/signature.hpp',
+                                         'src/tensor_algebra_ops.hpp'],
+                                extra_compile_args=['-fvisibility=hidden'])]
 
-here = os.path.abspath(os.path.dirname(__file__))
-
-with io.open(os.path.join(here, 'README.rst'), 'r', encoding='utf-8') as f:
-    readme = f.read()
-
-with io.open(os.path.join(here, 'docs', 'fragments', 'description.rst'), 'r', encoding='utf-8') as f:
-    description = f.read()
 
 setuptools.setup(name=metadata.project,
                  version=metadata.version,
@@ -23,10 +30,10 @@ setuptools.setup(name=metadata.project,
                  author_email=metadata.author_email,
                  maintainer=metadata.author,
                  maintainer_email=metadata.author_email,
-                 description=description,
-                 long_description=readme,
+                 description=metadata.description,
+                 long_description=metadata.readme,
                  url=metadata.url,
-                 license=license,
+                 license=metadata.license,
                  keywords=metadata.keywords,
                  classifiers=metadata.classifiers,
                  zip_safe=False,

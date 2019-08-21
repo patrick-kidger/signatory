@@ -1,4 +1,4 @@
-.PHONY: genreadme test docs publish prepublish buildandtest
+.PHONY: genreadme test ftest develop docs publish prepublishsdist prepublish buildandtest
 .RECIPEPREFIX+=
 
 # generate the readme from the documentation
@@ -8,6 +8,13 @@ genreadme:
 # run tests
 test:
     python -m test.runner
+
+ftest:
+    python -m test.runner -f
+
+# make development version
+develop:
+    python setup.py develop
 
 # make docs
 docs:
@@ -60,7 +67,7 @@ buildandtest:
     pip install dist/$${DIST} > /dev/null  ;\
     pip install iisignature > /dev/null  ;\
     echo version=$${O} ;\
-    make --no-print-directory test ;\
+    make --no-print-directory ftest ;\
     conda deactivate ;\
     conda env remove -p /tmp/signatory-$${O} > /dev/null  ;\
     )
