@@ -15,6 +15,29 @@ if False:
     from typing import Any, Union
 
 
+try:
+    lru_cache = ft.partial(ft.lru_cache, maxsize=None)
+except AttributeError:
+    # Python 2
+    # A poor man's lru_cache, sufficient for our needs below.
+    # no maxsize argument for simplicity (hardcoded to None)
+    class LruCache:
+        def __init__(self, fn):
+            self.memodict = {}
+            self.fn = fn
+
+        def __call__(self, *args):
+            try:
+                return self.memodict[args]
+            except KeyError:
+                out = self.fn(*args)
+                self.memodict[args] = out
+                return out
+
+    def lru_cache():
+        return LruCache
+
+
 # noinspection PyProtectedMember
 class _LogSignatureFunction(autograd.Function):
     @staticmethod
@@ -28,7 +51,7 @@ class _LogSignatureFunction(autograd.Function):
     @staticmethod
     @autograd_function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
     def backward(ctx, grad_result):
-        return (*backend.backward(ctx, grad_result, _impl.logsignature_backward), None, None)
+        return backend.backward(ctx, grad_result, _impl.logsignature_backward) + (None, None)
 
 
 def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
@@ -119,7 +142,7 @@ class LogSignature(nn.Module):
         self.mode = mode
 
     @staticmethod
-    @ft.lru_cache(maxsize=None)  # This computation can be pretty slow! We definitely want to reuse it between instances
+    @lru_cache()  # This computation can be pretty slow! We definitely want to reuse it between instances
     def lyndon_info_cache(channels, depth, mode):
         mode = backend.mode_convert(mode)
         return _impl.make_lyndon_info(channels, depth, mode)
@@ -143,7 +166,7 @@ def _get_prime_factors(x):
     prime_factors = []
     largest_i_so_far = 2
     while True:
-        for i in range(largest_i_so_far, round(math.sqrt(x)) + 1):
+        for i in range(largest_i_so_far, int(round(math.sqrt(x))) + 1):  # int needed for Py2 compatability
             if x % i == 0:
                 largest_i_so_far = i
                 break

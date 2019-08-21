@@ -1,5 +1,4 @@
 import torch
-import unittest
 
 import utils_testing as utils
 
@@ -18,7 +17,7 @@ class TestSignatureMemory(utils.TimedUnitTest):
             self.assertTrue(c.signatory_out.allclose(signatory_out_copy))
             self.assertTrue(c.grad.allclose(grad_copy))
 
-    @unittest.skip  # Bug in PyTorch: https://github.com/pytorch/pytorch/issues/24413
+    @utils.skip  # Bug in PyTorch: https://github.com/pytorch/pytorch/issues/24413
     def test_inplace_caught(self):
         for c in utils.ConfigIter(requires_grad=True,
                                   size=utils.random_size(5)):
@@ -43,7 +42,7 @@ class TestLogSignatureMemory(utils.TimedUnitTest):
             self.assertTrue(c.signatory_out.allclose(signatory_out_copy))
             self.assertTrue(c.grad.allclose(grad_copy))
 
-    @unittest.skip  # Bug in PyTorch: https://github.com/pytorch/pytorch/issues/24413
+    @utils.skip  # Bug in PyTorch: https://github.com/pytorch/pytorch/issues/24413
     def test_inplace_caught(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   requires_grad=True,

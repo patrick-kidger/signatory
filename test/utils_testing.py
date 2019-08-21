@@ -9,6 +9,7 @@ import functools as ft
 import iisignature
 import random
 import signatory
+import sys
 import time
 import torch
 import unittest
@@ -21,6 +22,31 @@ try:
 except NameError:
     # Python 3
     stringtype = str
+
+
+try:
+    lru_cache = ft.partial(ft.lru_cache, maxsize=1)
+except AttributeError:
+    # Python 2
+    # A poor man's lru_cache, sufficient for our needs below.
+    # no maxsize argument for simplicity (hardcoded to 1)
+    class LruCache:
+        def __init__(self, fn):
+            self.memoargs = object()
+            self.memoout = None
+            self.fn = fn
+
+        def __call__(self, *args):
+            if args == self.memoargs:
+                return self.memoout
+            else:
+                out = self.fn(*args)
+                self.memoargs = args
+                self.memoout = out
+                return out
+
+    def lru_cache():
+        return LruCache
 
 
 with_grad = object()
@@ -101,7 +127,9 @@ class Config(object):
             basepoint = torch.rand(self.basepoint_size, requires_grad=False, dtype=torch.double, device=device)
             basepoint_cpu = basepoint.detach().cpu()
         else:  # isinstance(basepoint, bool) == True
-            basepoint_cpu = property(lambda self: exec('raise NotImplementedError'))
+            def raise_error(self):
+                raise NotImplementedError
+            basepoint_cpu = property(raise_error)
 
         self.basepoint = basepoint
         self.basepoint_cpu = basepoint_cpu
@@ -351,7 +379,8 @@ class Config(object):
 class ConfigIter(object):
     """Iterates over a prescibed collection of inputs."""
 
-    def __init__(self, *,
+    # Should always be called with keyword arguments. (Syntax for keyword-only arguments not supported in Py2.)
+    def __init__(self,
                  device=('cpu', 'cuda'),
                  logsignature_class=(True, False),
                  stream=(True, False),
@@ -425,8 +454,9 @@ class ConfigIter(object):
                                     yield Config(mode, logsignature_class, stream, size, depth, prepare, basepoint,
                                                  self.requires_grad, device)
 
-    @ft.lru_cache(maxsize=1)
-    def prepare(self, channels, depth):
+    @staticmethod
+    @lru_cache()
+    def prepare(channels, depth):
         return iisignature.prepare(channels, depth)
 
 
@@ -443,3 +473,13 @@ class TimedUnitTest(unittest.TestCase):
         if not hasattr(unittest, 'record_test_times') or unittest.record_test_times:
             test_str = '{id}: {t}'.format(id=self.id(), t=t)
             unittest.test_times.append(test_str)
+
+
+def skip(fn):
+    if sys.version_info.major == 2:
+        # unittest.skip seems to have a bug in Python 2
+        def skipped_fn(self, *args, **kwargs):
+            pass
+        return skipped_fn
+    else:
+        return unittest.skip(fn)

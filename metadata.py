@@ -2,8 +2,6 @@ import io
 import os
 import re
 
-import genreadme
-
 
 project = 'signatory'
 author = "Patrick Kidger"
@@ -44,9 +42,11 @@ with io.open(os.path.join(here, 'src', project, '__init__.py')) as f:
     else:
         raise SystemExit("Unable to find __version__ string.")
 
-genreadme.main()
 with io.open(os.path.join(here, 'README.rst'), 'r', encoding='utf-8') as f:
     readme = f.read()
 
-with io.open(os.path.join(here, 'docs', 'fragments', 'description.rst'), 'r', encoding='utf-8') as f:
-    description = f.read()
+try:
+    with io.open(os.path.join(here, 'docs', 'fragments', 'description.rst'), 'r', encoding='utf-8') as f:
+        description = f.read()
+except FileNotFoundError:
+    description = '< No description when building from source. >'

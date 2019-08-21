@@ -1,5 +1,4 @@
 import signatory
-import unittest
 
 import utils_testing as utils
 
@@ -78,7 +77,7 @@ class TestLogSignatureAccuracy(utils.TimedUnitTest):
 
     # bug in iisignature for this operation (https://github.com/bottler/iisignature/issues/8) so we can't test against
     # them. In any case we have gradchecks in test_gradient.py so this isn't a huge issue.
-    @unittest.skip
+    @utils.skip
     def test_backward(self):
         for c in utils.ConfigIter(mode=(utils.expand, utils.brackets),
                                   stream=False,  # iisignature doesn't support logsignatures for stream=True

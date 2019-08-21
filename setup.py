@@ -1,5 +1,8 @@
 import setuptools
-import torch.utils.cpp_extension as cpp
+try:
+    import torch.utils.cpp_extension as cpp
+except ImportError:
+    raise ImportError("PyTorch is not installed, and must be installed prior to installing Signatory.")
 
 import metadata
 

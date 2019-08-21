@@ -2,6 +2,7 @@
 #include <Python.h>   // PyCapsule
 #include <cstdint>    // int64_t
 #include <stdexcept>  // std::invalid_argument
+#include <limits>     // std::numeric_limits
 #include <tuple>      // std::tuple
 #include <vector>     // std::vector
 
@@ -21,7 +22,22 @@ namespace signatory {
             return depth;
         }
         else {
-            return input_channels * ((pow(input_channels, depth) - 1) / (input_channels - 1));
+            // In theory it'd be slightly quicker to calculate this via the geometric formula, but that involves a
+            // division which gives inaccurate results for large numbers.
+            int64_t output_channels = input_channels;
+            int64_t mul_limit = std::numeric_limits<int64_t>::max() / input_channels;
+            int64_t add_limit = std::numeric_limits<int64_t>::max() - input_channels;
+            for (int64_t depth_index = 1; depth_index < depth; ++depth_index) {
+                if (output_channels > mul_limit) {
+                    throw std::invalid_argument("Integer overflow detected.");
+                }
+                output_channels *= input_channels;
+                if (output_channels > add_limit) {
+                    throw std::invalid_argument("Integer overflow detected.");
+                }
+                output_channels += input_channels;
+            }
+            return output_channels;
         }
     }
 

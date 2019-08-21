@@ -1,6 +1,5 @@
 import signatory
 import torch.autograd as autograd
-import unittest
 
 import utils_testing as utils
 
@@ -19,7 +18,7 @@ class TestSignatureGrad(utils.TimedUnitTest):
             except RuntimeError:
                 self.fail(c.fail())
 
-    @unittest.skip  # takes forever
+    @utils.skip  # takes forever
     def test_gradcheck_grid(self):
         for c in utils.ConfigIter(requires_grad=True):
             try:
@@ -35,7 +34,7 @@ class TestSignatureGrad(utils.TimedUnitTest):
             except RuntimeError:
                 self.fail(c.fail())
 
-    @unittest.skip  # takes forever
+    @utils.skip  # takes forever
     def test_gradcheck_large(self):
         for c in utils.ConfigIter(requires_grad=True,
                                   size=utils.large_size(),
@@ -64,7 +63,7 @@ class TestLogSignatureGrad(utils.TimedUnitTest):
             except RuntimeError:
                 self.fail(c.fail())
 
-    @unittest.skip  # takes forever
+    @utils.skip  # takes forever
     def test_gradcheck_grid(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   requires_grad=True):
@@ -82,7 +81,7 @@ class TestLogSignatureGrad(utils.TimedUnitTest):
             except RuntimeError:
                 self.fail(c.fail())
 
-    @unittest.skip  # takes forever
+    @utils.skip  # takes forever
     def test_gradcheck_large(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   requires_grad=True,
