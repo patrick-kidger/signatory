@@ -2,6 +2,8 @@
 
 .. include:: /fragments/hosted.rst
 
+Consult the sidebar on the left hand side of this page for documentation.
+
 .. toctree::
     :caption: Usage
     :hidden:
