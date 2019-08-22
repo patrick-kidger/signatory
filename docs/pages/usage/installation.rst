@@ -21,4 +21,4 @@ Alternatively install via ``git``:
     cd signatory
     pip install .
 
-Prebuilt wheels are not yet available - you'll have to have the relevant toolchain installed to compile C++. (If you're on Linux this is probably already the case.)
+Prebuilt wheels are not yet available - you'll have to be able to compile C++. If you're on Linux this is probably already the case, and the above installation instructions should just work.

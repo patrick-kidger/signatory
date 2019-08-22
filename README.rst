@@ -3,15 +3,15 @@ Signatory
 *********
 Efficient computations of the signature transform for PyTorch, on both CPU and GPU, including backpropagation.
 
-Overview
---------
-If you're reading this documentation then it's probably because you already know what the signature transform is, and are looking to use it in your project. But in case you've stumbled across this and are curious what this 'signature' thing is...
+What are signatures?
+--------------------
+If you're reading this then it's probably because you already know what the signature transform is, and are looking to use it in your project. But in case you've stumbled across this and are curious what this 'signature' thing is...
 
 The 'signature transform' is a transformation that takes in a stream of data (often a time series), and returns a collection of statistics about that stream of data. This collection of statistics determines the path essentially uniquely, in an efficient computable way. Furthermore it is rich enough that every continuous function of the input stream may be approximated arbitrarily well by a linear function of its signature; the signature is what we call a 'universal nonlinearity'. If you're doing machine learning then you probably understand why this is such a desirable property!
 
 In principle it's quite similar to the Fourier transform: it's a transformation that can be applied to a stream of data, which extracts certain information. The Fourier transform describes frequencies; the signature most naturally describes *order*. That is, the order of events, potentially in different channels, is a particularly easy thing to understand using the signature.
 
-Check out `this <https://arxiv.org/abs/1603.03788>`__ for a primer on its use in machine learning, just as a feature transformation, and `this <https://arxiv.org/abs/1905.08494>`__ for a more in-depth look at integrating it into neural neural networks.
+Check out `this <https://arxiv.org/abs/1603.03788>`__ for a primer on its use in machine learning, just as a feature transformation, and `this <https://arxiv.org/abs/1905.08494>`__ for a more in-depth look at integrating it into neural networks.
 
 Installation
 ------------
@@ -34,7 +34,7 @@ Alternatively install via ``git``:
     cd signatory
     pip install .
 
-Prebuilt wheels are not yet available - you'll have to have the relevant toolchain installed to compile C++. (If you're on Linux this is probably already the case.)
+Prebuilt wheels are not yet available - you'll have to be able to compile C++. If you're on Linux this is probably already the case, and the above installation instructions should just work.
 
 Documentation
 -------------
@@ -44,11 +44,19 @@ FAQ
 ---
 * What's the difference between Signatory and iisignature_?
 
-The essential difference (and indeed the reason for Signatory's existence) is that iisignature is CPU-only, whilst Signatory is for both CPU and GPU, to provide the speed necessary for machine learning. (In particular this removes the need to copy data back and forth between the CPU and the GPU.) iisignature is NumPy-based, whilst Signatory is for PyTorch. There are also a few differences in the provided functionality; each package provides a few operations that the other doesn't.
+The essential difference (and the reason for Signatory's existence) is that iisignature is limited to the CPU, whilst Signatory is for both CPU and GPU. This allows Signatory to run *much* faster. (See the next question.) Other than that, iisignature is NumPy-based, whilst Signatory is for PyTorch. There are also a few differences in the provided functionality; each package provides a few operations that the other doesn't.
 
-* I'm only using the CPU. Does it matter whether I use Signatory or iisignature_?
+* What's the difference in speed between Signatory and iisignature_?
 
-Not particularly!
+Depends on your CPU and GPU, really. But to throw some numbers out there: on the CPU, Signatory tends to be about twice as fast. With the GPU, it's roughly 65 times as fast.
+
+* I get an ImportError when I try to install Signatory.
+
+You probably haven't installed PyTorch. Do that, then run ``pip`` to install Signatory.
+
+* How do I backpropagate through the signature transform?
+
+Just call ``.backward()`` like you normally would in PyTorch!
 
 .. _iisignature: https://github.com/bottler/iisignature
 

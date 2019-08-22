@@ -18,19 +18,19 @@
     /pages/reference/utilities
 
 .. toctree::
-    :caption: How to use signatures
+    :caption: Miscellaneous
     :hidden:
 
-    /pages/understanding/machinelearning
+    /pages/miscellaneous/sourcecode
+    /pages/miscellaneous/faq
+    /pages/miscellaneous/citation
+    /pages/miscellaneous/acknowledgements
+    
+.. toctree::
+    :caption: Advice on using signatures
+    :hidden:
+
+    /pages/understanding/whataresignatures
     /pages/understanding/neuralnetworks
     /pages/understanding/kernels
     /pages/understanding/sigversuslogsig
-
-.. toctree::
-    :caption: Extras
-    :hidden:
-
-    /pages/extras/sourcecode
-    /pages/extras/faq
-    /pages/extras/citation
-    /pages/extras/acknowledgements

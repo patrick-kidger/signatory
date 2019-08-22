@@ -1,4 +1,4 @@
-.. currentmodule:: extras-citation
+.. currentmodule:: miscellaneous-citation
 
 Citation
 --------

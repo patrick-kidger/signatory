@@ -1,4 +1,4 @@
-.. currentmodule:: extras-acknowledgements
+.. currentmodule:: miscellaneous-acknowledgements
 
 Acknowledgements
 ----------------
