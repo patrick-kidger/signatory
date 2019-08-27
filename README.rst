@@ -66,10 +66,10 @@ If you found this library useful in your research, please consider citing
 
 .. code-block:: bibtex
 
-    @article{deepsignatures,
-        title={{Deep Signatures}},
-        author={{Bonnier, Patric and Kidger, Patrick and Perez Arribas, Imanol and Salvi, Cristopher and Lyons, Terry}},
-        journal={arXiv:1905.08494},
+    @misc{signatory,
+        title={{Signatory: a library for performing signature and logsignature calculations on the GPU}},
+        author={Kidger, Patrick},
+        note={https://github.com/patrick-kidger/signatory},
         year={2019}
     }
 
