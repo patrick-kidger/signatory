@@ -1,9 +1,27 @@
+# Copyright 2019 Patrick Kidger. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#    http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =========================================================================
+"""Tests the accuracy of our operations by comparing against iisignature."""
+
+
 import signatory
 
+import compatibility as compat
 import utils_testing as utils
 
 
-class TestSignatureAccuracy(utils.TimedUnitTest):
+class TestSignatureAccuracy(utils.TimedTestCase):
     def test_forward(self):
         for c in utils.ConfigIter():
             signatory_out = c.signature()
@@ -25,7 +43,7 @@ class TestSignatureAccuracy(utils.TimedUnitTest):
                 self.fail(c.diff_fail(signatory_grad=signatory_grad, iisignature_grad=iisignature_grad))
 
 
-class TestLogSignatureAccuracy(utils.TimedUnitTest):
+class TestLogSignatureAccuracy(utils.TimedTestCase):
     def test_forward(self):
         for c in utils.ConfigIter(mode=(utils.expand, utils.brackets),  # Can't compare mode="words" against iisignature
                                                                         # because it doesn't support that.
@@ -77,7 +95,7 @@ class TestLogSignatureAccuracy(utils.TimedUnitTest):
 
     # bug in iisignature for this operation (https://github.com/bottler/iisignature/issues/8) so we can't test against
     # them. In any case we have gradchecks in test_gradient.py so this isn't a huge issue.
-    @utils.skip
+    @compat.skip
     def test_backward(self):
         for c in utils.ConfigIter(mode=(utils.expand, utils.brackets),
                                   stream=False,  # iisignature doesn't support logsignatures for stream=True

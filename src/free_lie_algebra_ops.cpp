@@ -1,3 +1,19 @@
+/* Copyright 2019 Patrick Kidger. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * ========================================================================= */
+
+
 #include <torch/extension.h>
 #include <algorithm>  // std::binary_search, std::lower_bound, std::upper_bound
 #include <cstdint>    // int64_t
@@ -281,14 +297,11 @@ namespace signatory { namespace fla_ops {
             second_child{second_child_}
     {};
 
-    // Constructor for LyndonWords(..., LyndonWords::word_tag) (with extra==false) and
-    // constructor for LyndonWords(..., LyndonWords::bracket_tag) for the depth == 1 words (with extra==true).
     LyndonWord::LyndonWord(const std::vector<int64_t>& word, bool extra, const misc::LyndonSpec& lyndonspec)
     {
         init(word, extra, nullptr, nullptr, lyndonspec);
     };
 
-    // Constructor for LyndonWords(..., LyndonWords::bracket_tag) for the depth > 1 words.
     LyndonWord::LyndonWord(LyndonWord* first_child, LyndonWord* second_child, const misc::LyndonSpec& lyndonspec)
     {
         std::vector<int64_t> word = detail::concat_vectors(first_child->extra->word, second_child->extra->word);
@@ -304,6 +317,7 @@ namespace signatory { namespace fla_ops {
                                   detail::compare_words);
     }
 
+    // Actually performs the initialisation
     void LyndonWord::init(const std::vector<int64_t>& word, bool extra_, LyndonWord* first_child,
                           LyndonWord* second_child, const misc::LyndonSpec& lyndonspec) {
 

@@ -1,3 +1,20 @@
+/* Copyright 2019 Patrick Kidger. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * ========================================================================= */
+ // Provides various miscellaneous things used throughout the project
+
+
 #ifndef SIGNATORY_MISC_HPP
 #define SIGNATORY_MISC_HPP
 
@@ -10,6 +27,7 @@
 
 namespace signatory {
     // Modes for the return value of logsignature
+    // See signatory.logsignature for further documentation
     enum class LogSignatureMode { Expand, Brackets, Words };
 
     // signed-ness is important because we'll sometimes iterate downwards
@@ -18,10 +36,12 @@ namespace signatory {
     using s_size_type = std::make_signed<std::vector<torch::Tensor>::size_type>::type;
     using u_size_type = std::make_unsigned<s_size_type>::type;
 
+    // See signatory.signature_channels for documentation
     int64_t signature_channels(int64_t input_channels, int64_t depth);
 
     namespace misc {
-        // Encapsulates the things necessary for Lyndon word etc. computations
+        // Encapsulates the things necessary for Lyndon word etc. computations. This will get passed around through
+        // most such functions.
         struct LyndonSpec {
             LyndonSpec(int64_t input_channels, s_size_type depth);
 
@@ -29,7 +49,8 @@ namespace signatory {
             s_size_type depth;
         };
 
-        // Encapsulates all the things that aren't tensors for signature and logsignature computations
+        // Encapsulates all the things that aren't tensors for signature and logsignature computations. This will get
+        // passed around through most such functions.
         struct SigSpec : LyndonSpec {
             SigSpec(torch::Tensor path, s_size_type depth, bool stream, bool basepoint);
 
@@ -89,10 +110,6 @@ namespace signatory {
 
             constexpr static auto capsule_name = "signatory.BackwardsInfoCapsule";
         };
-
-        // Makes a BackwardsInfo object and wraps it into a PyCapsule and wraps that into a py::object
-        py::object make_backwards_info(std::vector<torch::Tensor>& out_vector, torch::Tensor out,
-                                       torch::Tensor path_increments, SigSpec& sigspec);
 
         // Checks the arguments for a bunch of functions only depending on channels and depth.
         void checkargs_channels_depth(int64_t channels, s_size_type depth);

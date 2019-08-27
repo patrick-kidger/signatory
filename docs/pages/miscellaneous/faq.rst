@@ -10,7 +10,7 @@ The essential difference (and the reason for Signatory's existence) is that iisi
 
 Depends on your CPU and GPU, really. But to throw some numbers out there: on the CPU, Signatory tends to be about twice as fast. With the GPU, it's roughly 65 times as fast.
 
-* I get an ImportError when I try to install Signatory.
+* I get an ``ImportError`` when I try to install Signatory.
 
 You probably haven't installed PyTorch. Do that, then run ``pip`` to install Signatory.
 

@@ -1,3 +1,19 @@
+/* Copyright 2019 Patrick Kidger. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * ========================================================================= */
+ 
+
 #include <torch/extension.h>
 #include <cstdint>    // int64_t
 #include <memory>     // std::unique_ptr
@@ -15,6 +31,9 @@
 
 namespace signatory {
     namespace detail {
+        // This struct will be wrapped into a PyCapsule. Using it allows for computing certain aspects of the 
+        // logsignature transformation just once, so that repeated use of the logsignature transformation is more
+        // efficient.
         struct LyndonInfo {
             LyndonInfo(std::unique_ptr<fla_ops::LyndonWords> lyndon_words,
                        std::vector<std::tuple<int64_t, int64_t, int64_t>>&& transforms,
@@ -24,8 +43,15 @@ namespace signatory {
                 transforms_backward{transforms_backward}
             {};
 
+            // A list of Lyndon words
             std::unique_ptr<fla_ops::LyndonWords> lyndon_words;
+            
+            // The transforms for going from Lyndon words to Lyndon basis
+            // This is in terms of the 'compressed' index, i.e. in the free Lie algebra
             std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
+            
+            // The transforms for going from Lyndon basis to Lyndon words
+            // This is in terms of the tensor algebra index
             std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms_backward;
 
             constexpr static auto capsule_name = "signatory.LyndonInfoCapsule";

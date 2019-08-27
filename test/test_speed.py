@@ -1,3 +1,26 @@
+# Copyright 2019 Patrick Kidger. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#    http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =========================================================================
+"""Tests that we do indeed perform faster than iisignature. We only test on the CPU (not the GPU) as we'll obviously be
+faster on the GPU!
+
+In principle these are quite a fragile set of tests - what if iisignature is updated to operate faster? But just
+testing raw speeds is very hardware dependent, so this will do. In particular we give ourselves quite a large margin
+before we actually fail the tests, although warnings will be emitted if we're unusually slow.
+"""
+
+
 import signatory
 import iisignature
 import timeit
@@ -7,7 +30,7 @@ import warnings
 import utils_testing as utils
 
 
-class TestSignatureSpeed(utils.TimedUnitTest):
+class TestSignatureSpeed(utils.TimedTestCase):
     @staticmethod
     def speed(batch_size=1000, number=20, depth=3, stream=True, backward=False):
         # We speed test by testing against another library
@@ -75,7 +98,7 @@ class TestSignatureSpeed(utils.TimedUnitTest):
                 self.wrapped_speed_test(stream=stream, backward=backward)
 
 
-class TestLogSignatureSpeed(utils.TimedUnitTest):
+class TestLogSignatureSpeed(utils.TimedTestCase):
     @classmethod
     def speed(cls, batch_size=1000, number=20, depth=3, backward=False, signatory_mode="brackets"):
         # We speed test by testing against another library

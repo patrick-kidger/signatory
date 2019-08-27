@@ -1,3 +1,20 @@
+/* Copyright 2019 Patrick Kidger. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * ========================================================================= */
+ // Here we handle the computation of certain operations relating to the free Lie algebra, like computing Lyndon words.
+
+
 #ifndef SIGNATORY_FREE_LIE_ALGEBRA_OPS_HPP
 #define SIGNATORY_FREE_LIE_ALGEBRA_OPS_HPP
 
@@ -74,9 +91,9 @@ namespace signatory { namespace fla_ops {
                                    LyndonWord* second_child_);
 
             // Information set at creation time in LyndonWords(..., LyndonWords::bracket_tag)
-            std::vector<int64_t> word;
-            LyndonWord* first_child;
-            LyndonWord* second_child;
+            std::vector<int64_t> word;  // The word itself
+            LyndonWord* first_child;    // The first part of its standard bracketing
+            LyndonWord* second_child;   // The second part of its standard bracketing
 
             friend class LyndonWords;
             friend class LyndonWord;
@@ -88,7 +105,11 @@ namespace signatory { namespace fla_ops {
             std::map<std::vector<int64_t>, int64_t> expansion;
         };
 
+        // Constructor for LyndonWords(..., LyndonWords::word_tag) (with extra==false) and
+        // constructor for LyndonWords(..., LyndonWords::bracket_tag) for the depth == 1 words (with extra==true).
         LyndonWord(const std::vector<int64_t>& word, bool extra, const misc::LyndonSpec& lyndonspec);
+        
+        // Constructor for LyndonWords(..., LyndonWords::bracket_tag) for the depth > 1 words.
         LyndonWord(LyndonWord* first_child, LyndonWord* second_child, const misc::LyndonSpec& lyndonspec);
 
         /* The index of this element in the sequence of all Lyndon words i.e. given some lyndonspec and tag:
@@ -118,9 +139,11 @@ namespace signatory { namespace fla_ops {
     // Compresses a representation of a member of the free Lie algebra.
     // In the tensor algebra it is represented by coefficients of all words. This just extracts the coefficients of
     // all the Lyndon words.
+    // The list of all Lyndon words must have already been computed, and passed in as an argument.
     torch::Tensor compress(const LyndonWords& lyndon_words, torch::Tensor input,
                            const misc::SigSpec& sigspec);
 
+    // The backwards operation corresponding to compress.
     torch::Tensor compress_backward(torch::Tensor grad_logsignature, const LyndonWords& lyndon_words,
                                     const misc::SigSpec& sigspec);
 }  /* namespace signatory::fla_ops */ }  // namespace signatory

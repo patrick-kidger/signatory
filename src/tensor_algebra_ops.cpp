@@ -1,3 +1,19 @@
+/* Copyright 2019 Patrick Kidger. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * ========================================================================= */
+
+
 #include <torch/extension.h>
 #include <vector>     // std::vector
 
@@ -8,6 +24,7 @@
 namespace signatory {
     namespace ta_ops {
         namespace detail {
+            // This is the loop that's used inside many of the forward operations in the tensor algebra
             template<bool invert=false>
             void compute_multdiv_inner(torch::Tensor tensor_at_depth_to_calculate,
                                        const std::vector<torch::Tensor>& arg1,
@@ -25,6 +42,7 @@ namespace signatory {
                 }
             }
 
+            // This is the loop that's used inside many of the backward operations in the tensor algebra
             // No template argument as we only ever need to perform this with invert=false
             void compute_multdiv_inner_backward(torch::Tensor grad_tensor_at_depth_to_calculate,
                                                 std::vector<torch::Tensor>& grad_arg1,
@@ -46,6 +64,7 @@ namespace signatory {
                 }
             }
 
+            // This performs part of the logarithm computation
             void compute_log_partial(std::vector<torch::Tensor>& logsignature_vector,
                                      const std::vector<torch::Tensor>& signature_vector,
                                      s_size_type lower_depth_index,

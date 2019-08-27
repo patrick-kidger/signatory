@@ -1,3 +1,8 @@
+1.0.1
+-----
+Minor non-software updates - but PyPI demands a new version!
+Added more internal documentation to functions and tests, added license notices to every file etc.
+
 1.0.0
 -----
 Added logsignatures. (No small feat!)

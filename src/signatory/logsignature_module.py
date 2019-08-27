@@ -1,4 +1,20 @@
-import functools as ft
+# Copyright 2019 Patrick Kidger. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#    http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =========================================================================
+"""Provides operations relating to the logsignature transform."""
+
+
 import math
 import torch
 from torch import nn
@@ -6,6 +22,7 @@ from torch import autograd
 from torch.autograd import function as autograd_function
 
 from . import backend
+from . import compatibility as compat
 
 # noinspection PyUnresolvedReferences
 from . import _impl
@@ -13,29 +30,6 @@ from . import _impl
 # noinspection PyUnreachableCode
 if False:
     from typing import Any, Union
-
-
-try:
-    lru_cache = ft.partial(ft.lru_cache, maxsize=None)
-except AttributeError:
-    # Python 2
-    # A poor man's lru_cache, sufficient for our needs below.
-    # no maxsize argument for simplicity (hardcoded to None)
-    class LruCache:
-        def __init__(self, fn):
-            self.memodict = {}
-            self.fn = fn
-
-        def __call__(self, *args):
-            try:
-                return self.memodict[args]
-            except KeyError:
-                out = self.fn(*args)
-                self.memodict[args] = out
-                return out
-
-    def lru_cache():
-        return LruCache
 
 
 # noinspection PyProtectedMember
@@ -142,7 +136,8 @@ class LogSignature(nn.Module):
         self.mode = mode
 
     @staticmethod
-    @lru_cache()  # This computation can be pretty slow! We definitely want to reuse it between instances
+    # This computation can be pretty slow! We definitely want to reuse it between instances
+    @compat.lru_cache(maxsize=None)
     def lyndon_info_cache(channels, depth, mode):
         mode = backend.mode_convert(mode)
         return _impl.make_lyndon_info(channels, depth, mode)
@@ -160,6 +155,7 @@ class LogSignature(nn.Module):
                 .format(depth=self.depth, stream=self.stream, basepoint=str(self.basepoint)[:6], mode=self.mode))
 
 
+# Computes the list of prime factors of x
 def _get_prime_factors(x):
     if x == 1:
         return []
@@ -178,6 +174,7 @@ def _get_prime_factors(x):
     return prime_factors
 
 
+# Evaluate the Mobius function of x
 def _mobius_function(x):
     prime_factors = _get_prime_factors(x)
     prev_elem = None
