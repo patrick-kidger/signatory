@@ -62,7 +62,7 @@ Just call ``.backward()`` like you normally would in PyTorch!
 
 Citation
 --------
-If you found this library useful in your research, please consider citing
+If you found this library useful in your research, please consider citing it.
 
 .. code-block:: bibtex
 
@@ -72,8 +72,6 @@ If you found this library useful in your research, please consider citing
         note={https://github.com/patrick-kidger/signatory},
         year={2019}
     }
-
-which this project was a spin-off from.
 
 Acknowledgements
 ----------------
