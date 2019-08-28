@@ -199,13 +199,13 @@ def process_results(results):
     def remove_gpu_str(fn_str):
         return fn_str.split('_gpu')[0]
 
-    depths = tuple(next(next(results.keys()).keys()).keys())
+    depths = list(list(results.values())[0].values())[0].keys()
     for signatory_fn_name in signatory_fns.keys():
         for depth in depths:
             signatory_time = min_results['signatory'][signatory_fn_name][depth]
             iisignature_time = min_results['iisignature'][remove_gpu_str(signatory_fn_name)][depth]
             esig_time = min_results['esig'][remove_gpu_str(signatory_fn_name)][depth]
 
-            ratios[signatory_fn_name][depth] = signatory_time / min(iisignature_time, esig_time)
+            ratios[signatory_fn_name][depth] = min(iisignature_time, esig_time) / signatory_time
 
     return min_results, ratios
