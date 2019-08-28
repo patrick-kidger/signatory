@@ -19,7 +19,6 @@ checking that that doesn't occur is the purpose of these tests."""
 
 import torch
 
-import compatibility as compat
 import utils_testing as utils
 
 
@@ -37,7 +36,6 @@ class TestSignatureMemory(utils.TimedTestCase):
             self.assertTrue(c.signatory_out.allclose(signatory_out_copy))
             self.assertTrue(c.grad.allclose(grad_copy))
 
-    @compat.skip  # Bug in PyTorch: https://github.com/pytorch/pytorch/issues/24413
     def test_inplace_caught(self):
         for c in utils.ConfigIter(requires_grad=True,
                                   size=utils.random_size(5)):
@@ -62,12 +60,11 @@ class TestLogSignatureMemory(utils.TimedTestCase):
             self.assertTrue(c.signatory_out.allclose(signatory_out_copy))
             self.assertTrue(c.grad.allclose(grad_copy))
 
-    @compat.skip  # Bug in PyTorch: https://github.com/pytorch/pytorch/issues/24413
     def test_inplace_caught(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   requires_grad=True,
                                   size=utils.random_size(5)):
-            signatory_out = c.signature()
+            signatory_out = c.logsignature()
             signatory_out += 1
             with self.assertRaises(RuntimeError):
-                c.signature_backward()
+                c.logsignature_backward()

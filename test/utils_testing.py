@@ -27,7 +27,7 @@ import torch
 import unittest
 import warnings
 
-import compatability as compat
+import compatibility as compat
 
 
 with_grad = object()

@@ -70,14 +70,14 @@ def main():
         
 def install(argv):
     """Install from source."""
-    subprocess.run("pip install .")   
+    subprocess.run("pip install .", shell=True)
     
     
 def develop(argv):
     """Install from source; will create a 'build' directory adjacent to this file, put the compiled parts of the
     package in there, leave the Python parts of this package where they are, and then add links so that Python can see
     this package."""
-    subprocess.run("python setup.py develop")
+    subprocess.run("python setup.py develop", shell=True)
     
     
 def test(argv):
@@ -98,12 +98,12 @@ def docs(argv):
     Note that the documentation is already available online at https://signatory.readthedocs.io
     """
     import py2annotate  # fail fast here if necessary
-    subprocess.run("sphinx-build -M html ./docs ./docs/_build")
+    subprocess.run("sphinx-build -M html ./docs ./docs/_build", shell=True)
     
     
 def publish(argv):
     """Will need twine already installed"""
-    subprocess.run("twine upload dist/*")
+    subprocess.run("twine upload dist/*", shell=True)
     
     
 def genreadme(argv):

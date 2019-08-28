@@ -104,7 +104,16 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
         and then ordering each length class lexicographically.
     """
     # noinspection PyUnresolvedReferences
-    return _LogSignatureFunction.apply(path, depth, stream, basepoint, mode, None)
+    result = _LogSignatureFunction.apply(path, depth, stream, basepoint, mode, None)
+
+    # TODO: remove when 24413 is fixed
+    # We have to do the transpose in the Python side to avoid a PyTorch bug.
+    # https://github.com/pytorch/pytorch/issues/24413
+    # This call has to be outside the autograd.Function.apply
+    if stream:
+        result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere and we
+                                         # don't want to change it.
+    return result
 
 
 class LogSignature(nn.Module):
@@ -148,7 +157,16 @@ class LogSignature(nn.Module):
         lyndon_info = self.lyndon_info_cache(path.size(-1), self.depth, self.mode)
         # don't call logsignature itself because that (deliberately) doesn't expose a lyndon_info argument.
         # noinspection PyProtectedMember, PyUnresolvedReferences
-        return _LogSignatureFunction.apply(path, self.depth, self.stream, self.basepoint, self.mode, lyndon_info)
+        result = _LogSignatureFunction.apply(path, self.depth, self.stream, self.basepoint, self.mode, lyndon_info)
+
+        # TODO: remove when 24413 is fixed
+        # We have to do the transpose in the Python side to avoid a PyTorch bug.
+        # https://github.com/pytorch/pytorch/issues/24413
+        # This call has to be outside the autograd.Function.apply
+        if self.stream:
+            result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere
+                                             # and we don't want to change it.
+        return result
 
     def extra_repr(self):
         return ('depth={depth}, stream={stream}, basepoint={basepoint}, mode{mode}'

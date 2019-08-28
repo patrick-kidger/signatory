@@ -342,13 +342,13 @@ namespace signatory { namespace fla_ops {
         torch::Tensor compressed;
         if (sigspec.stream) {
             compressed = torch::empty({sigspec.output_stream_size,
-                                       lyndon_words.amount,
-                                       sigspec.batch_size},
+                                       sigspec.batch_size,
+                                       lyndon_words.amount},
                                       sigspec.opts);
         }
         else {
-            compressed = torch::empty({lyndon_words.amount,
-                                       sigspec.batch_size},
+            compressed = torch::empty({sigspec.batch_size,
+                                       lyndon_words.amount},
                                       sigspec.opts);
         }
 
@@ -359,9 +359,9 @@ namespace signatory { namespace fla_ops {
         // It also means that we're holding on to a lot of memory until the backward pass.
         for (s_size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index){
             for (auto& lyndon_word : lyndon_words[depth_index]) {
-                compressed.narrow(/*dim=*/sigspec.output_channel_dim,
+                compressed.narrow(/*dim=*/channel_dim,
                                   /*start=*/lyndon_word.compressed_index,
-                                  /*length=*/1).copy_(input.narrow(/*dim=*/sigspec.output_channel_dim,
+                                  /*length=*/1).copy_(input.narrow(/*dim=*/channel_dim,
                                                                    /*start=*/lyndon_word.tensor_algebra_index,
                                                                    /*length=*/1)
                                                       );
@@ -375,22 +375,22 @@ namespace signatory { namespace fla_ops {
         torch::Tensor grad_expanded;
         if (sigspec.stream) {
             grad_expanded = torch::zeros({sigspec.output_stream_size,
-                                         sigspec.output_channels,
-                                         sigspec.batch_size},
-                                        sigspec.opts);
+                                          sigspec.batch_size,
+                                          sigspec.output_channels},
+                                         sigspec.opts);
         }
         else {
-            grad_expanded = torch::zeros({sigspec.output_channels,
-                                         sigspec.batch_size},
-                                        sigspec.opts);
+            grad_expanded = torch::zeros({sigspec.batch_size,
+                                          sigspec.output_channels},
+                                         sigspec.opts);
         }
 
         for (s_size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index){
             for (auto& lyndon_word: lyndon_words[depth_index]) {
-                grad_expanded.narrow(/*dim=*/sigspec.output_channel_dim,
+                grad_expanded.narrow(/*dim=*/channel_dim,
                                      /*start=*/lyndon_word.tensor_algebra_index,
                                      /*length=*/1).copy_(
-                                           grad_compressed.narrow(/*dim=*/sigspec.output_channel_dim,
+                                           grad_compressed.narrow(/*dim=*/channel_dim,
                                                                   /*start=*/lyndon_word.compressed_index,
                                                                   /*length=*/1)
                                                          );

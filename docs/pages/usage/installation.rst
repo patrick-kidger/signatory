@@ -6,7 +6,7 @@ Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7.
 
 Available for Linux, Mac, Windows.
 
-Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.0.1, but should work with all recent versions.
+Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.2.0, but should work with all recent versions.
 
 Install via ``pip install signatory``.
 

@@ -119,7 +119,17 @@ def signature(path, depth, stream=False, basepoint=False):
 
     """
     # noinspection PyUnresolvedReferences
-    return _SignatureFunction.apply(path, depth, stream, basepoint)
+    result = _SignatureFunction.apply(path, depth, stream, basepoint)
+
+    # TODO: remove when 24413 is fixed
+    # We have to do the transpose in the Python side to avoid a PyTorch bug.
+    # https://github.com/pytorch/pytorch/issues/24413
+    # This call has to be outside the autograd.Function.apply
+    if stream:
+        result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere and we
+                                         # don't want to change it.
+
+    return result
 
 
 class Signature(nn.Module):

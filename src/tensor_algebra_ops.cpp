@@ -33,11 +33,11 @@ namespace signatory {
                                        const misc::SigSpec& sigspec) {
                 for (s_size_type j = 0, k = depth_to_calculate - 1; j < depth_to_calculate; ++j, --k) {
                     /* loop invariant: j + k = depth_to_calculate - 1 */
-                    torch::Tensor view_out = tensor_at_depth_to_calculate.view({arg1[j].size(0),
-                                                                                arg2[k].size(0),
-                                                                                sigspec.batch_size});
-                    view_out.addcmul_(arg2[k].unsqueeze(0),              /* += (this tensor times */
-                                      arg1[j].unsqueeze(1),              /*     this tensor times */
+                    torch::Tensor view_out = tensor_at_depth_to_calculate.view({sigspec.batch_size,
+                                                                                arg1[j].size(channel_dim),
+                                                                                arg2[k].size(channel_dim)});
+                    view_out.addcmul_(arg2[k].unsqueeze(channel_dim - 1),      /* += (this tensor times */
+                                      arg1[j].unsqueeze(channel_dim),          /*     this tensor times */
                                       (invert && misc::is_even(k)) ? -1 : 1);  /*     this scalar)      */
                 }
             }
@@ -53,14 +53,12 @@ namespace signatory {
                                                 const misc::SigSpec& sigspec) {
                 for (s_size_type j = depth_to_calculate - 1, k = 0; j >= 0; --j, ++k) {
                     /* loop invariant: j + k = depth_to_calculate - 1 */
-                    torch::Tensor out_view = grad_tensor_at_depth_to_calculate.view({arg1[j].size(0),
-                                                                                     arg2[k].size(0),
-                                                                                     sigspec.batch_size});
-                    /* This is just a batch matrix-multiply with the batch dimension in last place
-                       It's not totally clear what the optimal way of writing this operation is, but this is at least
-                       faster than transposing and using .baddbmm_ (not surprising, given the transposing) */
-                    grad_arg1[j] += (out_view * arg2[k].unsqueeze(0)).sum(/*dim=*/1);
-                    grad_arg2[k] += (out_view * arg1[j].unsqueeze(1)).sum(/*dim=*/0);
+                    torch::Tensor out_view = grad_tensor_at_depth_to_calculate.view({sigspec.batch_size,
+                                                                                     arg1[j].size(channel_dim),
+                                                                                     arg2[k].size(channel_dim)});
+
+                    grad_arg1[j].unsqueeze(channel_dim).baddbmm_(out_view, arg2[k].unsqueeze(channel_dim));
+                    grad_arg2[k].unsqueeze(channel_dim - 1).baddbmm_(arg1[j].unsqueeze(channel_dim - 1), out_view);
                 }
             }
 
@@ -79,8 +77,10 @@ namespace signatory {
         void compute_restricted_exp(torch::Tensor in, std::vector<torch::Tensor>& out, const misc::SigSpec& sigspec) {
             out[0].copy_(in);
             for (s_size_type i = 0; i < sigspec.depth - 1; ++i) {
-                torch::Tensor view_out = out[i + 1].view({in.size(0), out[i].size(0), sigspec.batch_size});
-                torch::mul_out(view_out, out[i].unsqueeze(0), in.unsqueeze(1));
+                torch::Tensor view_out = out[i + 1].view({sigspec.batch_size,
+                                                          in.size(channel_dim),
+                                                          out[i].size(channel_dim)});
+                torch::mul_out(view_out, out[i].unsqueeze(channel_dim - 1), in.unsqueeze(channel_dim));
                 out[i + 1] *= sigspec.reciprocals[i];
             }
         }
@@ -91,27 +91,15 @@ namespace signatory {
             if (sigspec.depth >= 2) {
                 // grad_out is a vector of length sigspec.depth.
                 // grad_out[sigspec.depth - 1] doesn't need any gradients added on to it.
-                // grad_out[sigspec.depth - 2] has the computation done in the pulled-out first iteration
-                // grad_out[sigspec.depth - 3] and below are handled in the for loop. (Hence the strange starting index
-                //   for i)
-
-                // first iteration is pulled out so that grad_in uses copy instead of += the first time around
-                grad_out[sigspec.depth - 1] *= sigspec.reciprocals[sigspec.depth - 2];
-                torch::Tensor view_grad_out = grad_out[sigspec.depth - 1].view({in.size(0),
-                                                                                out[sigspec.depth - 2].size(0),
-                                                                                sigspec.batch_size});
-                grad_out[sigspec.depth - 2] += (view_grad_out * in.unsqueeze(1)).sum(/*dim=*/0);
-                grad_in.copy_((view_grad_out * out[sigspec.depth - 2].unsqueeze(0)).sum(/*dim=*/1));
-
-                for (s_size_type i = sigspec.depth - 3; i >= 0; --i) {
+                // (Hence the strange starting index for i)
+                for (s_size_type i = sigspec.depth - 2; i >= 0; --i) {
                     grad_out[i + 1] *= sigspec.reciprocals[i];
-                    view_grad_out = grad_out[i + 1].view({in.size(0), out[i].size(0), sigspec.batch_size});
+                    torch::Tensor view_grad_out = grad_out[i + 1].view({sigspec.batch_size,
+                                                                        in.size(channel_dim),
+                                                                        out[i].size(channel_dim)});
 
-                    // This is just a batch matrix-multiply with the batch dimension in last place
-                    // It's not totally clear what the optimal way of writing this operation is, but this is at least
-                    // faster than transposing and using .baddbmm_ (not surprising, given the transposing)
-                    grad_in += (view_grad_out * out[i].unsqueeze(0)).sum(/*dim=*/1);
-                    grad_out[i] += (view_grad_out * in.unsqueeze(1)).sum(/*dim=*/0);
+                    grad_in.unsqueeze(channel_dim).baddbmm_(view_grad_out, out[i].unsqueeze(channel_dim));
+                    grad_out[i].unsqueeze(channel_dim - 1).baddbmm_(in.unsqueeze(channel_dim - 1), view_grad_out);
                 }
                 grad_in += grad_out[0];
             }
@@ -211,7 +199,7 @@ namespace signatory {
                          const misc::SigSpec& sigspec) {
             detail::compute_log_partial(output_vector, input_vector, /*lower_depth_index=*/0, sigspec);
             compute_mult_partial(output_vector, input_vector, /*scalar_value_term=*/1,
-                    /*top_terms_to_skip=*/0, sigspec);
+                                 /*top_terms_to_skip=*/0, sigspec);
         }
 
         void compute_log_backward(std::vector<torch::Tensor>& grad_output_vector,

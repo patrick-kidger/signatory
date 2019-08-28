@@ -98,18 +98,22 @@ namespace signatory {
         misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<misc::BackwardsInfo>(backwards_info_capsule);
         const misc::SigSpec& sigspec = backwards_info->sigspec;
 
-        // undo the transposing we just did in signature_forward...
-        signature = misc::transpose_reverse(signature, sigspec);
+        // TODO: uncomment when 24413 is fixed
+        // We have to do the transpose in the Python side to avoid a PyTorch bug.
+        // https://github.com/pytorch/pytorch/issues/24413
+        // (In particular this means we don't have a transpose to undo here.)
+        // // undo the transposing we just did in signature_forward...
+        // signature = misc::transpose_reverse(signature, sigspec);
 
         // organise the memory into a vector
         std::vector<torch::Tensor> signature_vector;
-        misc::slice_by_term(signature, signature_vector, sigspec.output_channel_dim, sigspec);
+        misc::slice_by_term(signature, signature_vector, sigspec);
 
         // and allocate memory for the logsignature
         // TODO: only invert the lowest terms? The higher terms aren't used?
         torch::Tensor logsignature = signature * ta_ops::log_coefficient_at_depth(depth - 2, sigspec);
         std::vector<torch::Tensor> logsignature_vector;
-        misc::slice_by_term(logsignature, logsignature_vector, sigspec.output_channel_dim, sigspec);
+        misc::slice_by_term(logsignature, logsignature_vector, sigspec);
 
         if (stream) {
             // allocate vectors for the signature and logsignature by stream index
@@ -141,12 +145,12 @@ namespace signatory {
                 int64_t source_index = std::get<0>(transform);
                 int64_t target_index = std::get<1>(transform);
                 int64_t coefficient = std::get<2>(transform);
-                torch::Tensor source = logsignature.narrow(/*dim=*/sigspec.output_channel_dim,
-                        /*start=*/source_index,
-                        /*length=*/1);
-                torch::Tensor target = logsignature.narrow(/*dim=*/sigspec.output_channel_dim,
-                        /*start=*/target_index,
-                        /*length=*/1);
+                torch::Tensor source = logsignature.narrow(/*dim=*/channel_dim,
+                                                           /*start=*/source_index,
+                                                           /*length=*/1);
+                torch::Tensor target = logsignature.narrow(/*dim=*/channel_dim,
+                                                           /*start=*/target_index,
+                                                           /*length=*/1);
                 target.sub_(source, coefficient);
             }
         }
@@ -158,9 +162,12 @@ namespace signatory {
                                               // ourselves.
                                               lyndon_info_capsule,
                                               mode,
-                                              logsignature.size(sigspec.output_channel_dim));
+                                              logsignature.size(channel_dim));
 
-        logsignature = misc::transpose(logsignature, sigspec);
+        // TODO: uncomment when 24413 is fixed
+        // We have to do the transpose in the Python side to avoid a PyTorch bug.
+        // https://github.com/pytorch/pytorch/issues/24413
+        // logsignature = misc::transpose(logsignature, sigspec);
         return {logsignature, backwards_info_capsule};
     }
 
@@ -209,10 +216,10 @@ namespace signatory {
                 int64_t source_index = std::get<0>(*tptr);
                 int64_t target_index = std::get<1>(*tptr);
                 int64_t coefficient = std::get<2>(*tptr);
-                torch::Tensor grad_source = grad_logsignature.narrow(/*dim=*/sigspec.output_channel_dim,
+                torch::Tensor grad_source = grad_logsignature.narrow(/*dim=*/channel_dim,
                                                                      /*start=*/source_index,
                                                                      /*length=*/1);
-                torch::Tensor grad_target = grad_logsignature.narrow(/*dim=*/sigspec.output_channel_dim,
+                torch::Tensor grad_target = grad_logsignature.narrow(/*dim=*/channel_dim,
                                                                      /*start=*/target_index,
                                                                      /*length=*/1);
                 grad_source.sub_(grad_target, coefficient);
@@ -220,13 +227,13 @@ namespace signatory {
         }
 
         torch::Tensor grad_signature = torch::zeros_like(grad_logsignature);
-        torch::Tensor scratch = torch::empty({sigspec.output_channels, sigspec.batch_size}, sigspec.opts);
+        torch::Tensor scratch = torch::empty({sigspec.batch_size, sigspec.output_channels}, sigspec.opts);
         std::vector<torch::Tensor> grad_logsignature_vector;
         std::vector<torch::Tensor> grad_signature_vector;
         std::vector<torch::Tensor> scratch_vector;
-        misc::slice_by_term(grad_logsignature, grad_logsignature_vector, sigspec.output_channel_dim, sigspec);
-        misc::slice_by_term(grad_signature, grad_signature_vector, sigspec.output_channel_dim, sigspec);
-        misc::slice_by_term(scratch, scratch_vector, sigspec.output_channel_dim, sigspec);
+        misc::slice_by_term(grad_logsignature, grad_logsignature_vector, sigspec);
+        misc::slice_by_term(grad_signature, grad_signature_vector, sigspec);
+        misc::slice_by_term(scratch, scratch_vector, sigspec);
 
         if (sigspec.stream) {
             // allocate vectors for the signature and logsignature by stream index

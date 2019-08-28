@@ -32,6 +32,11 @@ def prepare(channels, depth):
     return iisignature.prepare(channels, depth)
 
 
+@compat.lru_cache(maxsize=1)
+def path_cuda(path):
+    return path.to('cuda')
+
+
 def esig_signature_forward(path, depth):
     path = path.detach().numpy()
 
@@ -143,19 +148,19 @@ def signatory_logsignature_backward(path, depth):
 
 
 def signatory_signature_forward_gpu(path, depth):
-    return signatory_signature_forward(path.to('cuda'), depth)
+    return signatory_signature_forward(path_cuda(path), depth)
 
 
 def signatory_logsignature_forward_gpu(path, depth):
-    return signatory_logsignature_forward(path.to('cuda'), depth)
+    return signatory_logsignature_forward(path_cuda(path), depth)
 
 
 def signatory_signature_backward_gpu(path, depth):
-    return signatory_signature_backward(path.to('cuda'), depth)
+    return signatory_signature_backward(path_cuda(path), depth)
 
 
 def signatory_logsignature_backward_gpu(path, depth):
-    return signatory_logsignature_backward(path.to('cuda'), depth)
+    return signatory_logsignature_backward(path_cuda(path), depth)
 
 
 signatory_fns = {'signature_forward': signatory_signature_forward,

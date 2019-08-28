@@ -64,12 +64,12 @@ namespace signatory {
         {};
 
         SigSpec::SigSpec(torch::Tensor path, s_size_type depth, bool stream, bool basepoint) :
-            LyndonSpec(path.size(1), depth),
+            LyndonSpec(path.size(channel_dim), depth),
             opts{torch::TensorOptions().dtype(path.dtype()).device(path.device())},
-            input_stream_size{path.size(0)},
-            batch_size{path.size(2)},
-            output_stream_size{path.size(0) - (basepoint ? 0 : 1)},
-            output_channels{signature_channels(path.size(1), depth)},
+            input_stream_size{path.size(stream_dim)},
+            batch_size{path.size(batch_dim)},
+            output_stream_size{path.size(stream_dim) - (basepoint ? 0 : 1)},
+            output_channels{signature_channels(path.size(channel_dim), depth)},
             n_output_dims{stream ? 3 : 2},
             reciprocals{torch::ones({depth - 1}, opts)},
             stream{stream},
@@ -108,6 +108,8 @@ namespace signatory {
         }
 
         void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value) {
+            // This function is called before we even transpose anything (as we don't yet know that we can do a
+            // transpose). As a result path should be of size (batch, stream, channel) at this point
             if (path.ndimension() != 3) {
                 throw std::invalid_argument("Argument 'path' must be a 3-dimensional tensor, with dimensions "
                                             "corresponding to (batch, stream, channel) respectively.");
@@ -137,6 +139,8 @@ namespace signatory {
         }
 
         void checkargs_backward(torch::Tensor grad_out, const SigSpec& sigspec, int64_t num_channels) {
+            // This function is called before we even transpose anything (as we don't yet know that we can do a
+            // transpose). As a result grad_out should be of size (batch, stream, channel) at this point
             if (num_channels == -1) {
                 num_channels = sigspec.output_channels;
             }
