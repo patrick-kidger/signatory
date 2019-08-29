@@ -17,13 +17,15 @@ performing operations inplace. It is thus plausible that we accidentally modify 
 checking that that doesn't occur is the purpose of these tests."""
 
 
+import gc
 import torch
+import weakref
 
 import utils_testing as utils
 
 
 class TestSignatureMemory(utils.TimedTestCase):
-    def test_memory(self):
+    def test_no_adjustments(self):
         for c in utils.ConfigIter(requires_grad=True):
             path_copy = c.path.clone()
             signatory_out = c.signature()
@@ -44,9 +46,44 @@ class TestSignatureMemory(utils.TimedTestCase):
             with self.assertRaises(RuntimeError):
                 c.signature_backward()
 
+    def test_ctx_dies(self):
+        for c in utils.ConfigIter(requires_grad=True,
+                                  size=utils.random_size(5)):
+            signatory_out = c.signature(store=False)
+            ctx = signatory_out.grad_fn
+            ref = weakref.ref(ctx)
+            del signatory_out
+            gc.collect()
+            if ref() is not None:
+                self.fail(c.fail())
+
+    def test_no_leaks(self):
+        torch.cuda.reset_max_memory_allocated()
+        # It's just easier to keep track of GPU memory)
+        iterator = utils.ConfigIter(requires_grad=True, size=utils.random_size(5), device='cuda')
+        c = next(iterator)
+        signatory_out = c.signature()
+        back = c.signature_backward()
+        memory_used = torch.cuda.max_memory_allocated()
+        del c
+        del signatory_out
+        del back
+        gc.collect()
+        for c in iterator:
+            signatory_out = c.signature()
+            back = c.signature_backward()
+            memory_allocated = torch.cuda.max_memory_allocated()
+            if memory_allocated > memory_used:
+                self.fail(c.fail(memory_used=memory_used, memory_allocated=memory_allocated))
+            # Can't wait for them to be 'overwritten' on the next loop if we want to call gc.collect()
+            del c
+            del signatory_out
+            del back
+            gc.collect()
+
 
 class TestLogSignatureMemory(utils.TimedTestCase):
-    def test_memory(self):
+    def test_no_adjustments(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   requires_grad=True):
             path_copy = c.path.clone()
@@ -68,3 +105,40 @@ class TestLogSignatureMemory(utils.TimedTestCase):
             signatory_out += 1
             with self.assertRaises(RuntimeError):
                 c.logsignature_backward()
+
+    def test_ctx_dies(self):
+        for c in utils.ConfigIter(mode=utils.all_modes,
+                                  requires_grad=True,
+                                  size=utils.random_size(5)):
+            signatory_out = c.logsignature(store=False)
+            ctx = signatory_out.grad_fn
+            ref = weakref.ref(ctx)
+            del signatory_out
+            gc.collect()
+            if ref() is not None:
+                self.fail(c.fail())
+
+    def test_no_leaks(self):
+        for mode in utils.all_modes:
+            torch.cuda.reset_max_memory_allocated()
+            # It's just easier to keep track of GPU memory)
+            iterator = utils.ConfigIter(requires_grad=True, size=utils.random_size(5), device='cuda', mode=mode)
+            c = next(iterator)
+            signatory_out = c.logsignature()
+            back = c.logsignature_backward()
+            memory_used = torch.cuda.max_memory_allocated()
+            del c
+            del signatory_out
+            del back
+            gc.collect()
+            for c in iterator:
+                signatory_out = c.signature()
+                back = c.signature_backward()
+                memory_allocated = torch.cuda.max_memory_allocated()
+                if memory_allocated > memory_used:
+                    self.fail(c.fail(memory_used=memory_used, memory_allocated=memory_allocated))
+                # Can't wait for them to be 'overwritten' on the next loop if we want to call gc.collect()
+                del c
+                del signatory_out
+                del back
+                gc.collect()

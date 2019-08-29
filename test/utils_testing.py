@@ -197,14 +197,15 @@ class Config(object):
             raise RuntimeError("Calling logsignature when already called signature")
         self.signature_or_logsignature = False
 
-    def signature(self):
+    def signature(self, store=True):
         """Calls signatory.signature"""
         self._using_signature()
         if random.choice([True, False]):
             signatory_out = signatory.signature(self.path, self.depth, self.stream, self.basepoint)
         else:
             signatory_out = signatory.Signature(self.depth, self.stream, self.basepoint)(self.path)
-        self.signatory_out = signatory_out
+        if store:
+            self.signatory_out = signatory_out
         return signatory_out
 
     def signature_backward(self, grad=None):
@@ -251,7 +252,7 @@ class Config(object):
         self.iisignature_grad = iisignature_grad
         return iisignature_grad
 
-    def logsignature(self):
+    def logsignature(self, store=True):
         """Calls signatory.logsignature"""
         self._using_logsignature()
         if self.logsignature_class:
@@ -260,7 +261,8 @@ class Config(object):
         else:
             signatory_out = signatory.logsignature(self.path, self.depth, self.stream, self.basepoint,
                                                    self.signatory_mode)
-        self.signatory_out = signatory_out
+        if store:
+            self.signatory_out = signatory_out
         return signatory_out
 
     def logsignature_backward(self, grad=None):
@@ -393,6 +395,9 @@ class ConfigIter(object):
 
         if mode[0] is None:
             logsignature_class = (None,)
+
+        if isinstance(device, compat.stringtype):
+            device = (device,)
 
         if 'cuda' in device:
             if not torch.cuda.is_available():

@@ -86,7 +86,7 @@ namespace signatory {
         if (depth == 1) {
             return signature_forward(path, depth, stream, basepoint, basepoint_value);
         }  // this isn't just a fast return path: we also can't index the reciprocals tensor if depth == 1, so we'd need
-        // faffier code below - and it's already quite faffy enough
+           // faffier code below - and it's already quite faffy enough
 
         // first call the regular signature
         torch::Tensor signature;
@@ -180,6 +180,10 @@ namespace signatory {
             return signature_backward(grad_logsignature, backwards_info_capsule);
         }
 
+        // TODO: Remove this line when PyTorch bug 24413 is fixed. Here we undo the transposing that has been
+        //  automatically done via autograd outside
+        grad_logsignature = misc::transpose_reverse(grad_logsignature, sigspec);
+
         // Unpack everything else from backwards_info
         torch::Tensor signature = backwards_info->out;
         const std::vector<torch::Tensor>& signature_vector = backwards_info->signature_vector;
@@ -260,7 +264,8 @@ namespace signatory {
 
         grad_signature.add_(grad_logsignature, ta_ops::log_coefficient_at_depth(sigspec.depth - 2, sigspec));
 
-        grad_signature = misc::transpose(grad_signature, sigspec);
+        // TODO: uncomment this line once PyTorch bug 24413 is fixed
+//        grad_signature = misc::transpose(grad_signature, sigspec);
         return signature_backward(grad_signature, backwards_info_capsule, false);
     }
 }  // namespace signatory

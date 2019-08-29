@@ -83,7 +83,7 @@ namespace signatory {
     signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value) {
         misc::checkargs(path, depth, basepoint, basepoint_value);
 
-        // convert from (batch, stream, channel) to (stream, batch, channel), which is the representation we use
+        // Convert from (batch, stream, channel) to (stream, batch, channel), which is the representation we use
         // internally.
         // having 'path' have non-monotonically-decreasing strides doesn't slow things down very much, as 'path' is only
         // really used to compute 'path_increments' below, and the extra speed from a more efficient internal
@@ -200,9 +200,9 @@ namespace signatory {
                                                                                     path_increments);
 
         // TODO: uncomment when 24413 is fixed
-        // We have to do the transpose in the Python side to avoid a PyTorch bug.
+        // We have to do the transpose in the Python side to avoid PyTorch bug 24413.
         // https://github.com/pytorch/pytorch/issues/24413
-        // torch::Tensor out = misc::transpose(out, sigspec);
+//        torch::Tensor out = misc::transpose(out, sigspec);
 
         return {out, backwards_info_capsule};
     }
@@ -216,6 +216,10 @@ namespace signatory {
         const std::vector<torch::Tensor>& out_vector = backwards_info->out_vector;
         torch::Tensor out = backwards_info->out;
         torch::Tensor path_increments = backwards_info->path_increments;
+
+        // TODO: remove when 24413 is fixed. Here we undo the transposing that autograd has done for us in the
+        //  pulled-out transposes
+        grad_out = misc::transpose_reverse(grad_out, sigspec);
 
         // Check arguments
         misc::checkargs_backward(grad_out, sigspec);

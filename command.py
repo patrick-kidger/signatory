@@ -53,31 +53,45 @@ def main():
     argv = sys.argv[2:]
 
     if command == 'install':
-        install(argv)
+        install()
     elif command == 'develop':
-        develop(argv)
+        develop()
     elif command == 'test':
         test(argv)
     elif command == 'docs':
-        argv(docs)
+        argv()
     elif command == 'publish':
-        publish(argv)
+        publish()
+    elif command == 'prepublish':
+        prepublish()
     elif command == 'genreadme':
-        genreadme(argv)
+        genreadme()
     else:
         raise ValueError("Unrecognised command.")
 
-        
-def install(argv):
+
+here = os.path.realpath(os.path.dirname(__file__))
+
+
+def run_commands(*commands):
+    if not isinstance(commands, (tuple, list)):
+        raise ValueError
+    print_commands = ["echo {}".format(command) for command in commands]
+    all_commands = [command_list[i] for i in range(len(commands)) for command_list in (print_commands, commands)]
+    # && should work on both Windows and Linux. Not sure about Macs. Still Unix, so probably works?
+    subprocess.run(' && '.join(all_commands), shell=True)
+
+
+def install():
     """Install from source."""
-    subprocess.run("pip install .", shell=True)
+    run_commands("pip install {}".format(here))
     
     
-def develop(argv):
+def develop():
     """Install from source; will create a 'build' directory adjacent to this file, put the compiled parts of the
     package in there, leave the Python parts of this package where they are, and then add links so that Python can see
     this package."""
-    subprocess.run("python setup.py develop", shell=True)
+    run_commands("python {} develop".format(os.path.join(here, "setup.py")))
     
     
 def test(argv):
@@ -92,26 +106,50 @@ def test(argv):
     test.runner.main(failfast=failfast, record_test_times=record_test_times)
     
     
-def docs(argv):
+def docs():
     """Build the documentation. After it has been built then it can be found in ./docs/_build/html/index.html
     The package 'py2annotate' will need to be installed. It can be installed via `pip install py2annotate`
     Note that the documentation is already available online at https://signatory.readthedocs.io
     """
     import py2annotate  # fail fast here if necessary
-    subprocess.run("sphinx-build -M html ./docs ./docs/_build", shell=True)
+    run_commands("sphinx-build -M html {}, {}".format(os.path.join(here, "docs"), os.path.join(here, "docs", "_build")))
     
     
-def publish(argv):
+def publish():
     """Will need twine already installed"""
-    subprocess.run("twine upload dist/*", shell=True)
+    run_commands("twine upload {}".format(os.path.join(here, "dist", "*")))
+
+
+def prepublish():
+    """Runs tests on all supported configurations to check before publishing."""
+    # TODO: update to a proper system
+    import metadata
+    run_commands("rm -rf {}".format(os.path.join(here, "dist")))
+    genreadme()
+    print("Prepublishing version {}".format(metadata.version))
+    run_commands("python {} sdist".format(os.path.join(here, 'setup.py')))
+    for pythonv in ['2.7', '3.5', '3.6', '3.7']:
+        build_and_test(pythonv, metadata.version)
+
+
+def build_and_test(pythonv, signatoryv):
+    # Kind of fragile but good enough for now
+    run_commands("conda create --prefix='/tmp/signatory-{pythonv} -y python={pythonv}".format(pythonv=pythonv),
+                 "conda activate /tmp/signatory-{pythonv}".format(pythonv=pythonv),
+                 "conda install -y pytorch=1.2.0 -c pytorch",
+                 "pip install dist/signatory-{signatoryv}.tar.gz".format(signatoryv=signatoryv),
+                 "pip install iisignature",
+                 "echo version={pythonv}".format(pythonv=pythonv),
+                 "python {} test -f".format(os.path.join(here, "command.py")),
+                 "conda deactivate",
+                 "conda env remove -p /tmp/signatory-{pythonv}".format(pythonv=pythonv))
+
     
-    
-def genreadme(argv):
+def genreadme():
     """The readme is generated automatically from the documentation"""
     outs = []
     startstr = ".. currentmodule::"
     includestr = '.. include::'
-    docdir = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'docs')
 
     def parse_file(filename):
         out_data = []
@@ -128,9 +166,9 @@ def genreadme(argv):
                     skipping = False
                 lstripline = line.lstrip()
                 if lstripline.startswith(includestr):
-                    subfilename = lstripline[len(includestr):].strip()
-                    # [1:] to remove the leading / at the start; ends up being parsed as root
-                    out_line = parse_file(os.path.join(docdir, subfilename[1:]))
+                    # [1:] to remove the leading / at the start; otherwise ends up being parsed as root
+                    subfilename = lstripline[len(includestr):].strip()[1:]
+                    out_line = parse_file(os.path.join(here, 'docs', subfilename))
                 else:
                     out_line = line
                 if ':ref:' in data:
@@ -138,24 +176,22 @@ def genreadme(argv):
                 out_data.append(out_line)
         return ''.join(out_data)
 
-    here = os.path.realpath(os.path.dirname(__file__))
-
     def read_from_files(filenames):
         for filename in filenames:
             filename = os.path.join(here, filename)
             outs.append(parse_file(filename))
 
-    read_from_files(['docs/fragments/title.rst',
-                     'docs/pages/understanding/whataresignatures.rst',
-                     'docs/pages/usage/installation.rst'])
+    read_from_files([os.path.join(here, 'docs', 'fragments', 'title.rst'),
+                     os.path.join(here, 'docs', 'pages', 'understanding', 'whataresignatures.rst'),
+                     os.path.join('docs', 'pages', 'usage', 'installation.rst')])
 
     outs.append("Documentation\n"
                 "-------------\n"
                 "The documentation is available `here <https://signatory.readthedocs.io>`__.")
 
-    read_from_files(['docs/pages/miscellaneous/faq.rst',
-                     'docs/pages/miscellaneous/citation.rst',
-                     'docs/pages/miscellaneous/acknowledgements.rst'])
+    read_from_files([os.path.join(here, 'docs', 'pages', 'miscellaneous', 'faq.rst'),
+                     os.path.join(here, 'docs' , 'pages', 'miscellaneous' , 'citation.rst'),
+                     os.path.join(here, 'docs', 'pages', 'miscellaneous', 'acknowledgements.rst')])
 
     with io.open(os.path.join(here, 'README.rst'), 'w', encoding='utf-8') as f:
         f.write('\n\n'.join(outs))

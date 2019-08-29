@@ -1,7 +1,7 @@
-1.0.1
+1.1.0
 -----
-Minor non-software updates - but PyPI demands a new version!
-Added more internal documentation to functions and tests, added license notices to every file etc.
+Should now typically run even faster on typical batch sizes.
+Worked around a major memory leak due to PyTorch bug 25340.
 
 1.0.0
 -----

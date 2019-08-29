@@ -89,6 +89,8 @@ class TestSignatureShapes(utils.TimedTestCase):
             signatory_out = c.signature()
             correct_shape = self.correct_shape(c.size, c.depth, c.stream, c.basepoint)
             self.assertEqual(signatory_out.shape, correct_shape, c.fail())
+            # PyTorch automatically tests backward shapes every time we call backward: which we do a whole bunch in the
+            # test suite so we don't explicitly test it here.
 
 
 class TestLogSignatureArguments(utils.TimedTestCase):
@@ -168,3 +170,5 @@ class TestLogSignatureShapes(utils.TimedTestCase):
             signatory_out = c.logsignature()
             correct_shape = self.correct_shape(c.size, c.depth, c.stream, c.basepoint, c.signatory_mode)
             self.assertEqual(signatory_out.shape, correct_shape, c.fail())
+            # PyTorch automatically tests backward shapes every time we call backward: which we do a whole bunch in the
+            # test suite so we don't explicitly test it here.
