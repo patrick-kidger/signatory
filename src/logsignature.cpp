@@ -88,6 +88,11 @@ namespace signatory {
         }  // this isn't just a fast return path: we also can't index the reciprocals tensor if depth == 1, so we'd need
            // faffier code below - and it's already quite faffy enough
 
+        // No sense keeping track of gradients when we have a dedicated backwards function (and in-place operations mean
+        // that in any case one cannot autograd through this function)
+        path = path.detach();
+        basepoint_value = basepoint_value.detach();
+
         // first call the regular signature
         torch::Tensor signature;
         py::object backwards_info_capsule;

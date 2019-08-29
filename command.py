@@ -38,6 +38,7 @@ Then run
 
 import io
 import os
+import pprint
 import subprocess
 import sys
 #### DO NOT IMPORT NON-(STANDARD LIBRARY) MODULES HERE
@@ -58,6 +59,8 @@ def main():
         develop()
     elif command == 'test':
         test(argv)
+    elif command == 'benchmark':
+        benchmark()
     elif command == 'docs':
         argv()
     elif command == 'publish':
@@ -104,7 +107,17 @@ def test(argv):
     failfast = '-f' in argv or '--failfast' in argv
     record_test_times = not ('--notimes' in sys.argv)
     test.runner.main(failfast=failfast, record_test_times=record_test_times)
-    
+
+
+def benchmark():
+    """Run speed benchmarks."""
+    import test.speed_comparison as speed
+    results = speed.run_tests()
+    ratios = speed.get_ratios(results)
+    pprint.pprint(results)
+    print('-----------------------')
+    pprint.pprint(ratios)
+
     
 def docs():
     """Build the documentation. After it has been built then it can be found in ./docs/_build/html/index.html

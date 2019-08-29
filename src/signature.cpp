@@ -80,7 +80,12 @@ namespace signatory {
     }  // namespace signatory::detail
 
     std::tuple<torch::Tensor, py::object>
-    signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value) {
+    signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value)
+    {
+        // No sense keeping track of gradients when we have a dedicated backwards function (and in-place operations mean
+        // that in any case one cannot autograd through this function)
+        path = path.detach();
+        basepoint_value = basepoint_value.detach();
         misc::checkargs(path, depth, basepoint, basepoint_value);
 
         // Convert from (batch, stream, channel) to (stream, batch, channel), which is the representation we use
@@ -190,13 +195,7 @@ namespace signatory {
 
         py::object backwards_info_capsule = misc::wrap_capsule<misc::BackwardsInfo>(std::move(sigspec),
                                                                                     std::move(out_vector),
-                                                                                    // TODO: remove detach when 25340 is
-                                                                                    //       fixed
-                                                                                    // Call to detach works around
-                                                                                    // PyTorch bug 25340.
-                                                                                    // Not doing this gives a massive
-                                                                                    // memory leak.
-                                                                                    out.detach(),
+                                                                                    out,
                                                                                     path_increments);
 
         // TODO: uncomment when 24413 is fixed

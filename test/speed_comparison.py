@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
-"""Not providing tests that we test against; this module provides speed benchmarks against esig and iisignature.
-(It just happens to fit most naturally in with the tests.)
-"""
+"""This module provides speed benchmarks against esig and iisignature. Can be called separately, as well as being part
+of some tests."""
 
 
-import collections as co
 import esig.tosig
 import iisignature
 import signatory
@@ -70,16 +68,10 @@ def esig_logsignature_backward(path, depth):
     return 99999999
 
 
-esig_fns = {'signature_forward': esig_signature_forward,
-            'logsignature_forward': esig_logsignature_forward,
-            'signature_backward': esig_signature_backward,
-            'logsignature_backward': esig_logsignature_backward}
-
-
-def iisignature_signature_forward(path, depth):
+def iisignature_signature_forward(path, depth, stream=False):
     path = path.detach()
     start = time.time()
-    iisignature.sig(path, depth)
+    iisignature.sig(path, depth, 2 if stream else 0)
     return time.time() - start
 
 
@@ -110,15 +102,9 @@ def iisignature_logsignature_backward(path, depth):
     return time.time() - start
 
 
-iisignature_fns = {'signature_forward': iisignature_signature_forward,
-                   'logsignature_forward': iisignature_logsignature_forward,
-                   'signature_backward': iisignature_signature_backward,
-                   'logsignature_backward': iisignature_logsignature_backward}
-
-
-def signatory_signature_forward(path, depth):
+def signatory_signature_forward(path, depth, stream=False):
     start = time.time()
-    signatory.signature(path, depth)
+    signatory.signature(path, depth, stream=stream)
     return time.time() - start
 
 
@@ -163,54 +149,77 @@ def signatory_logsignature_backward_gpu(path, depth):
     return signatory_logsignature_backward(path_cuda(path), depth)
 
 
-signatory_fns = {'signature_forward': signatory_signature_forward,
-                 'logsignature_forward': signatory_logsignature_forward,
-                 'signature_backward': signatory_signature_backward,
-                 'logsignature_backward': signatory_logsignature_backward,
-                 'signature_forward_gpu': signatory_signature_forward_gpu,
-                 'logsignature_forward_gpu': signatory_logsignature_forward_gpu,
-                 'signature_backward_gpu': signatory_signature_backward_gpu,
-                 'logsignature_backward_gpu': signatory_logsignature_backward_gpu}
+signature_forward_fns = {'esig': esig_signature_forward,
+                         'iisignature': iisignature_signature_forward,
+                         'signatory': signatory_signature_forward,
+                         'signatory_gpu': signatory_signature_forward_gpu}
+
+signature_backward_fns = {'esig': esig_signature_backward,
+                          'iisignature': iisignature_signature_backward,
+                          'signatory': signatory_signature_backward,
+                          'signatory_gpu': signatory_signature_backward_gpu}
+
+logsignature_forward_fns = {'esig': esig_logsignature_forward,
+                            'iisignature': iisignature_logsignature_forward,
+                            'signatory': signatory_logsignature_forward,
+                            'signatory_gpu': signatory_logsignature_forward_gpu}
+
+logsignature_backward_fns = {'esig': esig_logsignature_backward,
+                             'iisignature': iisignature_logsignature_backward,
+                             'signatory': signatory_logsignature_backward,
+                             'signatory_gpu': signatory_logsignature_backward_gpu}
+
+signature_fns = {'forward': signature_forward_fns, 'backward': signature_backward_fns}
+
+logsignature_fns = {'forward': logsignature_forward_fns, 'backward': logsignature_backward_fns}
+
+all_fns = {'signature': signature_fns, 'logsignature': logsignature_fns}
 
 
-all_library_fns = {'esig': esig_fns, 'iisignature': iisignature_fns, 'signatory': signatory_fns}
+class Result:
+    def __init__(self, results):
+        self.results = results
+        self.min = min(results)
+
+    def __repr__(self):
+        return "{:.3}".format(self.min)
 
 
-def run_tests():
-    size = (64, 16, 8)
-    depths = (3, 6)
-    repeats = 20
+def run_test(fn_dict, path, depth, repeats, skip=lambda library_name: False, **kwargs):
+    library_results = {}
+    for library_name, library_fn in fn_dict.values():
+        if skip(library_name):
+            continue
+        library_results[library_name] = Result([library_fn(path, depth, **kwargs) for _ in range(repeats)])
+    return library_results
 
-    results = co.defaultdict(lambda: co.defaultdict(dict))
+
+def run_tests(size=(64, 16, 8), depths=(3, 6), repeats=20):
+    results = {}
     path = torch.rand(size, dtype=torch.double, requires_grad=True)
-    for library_name, library_fns in all_library_fns.items():
-        for library_fn_name, library_fn in library_fns.items():
+    for fn_name, fns in all_fns.items():
+        fn_results = results[fn_name] = {}
+        for direction_name, directions in fns:
+            direction_results = fn_results[direction_name] = {}
             for depth in depths:
-                print(library_name, library_fn_name, depth)
-                results[library_name][library_fn_name][depth] = [library_fn(path, depth) for _ in range(repeats)]
-
+                direction_results[depth] = run_test(directions, path, depth, repeats)
     return results
 
 
-def process_results(results):
-    min_results = co.defaultdict(lambda: co.defaultdict(dict))
-    for library_name, results_by_library in results.items():
-        for library_fn_name, results_by_library_fn in results_by_library.items():
-            for depth, results_by_depth in results_by_library_fn.items():
-                min_results[library_name][library_fn_name][depth] = min(results_by_depth)
+def get_ratios(results):
+    ratios = {}
+    for fn_name, fn_results in results.items():
+        fn_ratios = ratios[fn_name] = {}
+        for direction_name, direction_results in fn_results:
+            direction_ratios = fn_ratios[direction_name] = {}
+            for depth, depth_results in direction_results.items():
+                depth_ratios = direction_ratios[depth] = {}
 
-    ratios = co.defaultdict(dict)
+                esig_results = depth_results['esig']
+                iisignature_results = depth_results['iisignature']
+                signatory_results = depth_results['signatory']
+                signatory_gpu_results = depth_results['signatory_gpu']
 
-    def remove_gpu_str(fn_str):
-        return fn_str.split('_gpu')[0]
-
-    depths = list(list(results.values())[0].values())[0].keys()
-    for signatory_fn_name in signatory_fns.keys():
-        for depth in depths:
-            signatory_time = min_results['signatory'][signatory_fn_name][depth]
-            iisignature_time = min_results['iisignature'][remove_gpu_str(signatory_fn_name)][depth]
-            esig_time = min_results['esig'][remove_gpu_str(signatory_fn_name)][depth]
-
-            ratios[signatory_fn_name][depth] = min(iisignature_time, esig_time) / signatory_time
-
-    return min_results, ratios
+                depth_ratios['cpu'] = min(esig_results.min, iisignature_results.min) / signatory_results.min
+                depth_ratios['gpu'] = min(esig_results.min, iisignature_results.min) / signatory_gpu_results.min
+    return ratios

@@ -51,11 +51,13 @@ class TestSignatureMemory(utils.TimedTestCase):
                                   size=utils.random_size(5)):
             signatory_out = c.signature(store=False)
             ctx = signatory_out.grad_fn
+            if c.stream:
+                ctx = ctx.next_functions[0][0]
             ref = weakref.ref(ctx)
+            del ctx
             del signatory_out
             gc.collect()
-            if ref() is not None:
-                self.fail(c.fail())
+            self.assertIsNone(ref(), c.fail())
 
     def test_no_leaks(self):
         torch.cuda.reset_max_memory_allocated()
@@ -112,11 +114,13 @@ class TestLogSignatureMemory(utils.TimedTestCase):
                                   size=utils.random_size(5)):
             signatory_out = c.logsignature(store=False)
             ctx = signatory_out.grad_fn
+            if c.stream:
+                ctx = ctx.next_functions[0][0]
             ref = weakref.ref(ctx)
+            del ctx
             del signatory_out
             gc.collect()
-            if ref() is not None:
-                self.fail(c.fail())
+            self.assertIsNone(ref(), c.fail())
 
     def test_no_leaks(self):
         for mode in utils.all_modes:

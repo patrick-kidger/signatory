@@ -15,12 +15,12 @@
 
 
 #include <torch/extension.h>
-#include <Python.h>   // PyCapsule
-#include <cstdint>    // int64_t
-#include <stdexcept>  // std::invalid_argument
-#include <limits>     // std::numeric_limits
-#include <tuple>      // std::tuple
-#include <vector>     // std::vector
+#include <Python.h>     // PyCapsule
+#include <cstdint>      // int64_t
+#include <stdexcept>    // std::invalid_argument
+#include <limits>       // std::numeric_limits
+#include <tuple>        // std::tuple
+#include <vector>       // std::vector
 
 #include "misc.hpp"
 
@@ -80,19 +80,29 @@ namespace signatory {
             }  // and reciprocals will be empty - of size 0 - if depth == 1.
         };
 
-        BackwardsInfo::BackwardsInfo(SigSpec&& sigspec, std::vector<torch::Tensor>&& out_vector, torch::Tensor out,
+        BackwardsInfo::BackwardsInfo(SigSpec&& sigspec, std::vector<torch::Tensor>&& out_vector_, torch::Tensor out,
                                      torch::Tensor path_increments) :
+            // TODO: remove detachs when 25340 is fixed
+            // Call to detach works around PyTorch bug 25340. Basically, it makes sure that backwards_info doesn't
+            // have references to any other tensors, and therefore in particular doesn't have references to the tensor
+            // that is the output of the signature function: because this output tensor has a reference to the Python-
+            // level 'ctx' variable, which in turn has a reference to the BackwardsInfo object, and we get an
+            // uncollected cycle.
+            // Thus not doing this gives a massive memory leak.
             sigspec{sigspec},
-            out_vector{out_vector},
-            out{out},
-            path_increments{path_increments}
-            {};
+            out_vector{out_vector_},
+            out{out.detach()},
+            path_increments{path_increments.detach()}
+            {
+                for (auto& elem : out_vector) { elem = elem.detach(); }
+            };
 
         void BackwardsInfo::set_logsignature_data(std::vector<torch::Tensor>&& signature_vector_,
                                                   py::object lyndon_info_capsule_,
                                                   LogSignatureMode mode_,
                                                   int64_t logsignature_channels_) {
             signature_vector = signature_vector_;
+            for (auto& elem : signature_vector) { elem = elem.detach(); }
             lyndon_info_capsule = lyndon_info_capsule_;
             mode = mode_;
             logsignature_channels = logsignature_channels_;
