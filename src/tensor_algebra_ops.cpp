@@ -197,34 +197,63 @@ namespace signatory {
         void compute_log(std::vector<torch::Tensor>& output_vector,
                          const std::vector<torch::Tensor>& input_vector,
                          const misc::SigSpec& sigspec) {
-            detail::compute_log_partial(output_vector, input_vector, /*lower_depth_index=*/0, sigspec);
+            output_vector[0] *= ta_ops::log_coefficient_at_depth(sigspec.depth - 2, sigspec);
+            for (s_size_type depth_index = sigspec.depth - 3; depth_index >= 0; --depth_index) {
+                compute_mult_partial(output_vector,
+                                     input_vector,
+                                     /*scalar_value_term=*/log_coefficient_at_depth(depth_index, sigspec),
+                                     /*top_terms_to_skip=*/depth_index + 1,
+                                     sigspec);
+            }
             compute_mult_partial(output_vector, input_vector, /*scalar_value_term=*/1,
                                  /*top_terms_to_skip=*/0, sigspec);
         }
 
         void compute_log_backward(std::vector<torch::Tensor>& grad_output_vector,
                                   std::vector<torch::Tensor>& grad_input_vector,
-                                  std::vector<torch::Tensor>& scratch_vector,
                                   const std::vector<torch::Tensor>& input_vector,
-                                  torch::Tensor scratch,
-                                  torch::Tensor scratch_init,
                                   const misc::SigSpec& sigspec) {
-            scratch.copy_(scratch_init);
-            scratch *= log_coefficient_at_depth(sigspec.depth - 2, sigspec);
+            // Will have the logarithm progressively computed in it
+            std::vector<torch::Tensor> scratch_vector;
+            scratch_vector.reserve(input_vector.size());
+            for (const auto& elem : input_vector) {
+                scratch_vector.push_back(elem.clone());
+            }
+            scratch_vector[0] *= log_coefficient_at_depth(sigspec.depth - 2, sigspec);
 
-            detail::compute_log_partial(scratch_vector, input_vector, 0, sigspec);
-            compute_mult_partial_backward(grad_output_vector, grad_input_vector, scratch_vector,
+            // Used as extra scratch space prior to pushing into...
+            std::vector<torch::Tensor> copy_vector;
+            copy_vector.reserve(scratch_vector.size());
+
+            // ...this, which records all the partially-computed logarithms
+            std::vector <std::vector<torch::Tensor>> record_vector;
+            record_vector.reserve(sigspec.depth - 1);
+
+            // Compute the logarithm forwards and remember every intermediate tensor
+            for (s_size_type depth_index = sigspec.depth - 3; depth_index >= 0; --depth_index) {
+                compute_mult_partial(scratch_vector,
+                                     input_vector,
+                                     /*scalar_value_term=*/log_coefficient_at_depth(depth_index, sigspec),
+                                     /*top_terms_to_skip=*/depth_index + 1,
+                                     sigspec);
+                copy_vector.clear();
+                for (const auto& elem : scratch_vector) {
+                    copy_vector.push_back(elem.clone());
+                }
+                record_vector.push_back(copy_vector);
+            }
+            compute_mult_partial(scratch_vector, input_vector, /*scalar_value_term=*/1, /*top_terms_to_skip=*/0,
+                                 sigspec);
+            record_vector.push_back(scratch_vector);
+
+            // Now actually perform the backwards operation
+            s_size_type backward_index = record_vector.size() - 1;
+            compute_mult_partial_backward(grad_output_vector, grad_input_vector, record_vector[backward_index],
                                           input_vector, 1, 0, sigspec);
 
             for (s_size_type depth_index = 0; depth_index < sigspec.depth - 2; ++depth_index) {
-                scratch.copy_(scratch_init);
-                scratch *= log_coefficient_at_depth(sigspec.depth - 2, sigspec);
-
-                /* Yuck, this is O(depth^2). Sadly I don't see a way to compute this without either that or saving
-                 * intermediate results, which is in some sense even worse. */
-                detail::compute_log_partial(scratch_vector, input_vector, depth_index + 1, sigspec);
-
-                compute_mult_partial_backward(grad_output_vector, grad_input_vector, scratch_vector,
+                --backward_index;
+                compute_mult_partial_backward(grad_output_vector, grad_input_vector, record_vector[backward_index],
                                               input_vector, log_coefficient_at_depth(depth_index, sigspec),
                                               depth_index + 1, sigspec);
             }

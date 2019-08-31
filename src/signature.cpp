@@ -24,13 +24,17 @@
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
 
+// TODO: try using threads for the words->basis transform?
+// TODO: perf test with 'words' for logsignatures - we care about the ML performance, not the mathematical one
+
 // TODO: add the examples to the tests
 // TODO: check for interrupts
 // TODO: rationalise backwards_info. Can we combine out_vector and signature_vector?
 // TODO: rename out_* to signature_*
-// TODO: switch to negative indexing axes
+// TODO: add Python-level handling of (... x stream x channel) format
 // TODO: signature_jacobian, logsignature_jacobian
 // TODO: tensorflow
+// TODO: custom CUDA kernels for all of this would be lovely...
 // TODO: support torchscript? https://pytorch.org/tutorials/advanced/torch_script_custom_ops.html
 // TODO: concatenating onto an already existing signature. A class that takes data and spits out signatures?
 

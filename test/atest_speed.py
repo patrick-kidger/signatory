@@ -33,15 +33,17 @@ class TestSignatureSpeed(utils.TimedTestCase):
         if backward and stream:
             raise ValueError("iisignature does not support backward and stream")
 
-        path = torch.rand(64, 16, 8, dtype=torch.double, requires_grad=True)
+        size = (64, 16, 8)
         depth = 6
         kwargs = {}
         if stream:  # NOT just passing as stream=stream; we can't pass extra kwargs when backward=True.
             kwargs['stream'] = stream
         results = speedc.run_test(speedc.signature_backward_fns if backward else speedc.signature_forward_fns,
-                                  path,
+                                  size,
                                   depth,
-                                  repeats=20,
+                                  repeat=20,
+                                  number=5,
+                                  print_name=False,
                                   skip=lambda library_name: library_name in ('esig', 'signature_gpu'),
                                   **kwargs)
         signatory_time = results['signatory'].min
@@ -93,12 +95,14 @@ class TestSignatureSpeed(utils.TimedTestCase):
 
 class TestLogSignatureSpeed(utils.TimedTestCase):
     def inner_test_speed(self, backward):
-        path = torch.rand(64, 16, 8, dtype=torch.double, requires_grad=True)
+        size = (64, 16, 8)
         depth = 6
-        results = speedc.run_test(speedc.signature_backward_fns if backward else speedc.signature_forward_fns,
-                                  path,
+        results = speedc.run_test(speedc.logsignature_backward_fns if backward else speedc.logsignature_forward_fns,
+                                  size,
                                   depth,
-                                  repeats=20,
+                                  repeat=20,
+                                  number=5,
+                                  print_name=False,
                                   skip=lambda library_name: library_name in ('esig', 'signature_gpu'))
         signatory_time = results['signatory'].min
         iisignature_time = results['iisignature'].min

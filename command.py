@@ -60,7 +60,7 @@ def main():
     elif command == 'test':
         test(argv)
     elif command == 'benchmark':
-        benchmark()
+        benchmark(argv)
     elif command == 'docs':
         argv()
     elif command == 'publish':
@@ -109,10 +109,17 @@ def test(argv):
     test.runner.main(failfast=failfast, record_test_times=record_test_times)
 
 
-def benchmark():
+def benchmark(argv):
     """Run speed benchmarks."""
     import test.speed_comparison as speed
-    results = speed.run_tests()
+    import torch
+    if len(argv) == 0:
+        results = speed.run_tests()
+    elif len(argv) == 1:
+        with torch.cuda.device(int(argv[0])):
+            results = speed.run_tests()
+    else:
+        raise ValueError
     ratios = speed.get_ratios(results)
     pprint.pprint(results)
     print('-----------------------')

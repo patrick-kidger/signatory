@@ -61,8 +61,9 @@ class TestSignatureMemory(utils.TimedTestCase):
 
     def test_no_leaks(self):
         torch.cuda.reset_max_memory_allocated()
-        # It's just easier to keep track of GPU memory)
-        iterator = utils.ConfigIter(requires_grad=True, size=utils.random_size(5), device='cuda')
+        # constant size so we use the same amount of memory
+        # device='cuda' because it's just easier to keep track of GPU memory)
+        iterator = iter(utils.ConfigIter(requires_grad=True, size=((64, 6, 6) for _ in range(25)), device='cuda'))
         c = next(iterator)
         signatory_out = c.signature()
         back = c.signature_backward()
@@ -75,7 +76,7 @@ class TestSignatureMemory(utils.TimedTestCase):
             signatory_out = c.signature()
             back = c.signature_backward()
             memory_allocated = torch.cuda.max_memory_allocated()
-            if memory_allocated > memory_used:
+            if memory_allocated > 2 * memory_used:  # 2* to leave some margin for weirdness
                 self.fail(c.fail(memory_used=memory_used, memory_allocated=memory_allocated))
             # Can't wait for them to be 'overwritten' on the next loop if we want to call gc.collect()
             del c
@@ -125,8 +126,10 @@ class TestLogSignatureMemory(utils.TimedTestCase):
     def test_no_leaks(self):
         for mode in utils.all_modes:
             torch.cuda.reset_max_memory_allocated()
-            # It's just easier to keep track of GPU memory)
-            iterator = utils.ConfigIter(requires_grad=True, size=utils.random_size(5), device='cuda', mode=mode)
+            # constant size so we use the same amount of memory
+            # device='cuda' because it's just easier to keep track of GPU memory)
+            iterator = iter(utils.ConfigIter(requires_grad=True, size=((64, 6, 6) for _ in range(25)), device='cuda',
+                                             mode=mode))
             c = next(iterator)
             signatory_out = c.logsignature()
             back = c.logsignature_backward()
@@ -136,10 +139,10 @@ class TestLogSignatureMemory(utils.TimedTestCase):
             del back
             gc.collect()
             for c in iterator:
-                signatory_out = c.signature()
-                back = c.signature_backward()
+                signatory_out = c.logsignature()
+                back = c.logsignature_backward()
                 memory_allocated = torch.cuda.max_memory_allocated()
-                if memory_allocated > memory_used:
+                if memory_allocated > 2 * memory_used:  # 2* to leave some margin for weirdness
                     self.fail(c.fail(memory_used=memory_used, memory_allocated=memory_allocated))
                 # Can't wait for them to be 'overwritten' on the next loop if we want to call gc.collect()
                 del c

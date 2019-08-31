@@ -76,12 +76,13 @@ namespace signatory {
         return lyndon_words_as_brackets;
     }
 
-    std::vector<std::tuple<int64_t, int64_t, int64_t>> lyndon_words_to_basis_transform(int64_t channels, int64_t depth)
+    std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>> lyndon_words_to_basis_transform(int64_t channels,
+                                                                                                    int64_t depth)
     {
         misc::checkargs_channels_depth(channels, depth);
         fla_ops::LyndonWords lyndon_words(misc::LyndonSpec {channels, depth}, fla_ops::LyndonWords::bracket_tag);
-        std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms;
-        std::vector<std::tuple<int64_t, int64_t, int64_t>> transforms_backward;
+        std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>> transforms;
+        std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>> transforms_backward;
         lyndon_words.to_lyndon_basis(transforms, transforms_backward);
         return transforms;
     }
