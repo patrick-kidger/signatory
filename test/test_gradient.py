@@ -23,7 +23,7 @@ import compatibility as compat
 import utils_testing as utils
 
 
-class TestSignatureGrad(utils.TimedTestCase):
+class TestSignatureGrad(utils.EnhancedTestCase):
     @staticmethod
     def gradcheck(path, depth, stream, basepoint, **kwargs):
         return autograd.gradcheck(signatory.signature, (path, depth, stream, basepoint), **kwargs)
@@ -67,16 +67,16 @@ class TestSignatureGrad(utils.TimedTestCase):
     # efficiency, so it's not automatically differentiable. (And I'm not writing a custom double backward function...)
 
 
-class TestLogSignatureGrad(utils.TimedTestCase):
+class TestLogSignatureGrad(utils.EnhancedTestCase):
     @staticmethod
     def gradcheck(path, depth, stream, basepoint, mode, **kwargs):
         return autograd.gradcheck(signatory.logsignature, (path, depth, stream, basepoint, mode), **kwargs)
 
     def test_gradcheck_edge(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
-                                  depth=(1, 2, 3),
+                                  depth=(1, 2),
                                   requires_grad=True,
-                                  size=((1, 2, 1), (1, 4, 4), (4, 2, 4), (4, 4, 1))):
+                                  size=((1, 2, 1), (1, 3, 3), (3, 2, 3), (3, 3, 1))):
             try:
                 self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.signatory_mode)
             except RuntimeError:

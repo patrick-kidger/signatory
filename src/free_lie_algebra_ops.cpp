@@ -381,8 +381,8 @@ namespace signatory { namespace fla_ops {
                                   /*start=*/lyndon_word.compressed_index,
                                   /*length=*/1).copy_(input.narrow(/*dim=*/channel_dim,
                                                                    /*start=*/lyndon_word.tensor_algebra_index,
-                                                                   /*length=*/1)
-                                                      );
+                                                                   /*length=*/1),
+                                                      /*non_blocking=*/true);
             }
         }
         return compressed;
@@ -410,8 +410,8 @@ namespace signatory { namespace fla_ops {
                                      /*length=*/1).copy_(
                                            grad_compressed.narrow(/*dim=*/channel_dim,
                                                                   /*start=*/lyndon_word.compressed_index,
-                                                                  /*length=*/1)
-                                                         );
+                                                                  /*length=*/1),
+                                                         /*non_blocking=*/true);
             }
         }
         return grad_expanded;

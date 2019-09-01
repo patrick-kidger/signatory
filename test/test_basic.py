@@ -22,7 +22,7 @@ import torch
 import utils_testing as utils
 
 
-class TestSignatureArguments(utils.TimedTestCase):
+class TestSignatureArguments(utils.EnhancedTestCase):
     def test_minimal_axes(self):
         for c in utils.ConfigIter(basepoint=False,
                                   depth=(1, 2, 3),
@@ -72,7 +72,7 @@ class TestSignatureArguments(utils.TimedTestCase):
                     self.fail(c.fail())
 
 
-class TestSignatureShapes(utils.TimedTestCase):
+class TestSignatureShapes(utils.EnhancedTestCase):
     @staticmethod
     def correct_shape(size, depth, stream, basepoint):
         N, L, C = size
@@ -93,7 +93,7 @@ class TestSignatureShapes(utils.TimedTestCase):
             # test suite so we don't explicitly test it here.
 
 
-class TestLogSignatureArguments(utils.TimedTestCase):
+class TestLogSignatureArguments(utils.EnhancedTestCase):
     def test_minimal_axes(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   basepoint=False,
@@ -148,7 +148,7 @@ class TestLogSignatureArguments(utils.TimedTestCase):
                     self.fail(c.fail())
 
 
-class TestLogSignatureShapes(utils.TimedTestCase):
+class TestLogSignatureShapes(utils.EnhancedTestCase):
     @staticmethod
     def correct_shape(size, depth, stream, basepoint, mode):
         N, L, C = size

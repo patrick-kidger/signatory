@@ -197,7 +197,7 @@ namespace signatory {
         void compute_log(std::vector<torch::Tensor>& output_vector,
                          const std::vector<torch::Tensor>& input_vector,
                          const misc::SigSpec& sigspec) {
-            output_vector[0] *= ta_ops::log_coefficient_at_depth(sigspec.depth - 2, sigspec);
+            output_vector[0].copy_(input_vector[0] * log_coefficient_at_depth(sigspec.depth - 2, sigspec));
             for (s_size_type depth_index = sigspec.depth - 3; depth_index >= 0; --depth_index) {
                 compute_mult_partial(output_vector,
                                      input_vector,
@@ -205,8 +205,8 @@ namespace signatory {
                                      /*top_terms_to_skip=*/depth_index + 1,
                                      sigspec);
             }
-            compute_mult_partial(output_vector, input_vector, /*scalar_value_term=*/1,
-                                 /*top_terms_to_skip=*/0, sigspec);
+            compute_mult_partial(output_vector, input_vector, /*scalar_value_term=*/1, /*top_terms_to_skip=*/0,
+                                 sigspec);
         }
 
         void compute_log_backward(std::vector<torch::Tensor>& grad_output_vector,
@@ -219,31 +219,29 @@ namespace signatory {
             for (const auto& elem : input_vector) {
                 scratch_vector.push_back(elem.clone());
             }
-            scratch_vector[0] *= log_coefficient_at_depth(sigspec.depth - 2, sigspec);
 
             // Used as extra scratch space prior to pushing into...
             std::vector<torch::Tensor> copy_vector;
             copy_vector.reserve(scratch_vector.size());
 
             // ...this, which records all the partially-computed logarithms
-            std::vector <std::vector<torch::Tensor>> record_vector;
+            std::vector<std::vector<torch::Tensor>> record_vector;
             record_vector.reserve(sigspec.depth - 1);
 
             // Compute the logarithm forwards and remember every intermediate tensor
+            scratch_vector[0] *= log_coefficient_at_depth(sigspec.depth - 2, sigspec);
             for (s_size_type depth_index = sigspec.depth - 3; depth_index >= 0; --depth_index) {
-                compute_mult_partial(scratch_vector,
-                                     input_vector,
-                                     /*scalar_value_term=*/log_coefficient_at_depth(depth_index, sigspec),
-                                     /*top_terms_to_skip=*/depth_index + 1,
-                                     sigspec);
                 copy_vector.clear();
                 for (const auto& elem : scratch_vector) {
                     copy_vector.push_back(elem.clone());
                 }
                 record_vector.push_back(copy_vector);
+                compute_mult_partial(scratch_vector,
+                                     input_vector,
+                                     /*scalar_value_term=*/log_coefficient_at_depth(depth_index, sigspec),
+                                     /*top_terms_to_skip=*/depth_index + 1,
+                                     sigspec);
             }
-            compute_mult_partial(scratch_vector, input_vector, /*scalar_value_term=*/1, /*top_terms_to_skip=*/0,
-                                 sigspec);
             record_vector.push_back(scratch_vector);
 
             // Now actually perform the backwards operation
@@ -257,6 +255,8 @@ namespace signatory {
                                               input_vector, log_coefficient_at_depth(depth_index, sigspec),
                                               depth_index + 1, sigspec);
             }
+
+            grad_input_vector[0].add_(grad_output_vector[0], log_coefficient_at_depth(sigspec.depth - 2, sigspec));
         }
     }  // namespace signatory::ta_ops
 }  // namespace signatory

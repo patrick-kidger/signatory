@@ -18,6 +18,7 @@
 import io
 import os
 import re
+#### DO NOT IMPORT NON-(STANDARD LIBRARY) MODULES HERE
 
 
 project = 'signatory'

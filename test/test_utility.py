@@ -21,7 +21,7 @@ import signatory
 import utils_testing as utils
 
 
-class TestLyndon(utils.TimedTestCase):
+class TestLyndon(utils.EnhancedTestCase):
     @classmethod
     def iisignature_convert(cls, ii_elem):
         outstr = ''
@@ -98,7 +98,7 @@ class TestLyndon(utils.TimedTestCase):
                               .format(channels=channels, depth=depth, words=words, brackets=brackets))
 
 
-class TestChannels(utils.TimedTestCase):
+class TestChannels(utils.EnhancedTestCase):
     def test_signature_channels(self):
         for channels in range(1, 16):
             for depth in range(1, 15):

@@ -24,9 +24,10 @@ import weakref
 import utils_testing as utils
 
 
-class TestSignatureMemory(utils.TimedTestCase):
+class TestSignatureMemory(utils.EnhancedTestCase):
     def test_no_adjustments(self):
-        for c in utils.ConfigIter(requires_grad=True):
+        for c in utils.ConfigIter(requires_grad=True,
+                                  size=utils.random_size(5)):
             path_copy = c.path.clone()
             signatory_out = c.signature()
             self.assertTrue(c.path.allclose(path_copy))
@@ -60,34 +61,28 @@ class TestSignatureMemory(utils.TimedTestCase):
             self.assertIsNone(ref(), c.fail())
 
     def test_no_leaks(self):
-        torch.cuda.reset_max_memory_allocated()
-        # constant size so we use the same amount of memory
-        # device='cuda' because it's just easier to keep track of GPU memory)
-        iterator = iter(utils.ConfigIter(requires_grad=True, size=((64, 6, 6) for _ in range(25)), device='cuda'))
-        c = next(iterator)
-        signatory_out = c.signature()
-        back = c.signature_backward()
-        memory_used = torch.cuda.max_memory_allocated()
-        del c
-        del signatory_out
-        del back
-        gc.collect()
-        for c in iterator:
+        # device='cuda' because it's just easier to keep track of GPU memory
+        for c in utils.ConfigIter(requires_grad=True, size=utils.random_size(5), device='cuda', repeats=10):
+            if c.rep == 0:
+                torch.cuda.reset_max_memory_allocated()
             signatory_out = c.signature()
             back = c.signature_backward()
-            memory_allocated = torch.cuda.max_memory_allocated()
-            if memory_allocated > 2 * memory_used:  # 2* to leave some margin for weirdness
-                self.fail(c.fail(memory_used=memory_used, memory_allocated=memory_allocated))
-            # Can't wait for them to be 'overwritten' on the next loop if we want to call gc.collect()
+            memory_used = torch.cuda.max_memory_allocated()
+            if c.rep == 0:
+                memory_used_first = memory_used
+            else:
+                if memory_used > memory_used_first:
+                    self.fail(c.fail(memory_used=memory_used, memory_used_first=memory_used_first))
             del c
             del signatory_out
             del back
             gc.collect()
 
 
-class TestLogSignatureMemory(utils.TimedTestCase):
+class TestLogSignatureMemory(utils.EnhancedTestCase):
     def test_no_adjustments(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
+                                  size=utils.random_size(5),
                                   requires_grad=True):
             path_copy = c.path.clone()
             signatory_out = c.logsignature()
@@ -124,28 +119,20 @@ class TestLogSignatureMemory(utils.TimedTestCase):
             self.assertIsNone(ref(), c.fail())
 
     def test_no_leaks(self):
-        for mode in utils.all_modes:
-            torch.cuda.reset_max_memory_allocated()
-            # constant size so we use the same amount of memory
-            # device='cuda' because it's just easier to keep track of GPU memory)
-            iterator = iter(utils.ConfigIter(requires_grad=True, size=((64, 6, 6) for _ in range(25)), device='cuda',
-                                             mode=mode))
-            c = next(iterator)
+        # device='cuda' because it's just easier to keep track of GPU memory
+        for c in utils.ConfigIter(requires_grad=True, size=utils.random_size(5), device='cuda', repeats=10,
+                                  mode=utils.all_modes):
+            if c.rep == 0:
+                torch.cuda.reset_max_memory_allocated()
             signatory_out = c.logsignature()
             back = c.logsignature_backward()
             memory_used = torch.cuda.max_memory_allocated()
+            if c.rep == 0:
+                memory_used_first = memory_used
+            else:
+                if memory_used > memory_used_first:
+                    self.fail(c.fail(memory_used=memory_used, memory_used_first=memory_used_first))
             del c
             del signatory_out
             del back
             gc.collect()
-            for c in iterator:
-                signatory_out = c.logsignature()
-                back = c.logsignature_backward()
-                memory_allocated = torch.cuda.max_memory_allocated()
-                if memory_allocated > 2 * memory_used:  # 2* to leave some margin for weirdness
-                    self.fail(c.fail(memory_used=memory_used, memory_allocated=memory_allocated))
-                # Can't wait for them to be 'overwritten' on the next loop if we want to call gc.collect()
-                del c
-                del signatory_out
-                del back
-                gc.collect()

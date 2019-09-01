@@ -36,47 +36,60 @@ Then run
 # The sdist is treated as a quirk of PyPI.
 
 
+import argparse
 import io
 import os
 import pprint
 import subprocess
-import sys
 #### DO NOT IMPORT NON-(STANDARD LIBRARY) MODULES HERE
 # Instead, lazily import them inside the command.
 # This allows all the commands that don't e.g. require a built version of Signatory to operate without it
+# Exception: metadata, as we guarantee that that will not import anything that isn't standard library.
+import metadata
 
 
 def main():
-    if len(sys.argv) < 2:
-        raise RuntimeError('Please pass a command, e.g. python command.py test')
-        
-    command = sys.argv[1]
-    argv = sys.argv[2:]
+    deviceparser = argparse.ArgumentParser(add_help=False)
+    deviceparser.add_argument('-d', '--device', type=int, default=0, help="Which CUDA device to use. Defaults to 0")
 
-    if command == 'install':
-        install()
-    elif command == 'develop':
-        develop()
-    elif command == 'test':
-        test(argv)
-    elif command == 'benchmark':
-        benchmark(argv)
-    elif command == 'docs':
-        argv()
-    elif command == 'publish':
-        publish()
-    elif command == 'prepublish':
-        prepublish()
-    elif command == 'genreadme':
-        genreadme()
-    else:
-        raise ValueError("Unrecognised command.")
+    parser = argparse.ArgumentParser(description="Runs various commands for building and testing Signatory.")
+    parser.add_argument('-v', '--version', action='version', version=metadata.version)
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Which command to run')
+    install_parser = subparsers.add_parser('install')
+    develop_parser = subparsers.add_parser('develop')
+    test_parser = subparsers.add_parser('test', parents=[deviceparser])
+    benchmark_parser = subparsers.add_parser('benchmark', parents=[deviceparser])
+    docs_parser = subparsers.add_parser('docs')
+    publish_parser = subparsers.add_parser('publish')
+    prepublish_parser = subparsers.add_parser('prepublish')
+    genreadme_parser = subparsers.add_parser('genreadme')
+
+    install_parser.set_defaults(cmd=install)
+    develop_parser.set_defaults(cmd=develop)
+    test_parser.set_defaults(cmd=test)
+    benchmark_parser.set_defaults(cmd=benchmark)
+    docs_parser.set_defaults(cmd=docs)
+    publish_parser.set_defaults(cmd=publish)
+    prepublish_parser.set_defaults(cmd=prepublish)
+    genreadme_parser.set_defaults(cmd=genreadme)
+
+    test_parser.add_argument('-f', '--failfast', action='store_true', help='Stop tests on first failure.')
+    test_parser.add_argument('-n', '--nonames', action='store_false', dest='names', help="Don't print names and start "
+                                                                                         "time of the tests being run.")
+    test_parser.add_argument('-t', '--notimes', action='store_false', dest='times', help="Don't print the overall "
+                                                                                         "times of the tests that have "
+                                                                                         "been run.")
+
+    args = parser.parse_args()
+
+    args.cmd(args)
 
 
 here = os.path.realpath(os.path.dirname(__file__))
 
 
 def run_commands(*commands):
+    """Runs a collection of commands in a shell."""
     if not isinstance(commands, (tuple, list)):
         raise ValueError
     print_commands = ["echo {}".format(command) for command in commands]
@@ -85,48 +98,45 @@ def run_commands(*commands):
     subprocess.run(' && '.join(all_commands), shell=True)
 
 
-def install():
+def install(args=()):
     """Install from source."""
     run_commands("pip install {}".format(here))
     
     
-def develop():
+def develop(args=()):
     """Install from source; will create a 'build' directory adjacent to this file, put the compiled parts of the
     package in there, leave the Python parts of this package where they are, and then add links so that Python can see
     this package."""
     run_commands("python {} develop".format(os.path.join(here, "setup.py")))
     
     
-def test(argv):
+def test(args):
     """Run all tests. Running all tests typically takes about an hour.
     The package 'iisignature' will need to be installed, to test against.
     It can be installed via `pip install iisignature`
     """
     import iisignature  # fail fast here if necessary
     import test.runner
-    failfast = '-f' in argv or '--failfast' in argv
-    record_test_times = not ('--notimes' in sys.argv)
-    test.runner.main(failfast=failfast, record_test_times=record_test_times)
+    import torch
+    with torch.cuda.device(args.device):
+        print('Using device {}'.format(args.device))
+        test.runner.main(failfast=args.failfast, times=args.times, names=args.names)
 
 
-def benchmark(argv):
+def benchmark(args):
     """Run speed benchmarks."""
     import test.speed_comparison as speed
     import torch
-    if len(argv) == 0:
+    with torch.cuda.device(args.device):
+        print('Using device {}'.format(args.device))
         results = speed.run_tests()
-    elif len(argv) == 1:
-        with torch.cuda.device(int(argv[0])):
-            results = speed.run_tests()
-    else:
-        raise ValueError
     ratios = speed.get_ratios(results)
     pprint.pprint(results)
     print('-----------------------')
     pprint.pprint(ratios)
 
     
-def docs():
+def docs(args=()):
     """Build the documentation. After it has been built then it can be found in ./docs/_build/html/index.html
     The package 'py2annotate' will need to be installed. It can be installed via `pip install py2annotate`
     Note that the documentation is already available online at https://signatory.readthedocs.io
@@ -135,12 +145,12 @@ def docs():
     run_commands("sphinx-build -M html {}, {}".format(os.path.join(here, "docs"), os.path.join(here, "docs", "_build")))
     
     
-def publish():
+def publish(args=()):
     """Will need twine already installed"""
     run_commands("twine upload {}".format(os.path.join(here, "dist", "*")))
 
 
-def prepublish():
+def prepublish(args=()):
     """Runs tests on all supported configurations to check before publishing."""
     # TODO: update to a proper system
     import metadata
@@ -165,7 +175,7 @@ def build_and_test(pythonv, signatoryv):
                  "conda env remove -p /tmp/signatory-{pythonv}".format(pythonv=pythonv))
 
     
-def genreadme():
+def genreadme(args=()):
     """The readme is generated automatically from the documentation"""
     outs = []
     startstr = ".. currentmodule::"

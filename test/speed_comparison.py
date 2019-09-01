@@ -153,22 +153,22 @@ def signatory_signature_forward(size, depth, repeat, number, stream=False, gpu=F
     return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
 
 
-def signatory_logsignature_forward(size, depth, repeat, number, gpu=False):
+def signatory_logsignature_forward(size, depth, repeat, number, gpu=False, mode='words'):
     if gpu:
         path = torch.rand(size, dtype=torch.float, device='cuda')
     else:
         path = torch.rand(size, dtype=torch.float)
     # ensure that we're doing a fair test by caching if we can
     # (equivalent to the call to 'prepare' in iisignature)
-    signatory.LogSignature(depth)(path)
+    signatory.LogSignature(depth, mode=mode)(path)
 
     if gpu:
         def stmt():
-            signatory.LogSignature(depth)(path)
+            signatory.LogSignature(depth, mode=mode)(path)
             torch.cuda.synchronize()
     else:
         def stmt():
-            signatory.LogSignature(depth)(path)
+            signatory.LogSignature(depth, mode=mode)(path)
 
     stmt()  # warm up
 
@@ -196,12 +196,12 @@ def signatory_signature_backward(size, depth, repeat, number, gpu=False):
     return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
 
 
-def signatory_logsignature_backward(size, depth, repeat, number, gpu=False):
+def signatory_logsignature_backward(size, depth, repeat, number, gpu=False, mode='words'):
     if gpu:
         path = torch.rand(size, dtype=torch.float, device='cuda', requires_grad=True)
     else:
         path = torch.rand(size, dtype=torch.float, requires_grad=True)
-    logsignature = signatory.LogSignature(depth)(path)
+    logsignature = signatory.LogSignature(depth, mode=mode)(path)
     grad = torch.rand_like(logsignature)
 
     if gpu:

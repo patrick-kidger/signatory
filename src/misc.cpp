@@ -80,29 +80,33 @@ namespace signatory {
             }  // and reciprocals will be empty - of size 0 - if depth == 1.
         };
 
-        BackwardsInfo::BackwardsInfo(SigSpec&& sigspec, std::vector<torch::Tensor>&& out_vector_, torch::Tensor out,
-                                     torch::Tensor path_increments) :
-            // TODO: remove detachs when 25340 is fixed
-            // Call to detach works around PyTorch bug 25340. Basically, it makes sure that backwards_info doesn't
-            // have references to any other tensors, and therefore in particular doesn't have references to the tensor
-            // that is the output of the signature function: because this output tensor has a reference to the Python-
-            // level 'ctx' variable, which in turn has a reference to the BackwardsInfo object, and we get an
-            // uncollected cycle.
+        BackwardsInfo::BackwardsInfo(SigSpec&& sigspec_, const std::vector<torch::Tensor>& out_vector_,
+                                     torch::Tensor out_, torch::Tensor path_increments_) :
+            // Call to detach works around PyTorch bug 25340, which is a won't-fix. Basically, it makes sure that
+            // backwards_info doesn't have references to any other tensors, and therefore in particular doesn't have
+            // references to the tensor that is the output of the signature function: because this output tensor has a
+            // reference to the Python-level 'ctx' variable, which in turn has a reference to the BackwardsInfo object,
+            // and we get an uncollected cycle. (Some of the references are at the C++ level so this isn't picked up by
+            // Python.)
             // Thus not doing this gives a massive memory leak.
-            sigspec{sigspec},
-            out_vector{out_vector_},
-            out{out.detach()},
-            path_increments{path_increments.detach()}
+            sigspec{sigspec_},
+            out{out_.detach()},
+            path_increments{path_increments_.detach()}
             {
-                for (auto& elem : out_vector) { elem = elem.detach(); }
+                out_vector.reserve(out_vector_.size());
+                for (const auto& elem : out_vector_) {
+                    out_vector.push_back(elem.detach());
+                }
             };
 
-        void BackwardsInfo::set_logsignature_data(std::vector<torch::Tensor>&& signature_vector_,
+        void BackwardsInfo::set_logsignature_data(const std::vector<torch::Tensor>& signature_vector_,
                                                   py::object lyndon_info_capsule_,
                                                   LogSignatureMode mode_,
                                                   int64_t logsignature_channels_) {
-            signature_vector = signature_vector_;
-            for (auto& elem : signature_vector) { elem = elem.detach(); }
+            signature_vector.reserve(signature_vector_.size());
+            for (const auto& elem : signature_vector_) {
+                signature_vector.push_back(elem.detach());
+            }
             lyndon_info_capsule = lyndon_info_capsule_;
             mode = mode_;
             logsignature_channels = logsignature_channels_;

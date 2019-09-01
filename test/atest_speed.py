@@ -28,7 +28,7 @@ import speed_comparison as speedc
 import utils_testing as utils
 
 
-class TestSignatureSpeed(utils.TimedTestCase):
+class TestSignatureSpeed(utils.EnhancedTestCase):
     def inner_test_speed(self, stream, backward):
         if backward and stream:
             raise ValueError("iisignature does not support backward and stream")
@@ -93,7 +93,7 @@ class TestSignatureSpeed(utils.TimedTestCase):
                 self.wrapped_speed_test(stream=stream, backward=backward)
 
 
-class TestLogSignatureSpeed(utils.TimedTestCase):
+class TestLogSignatureSpeed(utils.EnhancedTestCase):
     def inner_test_speed(self, backward):
         size = (64, 16, 8)
         depth = 6

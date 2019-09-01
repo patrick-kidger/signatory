@@ -24,9 +24,9 @@
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
 
-// TODO: try using threads for the words->basis transform?
-// TODO: perf test with 'words' for logsignatures - we care about the ML performance, not the mathematical one
+// TODO: test with/without parallel for
 
+// TODO: switch to pytest over unittest; rationalise some tests when we do
 // TODO: add the examples to the tests
 // TODO: check for interrupts
 // TODO: rationalise backwards_info. Can we combine out_vector and signature_vector?
@@ -196,9 +196,8 @@ namespace signatory {
             // if stream==false then just return this value in stream_vector
             ta_ops::compute_mult(stream_vector, scratch_vector, /*rightret=*/stream, sigspec);
         }
-
         py::object backwards_info_capsule = misc::wrap_capsule<misc::BackwardsInfo>(std::move(sigspec),
-                                                                                    std::move(out_vector),
+                                                                                    out_vector,
                                                                                     out,
                                                                                     path_increments);
 
