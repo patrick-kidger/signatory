@@ -7,7 +7,7 @@ What are signatures?
 --------------------
 If you're reading this then it's probably because you already know what the signature transform is, and are looking to use it in your project. But in case you've stumbled across this and are curious what this 'signature' thing is...
 
-The 'signature transform' is a transformation that takes in a stream of data (often a time series), and returns a collection of statistics about that stream of data. This collection of statistics determines the path essentially uniquely, in an efficient computable way. Furthermore it is rich enough that every continuous function of the input stream may be approximated arbitrarily well by a linear function of its signature; the signature is what we call a 'universal nonlinearity'. If you're doing machine learning then you probably understand why this is such a desirable property!
+The *signature transform* is a transformation that takes in a stream of data (often a time series), and returns a collection of statistics about that stream of data. This collection of statistics determines the path essentially uniquely, in an efficient computable way. Furthermore it is rich enough that every continuous function of the input stream may be approximated arbitrarily well by a linear function of its signature; the signature is what we call a *universal nonlinearity*. If you're doing machine learning then you probably understand why this is such a desirable property!
 
 In principle it's quite similar to the Fourier transform: it's a transformation that can be applied to a stream of data, which extracts certain information. The Fourier transform describes frequencies; the signature most naturally describes *order*. That is, the order of events, potentially in different channels, is a particularly easy thing to understand using the signature.
 
@@ -17,24 +17,11 @@ Installation
 ------------
 Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7.
 
-Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.0.1, but should probably work with all recent versions.
+Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.2.0, but should work with all recent versions.
 
-Install via ``pip``:
+Install via ``pip install signatory``.
 
-.. code-block:: bash
-
-    pip install signatory
-
-
-Alternatively install via ``git``:
-
-.. code-block:: bash
-
-    git clone https://github.com/patrick-kidger/signatory.git
-    cd signatory
-    pip install .
-
-Prebuilt wheels are not yet available - you'll have to be able to compile C++. If you're on Linux this is probably already the case, and the above installation instructions should just work.
+Only source distributions are available at the moment, so you will need to be able to compile C++. If you are on Linux then this should automatically happen when you run ``pip``. Other operating systems may vary.
 
 Documentation
 -------------
@@ -50,7 +37,7 @@ The essential difference (and the reason for Signatory's existence) is that iisi
 
 Depends on your CPU and GPU, really. But to throw some numbers out there: on the CPU, Signatory tends to be about twice as fast. With the GPU, it's roughly 65 times as fast.
 
-* I get an ImportError when I try to install Signatory.
+* I get an ``ImportError`` when I try to install Signatory.
 
 You probably haven't installed PyTorch. Do that, then run ``pip`` to install Signatory.
 
@@ -62,7 +49,7 @@ Just call ``.backward()`` like you normally would in PyTorch!
 
 Citation
 --------
-If you found this library useful in your research, please consider citing it.
+If you found this library useful in your research, please consider citing
 
 .. code-block:: bibtex
 
