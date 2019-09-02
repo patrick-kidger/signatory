@@ -4,21 +4,8 @@ Installation
 ------------
 Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7.
 
-Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.0.1, but should probably work with all recent versions.
+Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.2.0, but should work with all recent versions.
 
-Install via ``pip``:
+Install via ``pip install signatory``.
 
-.. code-block:: bash
-
-    pip install signatory
-
-
-Alternatively install via ``git``:
-
-.. code-block:: bash
-
-    git clone https://github.com/patrick-kidger/signatory.git
-    cd signatory
-    pip install .
-
-Prebuilt wheels are not yet available - you'll have to be able to compile C++. If you're on Linux this is probably already the case, and the above installation instructions should just work.
+Only source distributions are available at the moment, so you will need to be able to compile C++. If you are on Linux then this should automatically happen when you run ``pip``. Other operating systems may vary.

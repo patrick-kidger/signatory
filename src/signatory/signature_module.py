@@ -1,3 +1,20 @@
+# Copyright 2019 Patrick Kidger. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#    http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =========================================================================
+"""Provides operations relating to the signature transform."""
+
+
 import torch
 from torch import nn
 from torch import autograd
@@ -102,7 +119,17 @@ def signature(path, depth, stream=False, basepoint=False):
 
     """
     # noinspection PyUnresolvedReferences
-    return _SignatureFunction.apply(path, depth, stream, basepoint)
+    result = _SignatureFunction.apply(path, depth, stream, basepoint)
+
+    # TODO: remove when 24413 is fixed
+    # We have to do the transpose in the Python side to avoid a PyTorch bug.
+    # https://github.com/pytorch/pytorch/issues/24413
+    # This call has to be outside the autograd.Function.apply
+    if stream:
+        result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere and we
+                                         # don't want to change it.
+
+    return result
 
 
 class Signature(nn.Module):

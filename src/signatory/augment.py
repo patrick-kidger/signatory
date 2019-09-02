@@ -1,3 +1,20 @@
+# Copyright 2019 Patrick Kidger. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#    http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =========================================================================
+"""Provides a torch.nn.Module for augmenting streams of data."""
+
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -42,9 +59,12 @@ class Augment(nn.Module):
     where :math:`T` is a constant appropriately chosen so that the first entry moves between :math:`0` and :math:`1` as
     :math:`i` varies. (Specifically, :math:`T = L - k + 1 + 2 \times \text{padding}`.)
 
-    For further details see `Deep Signatures -- Bonnier et al. 2019 <https://arxiv.org/abs/1905.08494>`_. (This module
+    For further details see `Deep Signatures -- Bonnier et al. 2019 <https://arxiv.org/abs/1905.08494>`_. This Module
     is here more for convenience: it doesn't directly relate to the signature transform; it's just useful to have around
-    when you are using the signature transform.)
+    when you are using the signature transform.
+
+    This Module represents a reasonably general form of a stream-preserving neural network, in the sense of the above
+    linked paper.
 
     Arguments:
         in_channels (int): Number of channels :math:`C` in the input stream.

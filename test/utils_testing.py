@@ -1,3 +1,17 @@
+# Copyright 2019 Patrick Kidger. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#    http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =========================================================================
 """Provides a wrapper around signatory and iisignature functions so that they can be compared in a consistent way.
 
 This works because signatory.signature, signatory.logsignature, iisignature.sig, iisignature.logsig,
@@ -5,48 +19,16 @@ iisignature.sigbackprop, iisignature.logsigbackprop all except more or less the 
 """
 
 import collections as co
-import functools as ft
+import datetime
 import iisignature
 import random
 import signatory
-import sys
 import time
 import torch
 import unittest
 import warnings
 
-
-try:
-    # Python 2
-    stringtype = basestring
-except NameError:
-    # Python 3
-    stringtype = str
-
-
-try:
-    lru_cache = ft.partial(ft.lru_cache, maxsize=1)
-except AttributeError:
-    # Python 2
-    # A poor man's lru_cache, sufficient for our needs below.
-    # no maxsize argument for simplicity (hardcoded to 1)
-    class LruCache:
-        def __init__(self, fn):
-            self.memoargs = object()
-            self.memoout = None
-            self.fn = fn
-
-        def __call__(self, *args):
-            if args == self.memoargs:
-                return self.memoout
-            else:
-                out = self.fn(*args)
-                self.memoargs = args
-                self.memoout = out
-                return out
-
-    def lru_cache():
-        return LruCache
+import compatibility as compat
 
 
 with_grad = object()
@@ -60,6 +42,7 @@ all_modes = (expand, brackets, words)
 
 
 def random_size(num=20):
+    """Creates some random sizes to test with."""
     for _ in range(num):
         batch_size = int(torch.randint(low=1, high=10, size=(1,)))
         stream_size = int(torch.randint(low=2, high=10, size=(1,)))
@@ -68,6 +51,7 @@ def random_size(num=20):
 
 
 def large_size():
+    """Creates a few random large sizes to test with."""
     for _ in range(5):
         batch_size = int(torch.randint(low=4, high=5, size=(1,)))
         stream_size = int(torch.randint(low=10, high=50, size=(1,)))
@@ -76,6 +60,7 @@ def large_size():
 
 
 def large_depth():
+    """Creates a few random large depths to test with."""
     for _ in range(5):
         yield int(torch.randint(low=4, high=6, size=(1,)))
 
@@ -85,24 +70,24 @@ class Config(object):
     call these functions in an appropriate, comparable, manner.
     """
 
-    def __init__(self, mode, logsignature_class, stream, size, depth, prep, basepoint, requires_grad, device):
+    def __init__(self, mode, logsignature_class, stream, size, depth, prep, basepoint, requires_grad, device, rep):
         self.signature_or_logsignature = None
         if mode is expand:
             self.signatory_mode = "expand"
             self.iisignature_mode = "x"
-            self.using_logsignature()
+            self._using_logsignature()
         elif mode is brackets:
             self.signatory_mode = "brackets"
             self.iisignature_mode = "d"
-            self.using_logsignature()
+            self._using_logsignature()
         elif mode is words:
             self.signatory_mode = "words"  # must apply transform to get to brackets
             self.iisignature_mode = "d"
-            self.using_logsignature()
+            self._using_logsignature()
         elif mode is None:
             self.signatory_mode = None
             self.iisignature_mode = None
-            self.using_signature()
+            self._using_signature()
         else:
             raise RuntimeError
 
@@ -119,6 +104,7 @@ class Config(object):
         self.depth = depth
         self.prep = prep
         self.basepoint_size = size[0], size[2]
+        self.rep = rep
 
         if basepoint is with_grad:
             basepoint = torch.rand(self.basepoint_size, requires_grad=True, dtype=torch.double, device=device)
@@ -203,29 +189,30 @@ class Config(object):
     def iisignature_grad(self, val):
         self._iisignature_grad = val
 
-    def using_signature(self):
+    def _using_signature(self):
         if self.signature_or_logsignature is False:
             raise RuntimeError("Calling signature when already called logsignature, or if mode is not None.")
         self.signature_or_logsignature = True
 
-    def using_logsignature(self):
+    def _using_logsignature(self):
         if self.signature_or_logsignature is True:
             raise RuntimeError("Calling logsignature when already called signature")
         self.signature_or_logsignature = False
 
-    def signature(self):
+    def signature(self, store=True):
         """Calls signatory.signature"""
-        self.using_signature()
+        self._using_signature()
         if random.choice([True, False]):
             signatory_out = signatory.signature(self.path, self.depth, self.stream, self.basepoint)
         else:
             signatory_out = signatory.Signature(self.depth, self.stream, self.basepoint)(self.path)
-        self.signatory_out = signatory_out
+        if store:
+            self.signatory_out = signatory_out
         return signatory_out
 
     def signature_backward(self, grad=None):
         """Calls backwards on the result of signatory.signature"""
-        self.using_signature()
+        self._using_signature()
         if grad is None:
             grad = torch.rand_like(self.signatory_out)
         self.grad = grad
@@ -241,7 +228,7 @@ class Config(object):
 
     def sig(self):
         """Calls iisignature.sig"""
-        self.using_signature()
+        self._using_signature()
         if self.basepoint is True:
             basepointed_path = torch.cat([torch.zeros(self.N, 1, self.C, dtype=torch.double), self.path_cpu],
                                          dim=1)
@@ -255,7 +242,7 @@ class Config(object):
 
     def sig_backward(self):
         """Calls iisignature.sigbackprop"""
-        self.using_signature()
+        self._using_signature()
         if self.stream:
             raise RuntimeError("iisignature.sigbackprop does not support stream=True")
         iisignature_grad = iisignature.sigbackprop(self.grad_cpu, self.basepointed_path, self.depth)
@@ -267,21 +254,22 @@ class Config(object):
         self.iisignature_grad = iisignature_grad
         return iisignature_grad
 
-    def logsignature(self):
+    def logsignature(self, store=True):
         """Calls signatory.logsignature"""
-        self.using_logsignature()
+        self._using_logsignature()
         if self.logsignature_class:
             signatory_out = signatory.LogSignature(self.depth, self.stream,
                                                    self.basepoint, self.signatory_mode)(self.path)
         else:
             signatory_out = signatory.logsignature(self.path, self.depth, self.stream, self.basepoint,
                                                    self.signatory_mode)
-        self.signatory_out = signatory_out
+        if store:
+            self.signatory_out = signatory_out
         return signatory_out
 
     def logsignature_backward(self, grad=None):
         """Calls backwards on the result of signatory.logsignature"""
-        self.using_logsignature()
+        self._using_logsignature()
         if grad is None:
             grad = torch.rand_like(self.signatory_out)
         self.grad = grad
@@ -297,7 +285,7 @@ class Config(object):
 
     def logsig(self):
         """Calls iisignature.logsig"""
-        self.using_logsignature()
+        self._using_logsignature()
         if self.stream:
             raise RuntimeError("iisignature.logsig does not support stream=True")
         if self.basepoint is True:
@@ -313,7 +301,7 @@ class Config(object):
 
     def logsig_backward(self):
         """Calls iisignature.logsigbackprop"""
-        self.using_logsignature()
+        self._using_logsignature()
         if self.stream:
             raise RuntimeError("iisignature.logsigbackprop does not support stream=True")
         iisignature_grad = iisignature.logsigbackprop(self.grad_cpu, self.basepointed_path, self.prep(),
@@ -337,10 +325,11 @@ class Config(object):
                      "depth={depth}\n"
                      "basepoint={basepoint}\n"
                      "device={device}\n"
-                     "logsignature_class={logsignature_class}"
+                     "logsignature_class={logsignature_class}\n"
+                     "rep={rep}"
                      .format(mode=self.signatory_mode, stream=self.stream, size=self.size,
                              requires_grad=self.path.requires_grad, depth=self.depth, basepoint=self.basepoint,
-                             device=self.device, logsignature_class=self.logsignature_class))
+                             device=self.device, logsignature_class=self.logsignature_class, rep=self.rep))
         for key, value in kwargs.items():
             returnval += '\n{key}={value}'.format(key=key, value=value)
 
@@ -383,7 +372,7 @@ class ConfigIter(object):
     def __init__(self,
                  device=('cpu', 'cuda'),
                  logsignature_class=(True, False),
-                 stream=(True, False),
+                 stream=(False, True),
                  basepoint=None,
                  N=(1, 2, 3, 10),        # |
                  L=(2, 3, 4, 10),        # | what sizes to iterate over: (N[i], L[j], C[k]) for all i, j, k.
@@ -391,7 +380,8 @@ class ConfigIter(object):
                  depth=(1, 2, 3, 4, 6),  # what depths to iterate over
                  size=None,              # what sizes to iterate over; supersedes (N, L, C) is passed
                  mode=None,              # what logsignature modes to operate in, if using logsignatures
-                 requires_grad=False):   # set to True if wanting to do backwards calls
+                 requires_grad=False,    # set to True if wanting to do backwards calls
+                 repeats=1):
 
         if basepoint is None:
             if requires_grad:
@@ -404,11 +394,14 @@ class ConfigIter(object):
         if stream in (True, False):
             stream = (stream,)
 
-        if isinstance(mode, stringtype) or mode in (expand, brackets, words, None):
+        if isinstance(mode, compat.stringtype) or mode in (expand, brackets, words, None):
             mode = (mode,)
 
         if mode[0] is None:
             logsignature_class = (None,)
+
+        if isinstance(device, compat.stringtype):
+            device = (device,)
 
         if 'cuda' in device:
             if not torch.cuda.is_available():
@@ -428,6 +421,7 @@ class ConfigIter(object):
         self.size = size
         self.requires_grad = requires_grad
         self.basepoint = basepoint
+        self.repeats = repeats
 
     def size_iter(self):
         if self.size is not None:
@@ -451,35 +445,26 @@ class ConfigIter(object):
                         for logsignature_class in self.logsignature_class:
                             for stream in self.stream:
                                 for basepoint in self.basepoint:
-                                    yield Config(mode, logsignature_class, stream, size, depth, prepare, basepoint,
-                                                 self.requires_grad, device)
+                                    for rep in range(self.repeats):
+                                        yield Config(mode, logsignature_class, stream, size, depth, prepare, basepoint,
+                                                     self.requires_grad, device, rep)
 
     @staticmethod
-    @lru_cache()
+    @compat.lru_cache(maxsize=1)
     def prepare(channels, depth):
         return iisignature.prepare(channels, depth)
 
 
-# What an ugly hack. I don't see nice ways to record extra diagnostic information in tests, though.
-unittest.test_times = []
-
-
-class TimedUnitTest(unittest.TestCase):
+class EnhancedTestCase(unittest.TestCase):
+    """An enhanced test case."""
+    
     def setUp(self):
+        if hasattr(unittest, 'print_tests') and unittest.print_tests:
+            print("Starting {} at {}".format(self.id(), datetime.datetime.now()))
         self.start_time = time.time()
 
     def tearDown(self):
-        t = time.time() - self.start_time
-        if not hasattr(unittest, 'record_test_times') or unittest.record_test_times:
+        if hasattr(unittest, 'test_times'):
+            t = time.time() - self.start_time
             test_str = '{id}: {t}'.format(id=self.id(), t=t)
             unittest.test_times.append(test_str)
-
-
-def skip(fn):
-    if sys.version_info.major == 2:
-        # unittest.skip seems to have a bug in Python 2
-        def skipped_fn(self, *args, **kwargs):
-            pass
-        return skipped_fn
-    else:
-        return unittest.skip(fn)

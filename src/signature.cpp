@@ -1,3 +1,19 @@
+/* Copyright 2019 Patrick Kidger. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * ========================================================================= */
+
+
 #include <torch/extension.h>
 #include <cstdint>    // int64_t
 #include <tuple>      // std::tie, std::tuple
@@ -8,18 +24,19 @@
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
 
-// TODO: add testing the examples to the tests
+
+// TODO: add sparse computations
+// TODO: try doing the word->brackets by manually computing the inverse and then using torch.sparse.mm?
+// TODO: switch to pytest over unittest; rationalise some tests when we do
+// TODO: add the examples to the tests
 // TODO: check for interrupts
-// TODO: time how long each test takes and adjust them if necessary?
 // TODO: rationalise backwards_info. Can we combine out_vector and signature_vector?
 // TODO: rename out_* to signature_*
-// TODO: switch to negative indexing axes
+// TODO: add Python-level handling of (... x stream x channel) format
 // TODO: signature_jacobian, logsignature_jacobian
-// TODO: documentation: when to use signature / logsignature, time augmentation vs stream
-// TODO: tensorflow
+// TODO: tensorflow?
 // TODO: support torchscript? https://pytorch.org/tutorials/advanced/torch_script_custom_ops.html
 // TODO: concatenating onto an already existing signature. A class that takes data and spits out signatures?
-// TODO: check that the right things are being put in the sdist/bdist
 
 
 namespace signatory {
@@ -30,14 +47,14 @@ namespace signatory {
             int64_t num_increments {sigspec.input_stream_size - 1};
             if (sigspec.basepoint) {
                 torch::Tensor path_increments = path.clone();
-                path_increments.narrow(/*dim=*/0, /*start=*/0, /*len=*/1) -= basepoint_value;
-                path_increments.narrow(/*dim=*/0, /*start=*/1, /*len=*/num_increments) -=
-                        path.narrow(/*dim=*/0, /*start=*/0, /*len=*/num_increments);
+                path_increments.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/1) -= basepoint_value;
+                path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -=
+                        path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments);
                 return path_increments;
             }
             else {
-                return path.narrow(/*dim=*/0, /*start=*/1, /*len=*/num_increments) -
-                       path.narrow(/*dim=*/0, /*start=*/0, /*len=*/num_increments);
+                return path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -
+                       path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments);
             }
         }
 
@@ -48,18 +65,18 @@ namespace signatory {
             int64_t num_increments{sigspec.input_stream_size - 1};
             if (sigspec.basepoint) {
                 torch::Tensor grad_path = grad_path_increments.clone();
-                grad_path.narrow(/*dim=*/0, /*start=*/0, /*len=*/num_increments)
-                        -= grad_path_increments.narrow(/*dim=*/0, /*start=*/1, /*len=*/num_increments);
-                return {grad_path, -grad_path_increments.narrow(/*dim=*/0, /*start=*/0, /*len=*/1).squeeze(0)};
+                grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments)
+                        -= grad_path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments);
+                return {grad_path, -grad_path_increments.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/1).squeeze(0)};
             }
             else {
                 torch::Tensor grad_path = torch::empty({sigspec.input_stream_size,
-                                                        sigspec.input_channels,
-                                                        sigspec.batch_size},
+                                                        sigspec.batch_size,
+                                                        sigspec.input_channels},
                                                        sigspec.opts);
-                grad_path.narrow(/*dim=*/0, /*start=*/0, /*len=*/1).zero_();
-                grad_path.narrow(/*dim=*/0, /*start=*/1, /*len=*/num_increments).copy_(grad_path_increments);
-                grad_path.narrow(/*dim=*/0, /*start=*/0, /*len=*/num_increments) -= grad_path_increments;
+                grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/1).zero_();
+                grad_path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments).copy_(grad_path_increments);
+                grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments) -= grad_path_increments;
                 // no second return value in this case
                 return {grad_path, torch::empty({0}, sigspec.opts)};
             }
@@ -67,21 +84,25 @@ namespace signatory {
     }  // namespace signatory::detail
 
     std::tuple<torch::Tensor, py::object>
-    signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value) {
+    signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value)
+    {
+        // No sense keeping track of gradients when we have a dedicated backwards function (and in-place operations mean
+        // that in any case one cannot autograd through this function)
+        path = path.detach();
+        basepoint_value = basepoint_value.detach();
         misc::checkargs(path, depth, basepoint, basepoint_value);
 
-        // convert from (batch, stream, channel) to (stream, channel, batch), which is the representation we use
-        // internally for speed (fewer cache misses).
+        // Convert from (batch, stream, channel) to (stream, batch, channel), which is the representation we use
+        // internally.
         // having 'path' have non-monotonically-decreasing strides doesn't slow things down very much, as 'path' is only
         // really used to compute 'path_increments' below, and the extra speed from a more efficient internal
         // representation more than compensates
-        path = path.transpose(0, 1).transpose(1, 2);
+        path = path.transpose(0, 1);
         if (!path.is_floating_point()) {
             path = path.to(torch::kFloat32);
         }
         if (basepoint) {
-            // (batch, channel) to (channel, batch)
-            basepoint_value = basepoint_value.transpose(0, 1);
+            // basepoint_value has dimensions (batch, channel) so we don't need to switch anything
             basepoint_value = basepoint_value.to(path.dtype());
         }
 
@@ -122,34 +143,34 @@ namespace signatory {
         if (stream) {
             // if stream == true then we want to store all intermediate results
             out = torch::empty({sigspec.output_stream_size,
-                                sigspec.output_channels,
-                                sigspec.batch_size},
+                                sigspec.batch_size,
+                                sigspec.output_channels},
                                sigspec.opts);
             // and the first term is just the first part of that tensor.
-            torch::Tensor first_term = out.narrow(/*dim=*/0, /*start=*/0, /*len=*/1).squeeze(0);
+            torch::Tensor first_term = out.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/1).squeeze(0);
 
             // slice up into terms by depth:
             // first_term is put into scratch_vector, as it's what we (will) have computed so far.
             // out is put into out_vector
-            misc::slice_by_term(first_term, scratch_vector, 0, sigspec);
-            misc::slice_by_term(out, out_vector, 1, sigspec);
+            misc::slice_by_term(first_term, scratch_vector, sigspec);
+            misc::slice_by_term(out, out_vector, sigspec);
         }
         else {
             // if stream == false then we only want the final result, so we have a smaller tensor in this case
-            out = torch::empty({sigspec.output_channels, sigspec.batch_size}, sigspec.opts);
+            out = torch::empty({sigspec.batch_size, sigspec.output_channels}, sigspec.opts);
 
             // however we still also need some scratch space to compute the exponential of a particular increment in
-            torch::Tensor scratch = torch::empty({sigspec.output_channels, sigspec.batch_size}, sigspec.opts);
+            torch::Tensor scratch = torch::empty({sigspec.batch_size, sigspec.output_channels}, sigspec.opts);
 
             // slice up into terms by depth:
             // scratch is put into scratch_vector, as it's where we'll compute exponentials
             // out is put into stream_vector, as it's where we'll compute the final result.
-            misc::slice_by_term(scratch, scratch_vector, 0, sigspec);
-            misc::slice_by_term(out, stream_vector, 0, sigspec);
+            misc::slice_by_term(scratch, scratch_vector, sigspec);
+            misc::slice_by_term(out, stream_vector, sigspec);
         }
 
         // compute the first term
-        ta_ops::compute_restricted_exp(path_increments.narrow(/*dim=*/0, /*start=*/0, /*len=*/1).squeeze(0),
+        ta_ops::compute_restricted_exp(path_increments.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/1).squeeze(0),
                                        stream ? scratch_vector : stream_vector, sigspec);
 
         for (int64_t stream_index = 1; stream_index < sigspec.output_stream_size; ++stream_index) {
@@ -163,9 +184,9 @@ namespace signatory {
             }
 
             // first compute the exponential of the increment and put it in scratch_vector
-            ta_ops::compute_restricted_exp(path_increments.narrow(/*dim=*/0,
-                                                   /*start=*/stream_index,
-                                                   /*len=*/1).squeeze(0),
+            ta_ops::compute_restricted_exp(path_increments.narrow(/*dim=*/stream_dim,
+                                                                  /*start=*/stream_index,
+                                                                  /*len=*/1).squeeze(0),
                                            scratch_vector,
                                            sigspec);
             // multiply on what we have so far in stream_vector onto scratch_vector, to calculate the signature for
@@ -175,14 +196,17 @@ namespace signatory {
             // if stream==false then just return this value in stream_vector
             ta_ops::compute_mult(stream_vector, scratch_vector, /*rightret=*/stream, sigspec);
         }
-
-        torch::Tensor out_with_transposes = misc::transpose(out, sigspec);
-
         py::object backwards_info_capsule = misc::wrap_capsule<misc::BackwardsInfo>(std::move(sigspec),
-                                                                                    std::move(out_vector),
+                                                                                    out_vector,
                                                                                     out,
                                                                                     path_increments);
-        return {out_with_transposes, backwards_info_capsule};
+
+        // TODO: uncomment when 24413 is fixed
+        // We have to do the transpose in the Python side to avoid PyTorch bug 24413.
+        // https://github.com/pytorch/pytorch/issues/24413
+//        torch::Tensor out = misc::transpose(out, sigspec);
+
+        return {out, backwards_info_capsule};
     }
 
     std::tuple<torch::Tensor, torch::Tensor>
@@ -194,6 +218,10 @@ namespace signatory {
         const std::vector<torch::Tensor>& out_vector = backwards_info->out_vector;
         torch::Tensor out = backwards_info->out;
         torch::Tensor path_increments = backwards_info->path_increments;
+
+        // TODO: remove when 24413 is fixed. Here we undo the transposing that autograd has done for us in the
+        //  pulled-out transposes
+        grad_out = misc::transpose_reverse(grad_out, sigspec);
 
         // Check arguments
         misc::checkargs_backward(grad_out, sigspec);
@@ -248,41 +276,41 @@ namespace signatory {
         std::vector<torch::Tensor> grad_prev_stream_vector;  // The gradient of a previous-to-particular timestep
         std::vector<torch::Tensor> grad_next_stream_vector;  // The gradient of a particular time step
 
-        torch::Tensor scratch = torch::empty({sigspec.output_channels,
-                                              sigspec.batch_size},
+        torch::Tensor scratch = torch::empty({sigspec.batch_size,
+                                              sigspec.output_channels},
                                              sigspec.opts);
-        misc::slice_by_term(scratch, scratch_vector, 0, sigspec);
+        misc::slice_by_term(scratch, scratch_vector, sigspec);
 
         // Populate our memory vectors with the scratch memory and with the gradient we've been given
         if (sigspec.stream) {
-            misc::slice_by_term(grad_out, grad_out_vector, 1, sigspec);
+            misc::slice_by_term(grad_out, grad_out_vector, sigspec);
 
             misc::slice_at_stream(out_vector, stream_vector, -1);
             misc::slice_at_stream(grad_out_vector, grad_prev_stream_vector, -1);
         }
         else {
-            torch::Tensor grad_scratch = torch::empty({sigspec.output_channels,
-                                                       sigspec.batch_size},
+            torch::Tensor grad_scratch = torch::empty({sigspec.batch_size,
+                                                       sigspec.output_channels},
                                                       sigspec.opts);
 
-            misc::slice_by_term(grad_scratch, grad_next_stream_vector, 0, sigspec);
+            misc::slice_by_term(grad_scratch, grad_next_stream_vector, sigspec);
 
             // Clone to avoid overwriting what's in out (not necessary in the stream==true case because we don't
-            // overwrite the memory then, when recomputing our way back along the path with compute_div.)
-            misc::slice_by_term(out.clone(), stream_vector, 0, sigspec);
-            misc::slice_by_term(grad_out, grad_prev_stream_vector, 0, sigspec);
+            // overwrite the memory then; we don't need to recompute our way back along the path with compute_div.)
+            misc::slice_by_term(out.clone(), stream_vector, sigspec);
+            misc::slice_by_term(grad_out, grad_prev_stream_vector, sigspec);
         }
 
         // grad_path_increments is what we want to compute throughout the for loop.
-        torch::Tensor grad_path_increments = torch::empty({sigspec.output_stream_size,
-                                                           sigspec.input_channels,
-                                                           sigspec.batch_size},
+        torch::Tensor grad_path_increments = torch::zeros({sigspec.output_stream_size,
+                                                           sigspec.batch_size,
+                                                           sigspec.input_channels},
                                                           sigspec.opts);
         for (int64_t stream_index = sigspec.output_stream_size - 1; stream_index > 0; --stream_index) {
             // Recompute the exponential of a path increment and put it in scratch_vector
-            ta_ops::compute_restricted_exp(path_increments.narrow(/*dim=*/0,
-                                                   /*start=*/stream_index,
-                                                   /*len=*/1).squeeze(0),
+            ta_ops::compute_restricted_exp(path_increments.narrow(/*dim=*/stream_dim,
+                                                                  /*start=*/stream_index,
+                                                                  /*len=*/1).squeeze(0),
                                            scratch_vector,
                                            sigspec);
             if (sigspec.stream) {
@@ -307,13 +335,13 @@ namespace signatory {
             // Now actually do the computations
             ta_ops::compute_mult_backward(grad_prev_stream_vector, grad_next_stream_vector, stream_vector,
                                           scratch_vector, /*add_not_copy=*/sigspec.stream, sigspec);
-            ta_ops::compute_restricted_exp_backward(grad_path_increments.narrow(/*dim=*/0,
-                                                            /*start=*/stream_index,
-                                                            /*len=*/1).squeeze(0),
+            ta_ops::compute_restricted_exp_backward(grad_path_increments.narrow(/*dim=*/stream_dim,
+                                                                                /*start=*/stream_index,
+                                                                                /*len=*/1).squeeze(0),
                                                     grad_next_stream_vector,
-                                                    path_increments.narrow(/*dim=*/0,
-                                                            /*start=*/stream_index,
-                                                            /*len=*/1).squeeze(0),
+                                                    path_increments.narrow(/*dim=*/stream_dim,
+                                                                           /*start=*/stream_index,
+                                                                           /*len=*/1).squeeze(0),
                                                     scratch_vector,
                                                     sigspec);
         }
@@ -322,13 +350,13 @@ namespace signatory {
         // grad_prev_stream_vector and stream_vector here, rather than doing one more iteration of the first part of
         // the above for loop, just to get the same values in grad_next_stream_vector and scratch_vector.
         // (And we don't want to do another compute_mult_backward either.)
-        ta_ops::compute_restricted_exp_backward(grad_path_increments.narrow(/*dim=*/0,
-                                                        /*start=*/0,
-                                                        /*len=*/1).squeeze(0),
+        ta_ops::compute_restricted_exp_backward(grad_path_increments.narrow(/*dim=*/stream_dim,
+                                                                            /*start=*/0,
+                                                                            /*len=*/1).squeeze(0),
                                                 grad_prev_stream_vector,
-                                                path_increments.narrow(/*dim=*/0,
-                                                        /*start=*/0,
-                                                        /*len=*/1).squeeze(0),
+                                                path_increments.narrow(/*dim=*/stream_dim,
+                                                                       /*start=*/0,
+                                                                       /*len=*/1).squeeze(0),
                                                 stream_vector,
                                                 sigspec);
 
@@ -337,11 +365,9 @@ namespace signatory {
         torch::Tensor grad_basepoint_value;
         std::tie(grad_path, grad_basepoint_value) = detail::compute_path_increments_backward(grad_path_increments,
                                                                                              sigspec);
-        // convert from (stream, channel, batch) to (batch, stream, channel)
-        grad_path = grad_path.transpose(1, 2).transpose(0, 1);
-        if (sigspec.basepoint) {
-            grad_basepoint_value = grad_basepoint_value.transpose(0, 1);
-        }
+        // convert from (stream, batch, channel) to (batch, stream, channel)
+        grad_path = grad_path.transpose(0, 1);
+        // Note that we don't need to transpose grad_basepoint_value as it's already correct as (batch, channel)
         return {grad_path, grad_basepoint_value};
     }
 }  // namespace signatory

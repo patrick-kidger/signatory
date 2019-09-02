@@ -1,3 +1,20 @@
+# Copyright 2019 Patrick Kidger. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#    http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =========================================================================
+"""setup.py - hopefully you know what this does without me telling you..."""
+
+
 import setuptools
 try:
     import torch.utils.cpp_extension as cpp
@@ -22,6 +39,7 @@ ext_modules = [cpp.CppExtension(name='_impl',
                                          'src/signature.hpp',
                                          'src/tensor_algebra_ops.hpp'],
                                 extra_compile_args=['-fvisibility=hidden'])]
+# fvisibility flag because of https://pybind11.readthedocs.io/en/stable/faq.html#someclass-declared-with-greater-visibility-than-the-type-of-its-field-someclass-member-wattributes
 
 
 setuptools.setup(name=metadata.project,

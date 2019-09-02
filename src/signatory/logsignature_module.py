@@ -1,4 +1,20 @@
-import functools as ft
+# Copyright 2019 Patrick Kidger. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#    http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =========================================================================
+"""Provides operations relating to the logsignature transform."""
+
+
 import math
 import torch
 from torch import nn
@@ -6,6 +22,7 @@ from torch import autograd
 from torch.autograd import function as autograd_function
 
 from . import backend
+from . import compatibility as compat
 
 # noinspection PyUnresolvedReferences
 from . import _impl
@@ -13,29 +30,6 @@ from . import _impl
 # noinspection PyUnreachableCode
 if False:
     from typing import Any, Union
-
-
-try:
-    lru_cache = ft.partial(ft.lru_cache, maxsize=None)
-except AttributeError:
-    # Python 2
-    # A poor man's lru_cache, sufficient for our needs below.
-    # no maxsize argument for simplicity (hardcoded to None)
-    class LruCache:
-        def __init__(self, fn):
-            self.memodict = {}
-            self.fn = fn
-
-        def __call__(self, *args):
-            try:
-                return self.memodict[args]
-            except KeyError:
-                out = self.fn(*args)
-                self.memodict[args] = out
-                return out
-
-    def lru_cache():
-        return LruCache
 
 
 # noinspection PyProtectedMember
@@ -54,7 +48,7 @@ class _LogSignatureFunction(autograd.Function):
         return backend.backward(ctx, grad_result, _impl.logsignature_backward) + (None, None)
 
 
-def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
+def logsignature(path, depth, stream=False, basepoint=False, mode="words"):
     # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], str) -> torch.Tensor
     """Applies the logsignature transform to a stream of data.
 
@@ -73,11 +67,11 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
         basepoint (bool or :class:`torch.Tensor`, optional): as :func:`signatory.signature`.
 
         mode (str, optional): How the output should be presented. Valid values are :attr:`"expand"`, :attr:`"brackets"`,
-            or :attr:`"words"`. Precisely what each of these options mean is described in the "Returns" section below.
-            As a rule of thumb: use :attr:`"words"` for new projects (as it is the fastest), and use :attr:`"brackets"`
-            for compatibility with other projects which do not provide equivalent functionality to :attr:`"words"`.
-            (Such as `iisignature <https://github.com/bottler/iisignature>`__). The mode :attr:`"expand"` is mostly only
-            interesting for mathematicians.
+            or :attr:`"words"`. Defaults to `"words"`. Precisely what each of these options mean is described in the
+            "Returns" section below. As a rule of thumb: use :attr:`"words"` for new projects (as it is the fastest),
+            and use :attr:`"brackets"` for compatibility with other projects which do not provide equivalent
+            functionality to :attr:`"words"`. (Such as `iisignature <https://github.com/bottler/iisignature>`__). The
+            mode :attr:`"expand"` is mostly only interesting for mathematicians.
 
     Returns:
         A :class:`torch.Tensor`. If :attr:`mode == "expand"` then it will be of the same shape as the returned tensor
@@ -110,7 +104,16 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
         and then ordering each length class lexicographically.
     """
     # noinspection PyUnresolvedReferences
-    return _LogSignatureFunction.apply(path, depth, stream, basepoint, mode, None)
+    result = _LogSignatureFunction.apply(path, depth, stream, basepoint, mode, None)
+
+    # TODO: remove when 24413 is fixed
+    # We have to do the transpose in the Python side to avoid a PyTorch bug.
+    # https://github.com/pytorch/pytorch/issues/24413
+    # This call has to be outside the autograd.Function.apply
+    if stream:
+        result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere and we
+                                         # don't want to change it.
+    return result
 
 
 class LogSignature(nn.Module):
@@ -133,7 +136,7 @@ class LogSignature(nn.Module):
     Called with a single argument :attr:`path` of type :class:`torch.Tensor`.
     """
 
-    def __init__(self, depth, stream=False, basepoint=False, mode="brackets", **kwargs):
+    def __init__(self, depth, stream=False, basepoint=False, mode="words", **kwargs):
         # type: (int, bool, Union[bool, torch.Tensor], str, **Any) -> None
         super(LogSignature, self).__init__(**kwargs)
         self.depth = depth
@@ -142,7 +145,8 @@ class LogSignature(nn.Module):
         self.mode = mode
 
     @staticmethod
-    @lru_cache()  # This computation can be pretty slow! We definitely want to reuse it between instances
+    # This computation can be pretty slow! We definitely want to reuse it between instances
+    @compat.lru_cache(maxsize=None)
     def lyndon_info_cache(channels, depth, mode):
         mode = backend.mode_convert(mode)
         return _impl.make_lyndon_info(channels, depth, mode)
@@ -153,13 +157,23 @@ class LogSignature(nn.Module):
         lyndon_info = self.lyndon_info_cache(path.size(-1), self.depth, self.mode)
         # don't call logsignature itself because that (deliberately) doesn't expose a lyndon_info argument.
         # noinspection PyProtectedMember, PyUnresolvedReferences
-        return _LogSignatureFunction.apply(path, self.depth, self.stream, self.basepoint, self.mode, lyndon_info)
+        result = _LogSignatureFunction.apply(path, self.depth, self.stream, self.basepoint, self.mode, lyndon_info)
+
+        # TODO: remove when 24413 is fixed
+        # We have to do the transpose in the Python side to avoid a PyTorch bug.
+        # https://github.com/pytorch/pytorch/issues/24413
+        # This call has to be outside the autograd.Function.apply
+        if self.stream:
+            result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere
+                                             # and we don't want to change it.
+        return result
 
     def extra_repr(self):
         return ('depth={depth}, stream={stream}, basepoint={basepoint}, mode{mode}'
                 .format(depth=self.depth, stream=self.stream, basepoint=str(self.basepoint)[:6], mode=self.mode))
 
 
+# Computes the list of prime factors of x
 def _get_prime_factors(x):
     if x == 1:
         return []
@@ -178,6 +192,7 @@ def _get_prime_factors(x):
     return prime_factors
 
 
+# Evaluate the Mobius function of x
 def _mobius_function(x):
     prime_factors = _get_prime_factors(x)
     prev_elem = None
