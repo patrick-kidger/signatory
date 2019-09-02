@@ -16,25 +16,28 @@
 
 
 import os
-import sys
 import unittest
 
 
-def main(failfast=False, record_test_times=True):
-    if record_test_times:
-        # What an ugly hack. I don't see nice ways to record extra diagnostic information in tests, though.
+def main(failfast=False, times=True, names=True):
+    # What an ugly hack. I don't see nice ways to record extra diagnostic information or pass information to tests,
+    # though.
+    if times:
         unittest.test_times = []
+    unittest.print_test_names = names
     
     loc = os.path.dirname(__file__)
     loader = unittest.defaultTestLoader
     suite = loader.discover(loc)
+    print("Running {} tests.".format(suite.countTestCases()))
 
     runner = unittest.TextTestRunner(failfast=failfast)
     try:
-        result = runner.run(suite)
+        runner.run(suite)
     finally:  # in case of KeyboardInterrupt on a long test
-        if record_test_times:
-            print('Time taken for each test:')
+        if times:
+            print('Time taken for each test, in seconds:')
             for r in unittest.test_times:
                 print(r)
             del unittest.test_times
+        del unittest.print_test_names

@@ -126,20 +126,26 @@ namespace signatory { namespace fla_ops {
         finalise();
     }
 
-    void LyndonWords::to_lyndon_basis(std::vector<std::tuple<int64_t, int64_t, int64_t>>& transforms,
-                                      std::vector<std::tuple<int64_t, int64_t, int64_t>>& transforms_backward) {
+    void LyndonWords::to_lyndon_basis(std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>>& transforms,
+                                      std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>>& transforms_backward){
 
-        std::map<std::multiset<int64_t>, std::vector<LyndonWord*>> lyndon_anagrams;
-        //       \--------------------/  \----------------------/
-        //    Letters in a Lyndon word    All Lyndon words of a particular anagram class, ordered lexicographically
+        std::vector<std::map<std::multiset<int64_t>, std::vector<LyndonWord*>>> lyndon_anagrams;
+        //                   \--------------------/  \----------------------/
+        //                Letters in a Lyndon word    All Lyndon words of a particular anagram class, ordered lexicographically
+        //          \--------------------------------------------------------/
+        //                  All anagram classes of the same depth
+        lyndon_anagrams.reserve(this->lyndonspec.depth);
+        for (s_size_type depth_index = 0; depth_index < this->lyndonspec.depth; ++depth_index) {
+            lyndon_anagrams.emplace_back();
+        }
 
         std::vector<s_size_type> anagram_class_sizes;
         anagram_class_sizes.reserve(amount);
         // First go through and figure out the anagram classes
-        for (auto& depth_class : *this) {
-            for (auto& lyndon_word : depth_class) {
+        for (s_size_type depth_index = 0; depth_index < this->lyndonspec.depth; ++depth_index) {
+            for (auto& lyndon_word : (*this)[depth_index]) {
                 auto& word = lyndon_word.extra->word;
-                auto& anagram_class = lyndon_anagrams[std::multiset<int64_t> (word.begin(), word.end())];
+                auto& anagram_class = lyndon_anagrams[depth_index][std::multiset<int64_t> (word.begin(), word.end())];
 
                 anagram_class.push_back(&lyndon_word);
                 lyndon_word.extra->anagram_class = &anagram_class;
@@ -168,83 +174,95 @@ namespace signatory { namespace fla_ops {
 
         // Now unpack each bracket to find the coefficients we're interested in. This takes quite a lot of work.
 
-        // Start at 1 because depth_index == 0 corresponds to the "bracketed words without brackets", at the very
-        // lowest level - so we can't decompose them into two pieces yet.
-        for (s_size_type depth_index = 1; depth_index < lyndonspec.depth; ++depth_index){
-            for (const auto& lyndon_word : (*this)[depth_index]) {
-                // Record the coefficients of each word in the expansion
-                std::map<std::vector<int64_t>, int64_t> bracket_expansion;
+        // not exact: we don't know precisely how many nontrivial anagram classes there are
+        transforms.reserve(lyndon_anagrams.size());
+        transforms_backward.reserve(lyndon_anagrams.size());
 
-                const auto& first_bracket_expansion = lyndon_word.extra->first_child->extra->expansion;
-                const auto& second_bracket_expansion = lyndon_word.extra->second_child->extra->expansion;
+        transforms.emplace_back();
+        transforms_backward.emplace_back();
 
-                // Iterate over every word in the expansion of the first element of the bracket
-                for (const auto& first_word_coeff : first_bracket_expansion) {
-                    const std::vector<int64_t>& first_word = first_word_coeff.first;
-                    int64_t first_coeff = first_word_coeff.second;
+        for (const auto& depth_class : lyndon_anagrams) {  // important to iterate by increasing depth
+            for (const auto& key_value : depth_class) {
+                const std::multiset<int64_t>& letters = key_value.first;
+                if (letters.size() == 1) {
+                    // The lowest level can't be decomposed into two subwords
+                    continue;
+                }
+                if (transforms.back().size() != 0) {
+                    transforms.emplace_back();
+                    transforms_backward.emplace_back();
+                }
+                auto& transforms_back = transforms.back();
+                auto& transforms_backward_back = transforms_backward.back();
+                for (const auto& lyndon_word : key_value.second) {
+                    // Record the coefficients of each word in the expansion
+                    std::map<std::vector<int64_t>, int64_t> bracket_expansion;
 
-                    // And over every word in the expansion of the second element of the bracket
-                    for (const auto& second_word_coeff : second_bracket_expansion) {
-                        const std::vector<int64_t>& second_word = second_word_coeff.first;
-                        int64_t second_coeff = second_word_coeff.second;
+                    const auto& first_bracket_expansion = lyndon_word->extra->first_child->extra->expansion;
+                    const auto& second_bracket_expansion = lyndon_word->extra->second_child->extra->expansion;
 
-                        // And put them together to get every word in the expansion of the bracket
-                        std::vector<int64_t> first_then_second = detail::concat_vectors(first_word, second_word);
-                        std::vector<int64_t> second_then_first = detail::concat_vectors(second_word, first_word);
+                    // Iterate over every word in the expansion of the first element of the bracket
+                    for (const auto& first_word_coeff : first_bracket_expansion) {
+                        const std::vector<int64_t>& first_word = first_word_coeff.first;
+                        int64_t first_coeff = first_word_coeff.second;
+
+                        // And over every word in the expansion of the second element of the bracket
+                        for (const auto& second_word_coeff : second_bracket_expansion) {
+                            const std::vector<int64_t>& second_word = second_word_coeff.first;
+                            int64_t second_coeff = second_word_coeff.second;
+
+                            // And put them together to get every word in the expansion of the bracket
+                            std::vector<int64_t> first_then_second = detail::concat_vectors(first_word, second_word);
+                            std::vector<int64_t> second_then_first = detail::concat_vectors(second_word, first_word);
 
 
-                        int64_t product = first_coeff * second_coeff;
+                            int64_t product = first_coeff * second_coeff;
 
-                        // If depth_index == lyndonspec.depth - 1 (i.e. it is the final depth) then we only need to
-                        // record the coefficients of Lyndon words. At lower depths we need to record the
-                        // coefficients of non-Lyndon words in case some concatenation on to them becomes a Lyndon
-                        // word at higher depths.
-                        if (depth_index < lyndonspec.depth - 1 ||
-                            lyndon_word.is_lyndon_anagram(first_then_second)) {
-                            bracket_expansion[first_then_second] += product;
-                        }
-                        if (depth_index < lyndonspec.depth - 1 ||
-                            lyndon_word.is_lyndon_anagram(second_then_first)) {
-                            bracket_expansion[second_then_first] -= product;
+                            // At the final depth we only need to
+                            // record the coefficients of Lyndon words. At lower depths we need to record the
+                            // coefficients of non-Lyndon words in case some concatenation on to them becomes a Lyndon
+                            // word at higher depths.
+                            if (static_cast<s_size_type>(letters.size()) < lyndonspec.depth ||
+                                lyndon_word->is_lyndon_anagram(first_then_second)) {
+                                bracket_expansion[first_then_second] += product;
+                            }
+                            if (static_cast<s_size_type>(letters.size()) < lyndonspec.depth ||
+                                lyndon_word->is_lyndon_anagram(second_then_first)) {
+                                bracket_expansion[second_then_first] -= product;
+                            }
                         }
                     }
-                }
 
-                // Record the transformations we're interested in
-                auto end = lyndon_word.extra->anagram_class->end();
-                for (const auto& word_coeff : bracket_expansion) {
-                    const std::vector<int64_t>& word = word_coeff.first;
-                    int64_t coeff = word_coeff.second;
+                    // Record the transformations we're interested in
+                    auto end = lyndon_word->extra->anagram_class->end();
+                    for (const auto& word_coeff : bracket_expansion) {
+                        const std::vector<int64_t>& word = word_coeff.first;
+                        int64_t coeff = word_coeff.second;
 
-                    // Filter out non-Lyndon words. (If depth_index == lyndonspec.depth - 1 then we've essentially
-                    // already done this above so the if statement should always be true, so we check that
-                    // preferentially as it's probably faster to check. Probably - I know I know I should time it
-                    // but it's not that big a deal either way...)
-                    auto ptr_to_word = std::lower_bound(lyndon_word.extra->anagram_limit, end, word,
-                                                        detail::compare_words);
-                    if (ptr_to_word != end) {
-                        if (depth_index == lyndonspec.depth - 1 || (*ptr_to_word)->extra->word == word) {
-                            transforms.emplace_back(lyndon_word.compressed_index,
-                                                    (*ptr_to_word)->compressed_index,
-                                                    coeff);
-                            transforms_backward.emplace_back(lyndon_word.tensor_algebra_index,
-                                                             (*ptr_to_word)->tensor_algebra_index,
+                        // Filter out non-Lyndon words. (If letters.size() == lyndonspec.depth then we've essentially
+                        // already done this above so the if statement should always be true, so we check that
+                        // preferentially as it's probably faster to check. Probably - I know I know I should time it
+                        // but it's not that big a deal either way...)
+                        auto ptr_to_word = std::lower_bound(lyndon_word->extra->anagram_limit, end, word,
+                                                            detail::compare_words);
+                        if (ptr_to_word != end) {
+                            if (static_cast<s_size_type>(letters.size()) == lyndonspec.depth ||
+                                (*ptr_to_word)->extra->word == word) {
+                                transforms_back.emplace_back(lyndon_word->compressed_index,
+                                                             (*ptr_to_word)->compressed_index,
                                                              coeff);
+                                transforms_backward_back.emplace_back(lyndon_word->tensor_algebra_index,
+                                                                      (*ptr_to_word)->tensor_algebra_index,
+                                                                      coeff);
+                            }
                         }
                     }
-                }
 
-                // If depth_index == lyndonspec.depth - 1 then we don't need to record what we've found
-                if (depth_index < lyndonspec.depth - 1) {
-                    lyndon_word.extra->expansion = std::move(bracket_expansion);
+                    // At the final depth then we don't need to record what we've found
+                    if (static_cast<s_size_type>(letters.size()) < lyndonspec.depth) {
+                        lyndon_word->extra->expansion = std::move(bracket_expansion);
+                    }
                 }
-            }
-        }
-
-        // Delete everything we don't need any more.
-        for (auto& depth_class : *this) {
-            for (auto& lyndon_word : depth_class) {
-                lyndon_word.extra = nullptr;
             }
         }
     }
@@ -339,35 +357,13 @@ namespace signatory { namespace fla_ops {
     }
 
     torch::Tensor compress(const LyndonWords& lyndon_words, torch::Tensor input, const misc::SigSpec& sigspec) {
-        torch::Tensor compressed;
-        if (sigspec.stream) {
-            compressed = torch::empty({sigspec.output_stream_size,
-                                       lyndon_words.amount,
-                                       sigspec.batch_size},
-                                      sigspec.opts);
-        }
-        else {
-            compressed = torch::empty({lyndon_words.amount,
-                                       sigspec.batch_size},
-                                      sigspec.opts);
-        }
-
-        // Extract terms corresponding to Lyndon words
-        // This does mean that we just did a whole bunch of computation that isn't actually used in the output. We
-        // don't really have good ways to compute logsignatures. Even the Baker-Campbell-Hausdoff formula is
-        // expensive, and not obviously better than what we do.
-        // It also means that we're holding on to a lot of memory until the backward pass.
+        torch::Tensor indices = torch::empty({lyndon_words.amount}, sigspec.opts.dtype(torch::kInt64));
         for (s_size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index){
             for (auto& lyndon_word : lyndon_words[depth_index]) {
-                compressed.narrow(/*dim=*/sigspec.output_channel_dim,
-                                  /*start=*/lyndon_word.compressed_index,
-                                  /*length=*/1).copy_(input.narrow(/*dim=*/sigspec.output_channel_dim,
-                                                                   /*start=*/lyndon_word.tensor_algebra_index,
-                                                                   /*length=*/1)
-                                                      );
+                indices[lyndon_word.compressed_index] = lyndon_word.tensor_algebra_index;
             }
         }
-        return compressed;
+        return torch::index_select(input, /*dim=*/channel_dim, /*index=*/indices);
     }
 
     torch::Tensor compress_backward(torch::Tensor grad_compressed, const LyndonWords& lyndon_words,
@@ -375,25 +371,25 @@ namespace signatory { namespace fla_ops {
         torch::Tensor grad_expanded;
         if (sigspec.stream) {
             grad_expanded = torch::zeros({sigspec.output_stream_size,
-                                         sigspec.output_channels,
-                                         sigspec.batch_size},
-                                        sigspec.opts);
+                                          sigspec.batch_size,
+                                          sigspec.output_channels},
+                                         sigspec.opts);
         }
         else {
-            grad_expanded = torch::zeros({sigspec.output_channels,
-                                         sigspec.batch_size},
-                                        sigspec.opts);
+            grad_expanded = torch::zeros({sigspec.batch_size,
+                                          sigspec.output_channels},
+                                         sigspec.opts);
         }
 
         for (s_size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index){
             for (auto& lyndon_word: lyndon_words[depth_index]) {
-                grad_expanded.narrow(/*dim=*/sigspec.output_channel_dim,
+                grad_expanded.narrow(/*dim=*/channel_dim,
                                      /*start=*/lyndon_word.tensor_algebra_index,
                                      /*length=*/1).copy_(
-                                           grad_compressed.narrow(/*dim=*/sigspec.output_channel_dim,
+                                           grad_compressed.narrow(/*dim=*/channel_dim,
                                                                   /*start=*/lyndon_word.compressed_index,
-                                                                  /*length=*/1)
-                                                         );
+                                                                  /*length=*/1),
+                                                         /*non_blocking=*/true);
             }
         }
         return grad_expanded;

@@ -19,6 +19,7 @@ iisignature.sigbackprop, iisignature.logsigbackprop all except more or less the 
 """
 
 import collections as co
+import datetime
 import iisignature
 import random
 import signatory
@@ -27,7 +28,7 @@ import torch
 import unittest
 import warnings
 
-import compatability as compat
+import compatibility as compat
 
 
 with_grad = object()
@@ -69,7 +70,7 @@ class Config(object):
     call these functions in an appropriate, comparable, manner.
     """
 
-    def __init__(self, mode, logsignature_class, stream, size, depth, prep, basepoint, requires_grad, device):
+    def __init__(self, mode, logsignature_class, stream, size, depth, prep, basepoint, requires_grad, device, rep):
         self.signature_or_logsignature = None
         if mode is expand:
             self.signatory_mode = "expand"
@@ -103,6 +104,7 @@ class Config(object):
         self.depth = depth
         self.prep = prep
         self.basepoint_size = size[0], size[2]
+        self.rep = rep
 
         if basepoint is with_grad:
             basepoint = torch.rand(self.basepoint_size, requires_grad=True, dtype=torch.double, device=device)
@@ -197,14 +199,15 @@ class Config(object):
             raise RuntimeError("Calling logsignature when already called signature")
         self.signature_or_logsignature = False
 
-    def signature(self):
+    def signature(self, store=True):
         """Calls signatory.signature"""
         self._using_signature()
         if random.choice([True, False]):
             signatory_out = signatory.signature(self.path, self.depth, self.stream, self.basepoint)
         else:
             signatory_out = signatory.Signature(self.depth, self.stream, self.basepoint)(self.path)
-        self.signatory_out = signatory_out
+        if store:
+            self.signatory_out = signatory_out
         return signatory_out
 
     def signature_backward(self, grad=None):
@@ -251,7 +254,7 @@ class Config(object):
         self.iisignature_grad = iisignature_grad
         return iisignature_grad
 
-    def logsignature(self):
+    def logsignature(self, store=True):
         """Calls signatory.logsignature"""
         self._using_logsignature()
         if self.logsignature_class:
@@ -260,7 +263,8 @@ class Config(object):
         else:
             signatory_out = signatory.logsignature(self.path, self.depth, self.stream, self.basepoint,
                                                    self.signatory_mode)
-        self.signatory_out = signatory_out
+        if store:
+            self.signatory_out = signatory_out
         return signatory_out
 
     def logsignature_backward(self, grad=None):
@@ -321,10 +325,11 @@ class Config(object):
                      "depth={depth}\n"
                      "basepoint={basepoint}\n"
                      "device={device}\n"
-                     "logsignature_class={logsignature_class}"
+                     "logsignature_class={logsignature_class}\n"
+                     "rep={rep}"
                      .format(mode=self.signatory_mode, stream=self.stream, size=self.size,
                              requires_grad=self.path.requires_grad, depth=self.depth, basepoint=self.basepoint,
-                             device=self.device, logsignature_class=self.logsignature_class))
+                             device=self.device, logsignature_class=self.logsignature_class, rep=self.rep))
         for key, value in kwargs.items():
             returnval += '\n{key}={value}'.format(key=key, value=value)
 
@@ -367,7 +372,7 @@ class ConfigIter(object):
     def __init__(self,
                  device=('cpu', 'cuda'),
                  logsignature_class=(True, False),
-                 stream=(True, False),
+                 stream=(False, True),
                  basepoint=None,
                  N=(1, 2, 3, 10),        # |
                  L=(2, 3, 4, 10),        # | what sizes to iterate over: (N[i], L[j], C[k]) for all i, j, k.
@@ -375,7 +380,8 @@ class ConfigIter(object):
                  depth=(1, 2, 3, 4, 6),  # what depths to iterate over
                  size=None,              # what sizes to iterate over; supersedes (N, L, C) is passed
                  mode=None,              # what logsignature modes to operate in, if using logsignatures
-                 requires_grad=False):   # set to True if wanting to do backwards calls
+                 requires_grad=False,    # set to True if wanting to do backwards calls
+                 repeats=1):
 
         if basepoint is None:
             if requires_grad:
@@ -393,6 +399,9 @@ class ConfigIter(object):
 
         if mode[0] is None:
             logsignature_class = (None,)
+
+        if isinstance(device, compat.stringtype):
+            device = (device,)
 
         if 'cuda' in device:
             if not torch.cuda.is_available():
@@ -412,6 +421,7 @@ class ConfigIter(object):
         self.size = size
         self.requires_grad = requires_grad
         self.basepoint = basepoint
+        self.repeats = repeats
 
     def size_iter(self):
         if self.size is not None:
@@ -435,8 +445,9 @@ class ConfigIter(object):
                         for logsignature_class in self.logsignature_class:
                             for stream in self.stream:
                                 for basepoint in self.basepoint:
-                                    yield Config(mode, logsignature_class, stream, size, depth, prepare, basepoint,
-                                                 self.requires_grad, device)
+                                    for rep in range(self.repeats):
+                                        yield Config(mode, logsignature_class, stream, size, depth, prepare, basepoint,
+                                                     self.requires_grad, device, rep)
 
     @staticmethod
     @compat.lru_cache(maxsize=1)
@@ -444,10 +455,12 @@ class ConfigIter(object):
         return iisignature.prepare(channels, depth)
 
 
-class TimedTestCase(unittest.TestCase):
-    """A test case which times how long it takes."""
+class EnhancedTestCase(unittest.TestCase):
+    """An enhanced test case."""
     
     def setUp(self):
+        if hasattr(unittest, 'print_tests') and unittest.print_tests:
+            print("Starting {} at {}".format(self.id(), datetime.datetime.now()))
         self.start_time = time.time()
 
     def tearDown(self):

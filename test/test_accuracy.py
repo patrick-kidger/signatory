@@ -21,7 +21,7 @@ import compatibility as compat
 import utils_testing as utils
 
 
-class TestSignatureAccuracy(utils.TimedTestCase):
+class TestSignatureAccuracy(utils.EnhancedTestCase):
     def test_forward(self):
         for c in utils.ConfigIter():
             signatory_out = c.signature()
@@ -43,7 +43,7 @@ class TestSignatureAccuracy(utils.TimedTestCase):
                 self.fail(c.diff_fail(signatory_grad=signatory_grad, iisignature_grad=iisignature_grad))
 
 
-class TestLogSignatureAccuracy(utils.TimedTestCase):
+class TestLogSignatureAccuracy(utils.EnhancedTestCase):
     def test_forward(self):
         for c in utils.ConfigIter(mode=(utils.expand, utils.brackets),  # Can't compare mode="words" against iisignature
                                                                         # because it doesn't support that.

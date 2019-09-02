@@ -29,7 +29,8 @@ namespace signatory {
     std::vector<py::object> lyndon_brackets(int64_t channels, int64_t depth);
 
     // See signatory.utility.lyndon_words_to_basis_transform for documentation
-    std::vector<std::tuple<int64_t, int64_t, int64_t>> lyndon_words_to_basis_transform(int64_t channels, int64_t depth);
+    std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>> lyndon_words_to_basis_transform(int64_t channels,
+                                                                                                    int64_t depth);
 }  // namespace signatory
 
 #endif //SIGNATORY_LYNDON_HPP

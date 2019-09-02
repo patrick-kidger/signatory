@@ -36,6 +36,15 @@ namespace signatory {
     using s_size_type = std::make_signed<std::vector<torch::Tensor>::size_type>::type;
     using u_size_type = std::make_unsigned<s_size_type>::type;
 
+    // For clarity about which dimension we're slicing over.
+    // Done negatively so that it works even when the stream dimension isn't present
+    // (All tensors we consider are of shape either (stream, batch, channel) or (batch, channel).)
+    // Note that these do not define the order of the dimensions. Other pieces of code (in particular torch::zeros,
+    // torch::empty and torch::Tensor::view) will implicitly rely on the order of dimensions
+    constexpr auto stream_dim = -3;
+    constexpr auto batch_dim = -2;
+    constexpr auto channel_dim = -1;
+
     // See signatory.signature_channels for documentation
     int64_t signature_channels(int64_t input_channels, int64_t depth);
 
@@ -59,7 +68,6 @@ namespace signatory {
             int64_t batch_size;
             int64_t output_stream_size;
             int64_t output_channels;
-            int64_t output_channel_dim{-2};  // always -2 but provided here for clarity
             int64_t n_output_dims;
             torch::Tensor reciprocals;
             bool stream;
@@ -67,10 +75,9 @@ namespace signatory {
         };
 
         // Argument 'in' is assumed to be a tensor for which one dimension has size equal to sigspec.output_channels
-        // It is sliced up along that dimension, specified by 'dim', and the resulting tensors placed into 'out'.
+        // It is sliced up along that dimension, and the resulting tensors placed into 'out'.
         // Each resulting tensor corresponds to one of the (tensor, not scalar) terms in the signature.
-        inline void slice_by_term(torch::Tensor in, std::vector<torch::Tensor>& out, int64_t dim,
-                                  const SigSpec& sigspec);
+        inline void slice_by_term(torch::Tensor in, std::vector<torch::Tensor>& out, const SigSpec& sigspec);
 
         // Argument 'in' is assumed to be a tensor for which its first dimension corresponds to the stream dimension.
         // Its slices along a particular index of that dimension are put in 'out'.
@@ -87,10 +94,10 @@ namespace signatory {
 
         // Retains information needed for the backwards pass.
         struct BackwardsInfo{
-            BackwardsInfo(SigSpec&& sigspec, std::vector<torch::Tensor>&& out_vector, torch::Tensor out,
-                          torch::Tensor path_increments);
+            BackwardsInfo(SigSpec&& sigspec_, const std::vector<torch::Tensor>& out_vector_, torch::Tensor out_,
+                          torch::Tensor path_increments_);
 
-            void set_logsignature_data(std::vector<torch::Tensor>&& signature_vector_,
+            void set_logsignature_data(const std::vector<torch::Tensor>& signature_vector_,
                                        py::object lyndon_info_capsule_,
                                        LogSignatureMode mode_,
                                        int64_t logsignature_channels_);

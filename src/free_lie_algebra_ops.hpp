@@ -62,8 +62,8 @@ namespace signatory { namespace fla_ops {
          * coefficients of the Lyndon basis.
          * The transforms are returned in the transforms argument.
          */
-        void to_lyndon_basis(std::vector<std::tuple<int64_t, int64_t, int64_t>>& transforms,
-                             std::vector <std::tuple<int64_t, int64_t, int64_t>>& transforms_backward);
+        void to_lyndon_basis(std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>>& transforms,
+                             std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>>& transforms_backward);
         /* Deletes the ExtraLyndonInformation associated with each word, if it is present. This is to reclaim memory
          * when we know we don't need it any more.
          */

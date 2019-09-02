@@ -48,7 +48,7 @@ class _LogSignatureFunction(autograd.Function):
         return backend.backward(ctx, grad_result, _impl.logsignature_backward) + (None, None)
 
 
-def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
+def logsignature(path, depth, stream=False, basepoint=False, mode="words"):
     # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], str) -> torch.Tensor
     """Applies the logsignature transform to a stream of data.
 
@@ -67,11 +67,11 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
         basepoint (bool or :class:`torch.Tensor`, optional): as :func:`signatory.signature`.
 
         mode (str, optional): How the output should be presented. Valid values are :attr:`"expand"`, :attr:`"brackets"`,
-            or :attr:`"words"`. Precisely what each of these options mean is described in the "Returns" section below.
-            As a rule of thumb: use :attr:`"words"` for new projects (as it is the fastest), and use :attr:`"brackets"`
-            for compatibility with other projects which do not provide equivalent functionality to :attr:`"words"`.
-            (Such as `iisignature <https://github.com/bottler/iisignature>`__). The mode :attr:`"expand"` is mostly only
-            interesting for mathematicians.
+            or :attr:`"words"`. Defaults to `"words"`. Precisely what each of these options mean is described in the
+            "Returns" section below. As a rule of thumb: use :attr:`"words"` for new projects (as it is the fastest),
+            and use :attr:`"brackets"` for compatibility with other projects which do not provide equivalent
+            functionality to :attr:`"words"`. (Such as `iisignature <https://github.com/bottler/iisignature>`__). The
+            mode :attr:`"expand"` is mostly only interesting for mathematicians.
 
     Returns:
         A :class:`torch.Tensor`. If :attr:`mode == "expand"` then it will be of the same shape as the returned tensor
@@ -104,7 +104,16 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
         and then ordering each length class lexicographically.
     """
     # noinspection PyUnresolvedReferences
-    return _LogSignatureFunction.apply(path, depth, stream, basepoint, mode, None)
+    result = _LogSignatureFunction.apply(path, depth, stream, basepoint, mode, None)
+
+    # TODO: remove when 24413 is fixed
+    # We have to do the transpose in the Python side to avoid a PyTorch bug.
+    # https://github.com/pytorch/pytorch/issues/24413
+    # This call has to be outside the autograd.Function.apply
+    if stream:
+        result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere and we
+                                         # don't want to change it.
+    return result
 
 
 class LogSignature(nn.Module):
@@ -127,7 +136,7 @@ class LogSignature(nn.Module):
     Called with a single argument :attr:`path` of type :class:`torch.Tensor`.
     """
 
-    def __init__(self, depth, stream=False, basepoint=False, mode="brackets", **kwargs):
+    def __init__(self, depth, stream=False, basepoint=False, mode="words", **kwargs):
         # type: (int, bool, Union[bool, torch.Tensor], str, **Any) -> None
         super(LogSignature, self).__init__(**kwargs)
         self.depth = depth
@@ -148,7 +157,16 @@ class LogSignature(nn.Module):
         lyndon_info = self.lyndon_info_cache(path.size(-1), self.depth, self.mode)
         # don't call logsignature itself because that (deliberately) doesn't expose a lyndon_info argument.
         # noinspection PyProtectedMember, PyUnresolvedReferences
-        return _LogSignatureFunction.apply(path, self.depth, self.stream, self.basepoint, self.mode, lyndon_info)
+        result = _LogSignatureFunction.apply(path, self.depth, self.stream, self.basepoint, self.mode, lyndon_info)
+
+        # TODO: remove when 24413 is fixed
+        # We have to do the transpose in the Python side to avoid a PyTorch bug.
+        # https://github.com/pytorch/pytorch/issues/24413
+        # This call has to be outside the autograd.Function.apply
+        if self.stream:
+            result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere
+                                             # and we don't want to change it.
+        return result
 
     def extra_repr(self):
         return ('depth={depth}, stream={stream}, basepoint={basepoint}, mode{mode}'

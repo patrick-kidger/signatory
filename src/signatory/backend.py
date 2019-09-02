@@ -45,11 +45,11 @@ def backward(ctx, grad_result, fn_backward):
     # of the backwards calculation be incorrect!) The reason we don't use the tensor itself is because another
     # handle to the same information is already saved in ctx.backwards_info.
     _ = ctx.saved_tensors
-    # Actually the check doesn't work at the moment: https://github.com/pytorch/pytorch/issues/24413
 
     grad_path, grad_basepoint_value = fn_backward(grad_result, ctx.backwards_info)
     if not isinstance(ctx.basepoint, torch.Tensor):
         grad_basepoint_value = None
+
     return grad_path, None, None, grad_basepoint_value
 
 

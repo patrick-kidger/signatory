@@ -12,19 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
-"""Not providing tests that we test against; this module provides speed benchmarks against esig and iisignature.
-(It just happens to fit most naturally in with the tests.)
-"""
+"""This module provides speed benchmarks against esig and iisignature. Can be called separately, as well as being part
+of some tests."""
 
 
-import collections as co
 import esig.tosig
 import iisignature
+import math
 import signatory
-import time
+import timeit
 import torch
 
-import compatibility as compat
+try:
+    # Being run directly
+    from . import compatibility as compat
+except ImportError:
+    # Being run via tests
+    import compatibility as compat
 
 
 @compat.lru_cache(maxsize=None)
@@ -32,180 +36,279 @@ def prepare(channels, depth):
     return iisignature.prepare(channels, depth)
 
 
-def esig_signature_forward(path, depth):
-    path = path.detach().numpy()
-
-    start = time.time()
-    for batch_elem in path:
-        result = esig.tosig.stream2sig(batch_elem, depth)
-    if len(result):
-        return time.time() - start
-    else:
-        # esig doesn't support larger depths and just results an empty array
+def esig_signature_forward(size, depth, repeat, number):
+    path = torch.rand(size, dtype=torch.float).numpy()
+    if not len(esig.tosig.stream2sig(path[0], depth)):
+        # esig doesn't support larger depths and just returns an empty array
         #
         # and also spams stdout complaining
-        return 99999999
+        return [math.inf]
+
+    def stmt():
+        for batch_elem in path:
+            esig.tosig.stream2sig(batch_elem, depth)
+
+    stmt()  # warm up
+
+    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
 
 
-def esig_logsignature_forward(path, depth):
-    path = path.detach().numpy()
-    start = time.time()
-    for batch_elem in path:
-        esig.tosig.stream2logsig(batch_elem, depth)
-    return time.time() - start
+def esig_logsignature_forward(size, depth, repeat, number):
+    path = torch.rand(size, dtype=torch.float).numpy()
+    if not len(esig.tosig.stream2logsig(path[0], depth)):
+        # esig doesn't support larger depths and just returns an empty array
+        #
+        # and also spams stdout complaining
+        return [math.inf]
+
+    def stmt():
+        for batch_elem in path:
+            esig.tosig.stream2logsig(batch_elem, depth)
+
+    stmt()  # warm up
+
+    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
 
 
-def esig_signature_backward(path, depth):
+def esig_signature_backward(size, depth, repeat, number):
     # esig doesn't provide this operation.
-    return 99999999
+    return [math.inf]
 
 
-def esig_logsignature_backward(path, depth):
+def esig_logsignature_backward(size, depth, repeat, number):
     # esig doesn't provide this operation.
-    return 99999999
+    return [math.inf]
 
 
-esig_fns = {'signature_forward': esig_signature_forward,
-            'logsignature_forward': esig_logsignature_forward,
-            'signature_backward': esig_signature_backward,
-            'logsignature_backward': esig_logsignature_backward}
+def iisignature_signature_forward(size, depth, repeat, number, stream=False):
+    path = torch.rand(size, dtype=torch.float).numpy()
+
+    if stream:
+        def stmt():
+            iisignature.sig(path, depth, 2)
+    else:
+        def stmt():
+            iisignature.sig(path, depth, 0)
+
+    stmt()  # warm up
+
+    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
 
 
-def iisignature_signature_forward(path, depth):
-    path = path.detach()
-    start = time.time()
-    iisignature.sig(path, depth)
-    return time.time() - start
+def iisignature_logsignature_forward(size, depth, repeat, number):
+    path = torch.rand(size, dtype=torch.float).numpy()
+    prep = prepare(path.shape[-1], depth)
+
+    def stmt():
+        iisignature.logsig(path, prep)
+
+    stmt()  # warm up
+
+    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
 
 
-def iisignature_logsignature_forward(path, depth):
-    path = path.detach()
-    prep = prepare(path.size(-1), depth)
-    start = time.time()
-    iisignature.logsig(path, prep)
-    return time.time() - start
-
-
-def iisignature_signature_backward(path, depth):
-    path = path.detach()
+def iisignature_signature_backward(size, depth, repeat, number):
+    path = torch.rand(size, dtype=torch.float).numpy()
     signature = iisignature.sig(path, depth)
-    grad = torch.rand_like(torch.tensor(signature))
-    start = time.time()
-    iisignature.sigbackprop(grad, path, depth)
-    return time.time() - start
+    grad = torch.rand_like(torch.tensor(signature, dtype=torch.float)).numpy()
+
+    def stmt():
+        iisignature.sigbackprop(grad, path, depth)
+
+    stmt()  # warm up
+
+    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
 
 
-def iisignature_logsignature_backward(path, depth):
-    path = path.detach()
-    prep = prepare(path.size(-1), depth)
+def iisignature_logsignature_backward(size, depth, repeat, number):
+    path = torch.rand(size, dtype=torch.float).numpy()
+    prep = prepare(path.shape[-1], depth)
     logsignature = iisignature.logsig(path, prep)
-    grad = torch.rand_like(torch.tensor(logsignature))
-    start = time.time()
-    iisignature.logsigbackprop(grad, path, prep)
-    return time.time() - start
+    grad = torch.rand_like(torch.tensor(logsignature, dtype=torch.float)).numpy()
+
+    def stmt():
+        iisignature.logsigbackprop(grad, path, prep)
+
+    stmt()  # warm up
+
+    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
 
 
-iisignature_fns = {'signature_forward': iisignature_signature_forward,
-                   'logsignature_forward': iisignature_logsignature_forward,
-                   'signature_backward': iisignature_signature_backward,
-                   'logsignature_backward': iisignature_logsignature_backward}
+def signatory_signature_forward(size, depth, repeat, number, stream=False, gpu=False):
+    if gpu:
+        path = torch.rand(size, dtype=torch.float, device='cuda')
+    else:
+        path = torch.rand(size, dtype=torch.float)
+
+    if gpu:
+        def stmt():
+            signatory.signature(path, depth, stream=stream)
+            torch.cuda.synchronize()
+    else:
+        def stmt():
+            signatory.signature(path, depth, stream=stream)
+
+    stmt()  # warm up
+
+    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
 
 
-def signatory_signature_forward(path, depth):
-    start = time.time()
-    signatory.signature(path, depth)
-    return time.time() - start
-
-
-def signatory_logsignature_forward(path, depth):
+def signatory_logsignature_forward(size, depth, repeat, number, gpu=False, mode='words', stream=False):
+    if gpu:
+        path = torch.rand(size, dtype=torch.float, device='cuda')
+    else:
+        path = torch.rand(size, dtype=torch.float)
     # ensure that we're doing a fair test by caching if we can
     # (equivalent to the call to 'prepare' in iisignature)
-    signatory.LogSignature(depth)(path)
-    start = time.time()
-    signatory.LogSignature(depth)(path)
-    return time.time() - start
+    signatory.LogSignature(depth, mode=mode, stream=stream)(path)
+
+    if gpu:
+        def stmt():
+            signatory.LogSignature(depth, mode=mode, stream=stream)(path)
+            torch.cuda.synchronize()
+    else:
+        def stmt():
+            signatory.LogSignature(depth, mode=mode, stream=stream)(path)
+
+    stmt()  # warm up
+
+    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
 
 
-def signatory_signature_backward(path, depth):
+def signatory_signature_backward(size, depth, repeat, number, gpu=False):
+    if gpu:
+        path = torch.rand(size, dtype=torch.float, device='cuda', requires_grad=True)
+    else:
+        path = torch.rand(size, dtype=torch.float, requires_grad=True)
     signature = signatory.signature(path, depth)
     grad = torch.rand_like(signature)
-    start = time.time()
-    signature.backward(grad)
-    return time.time() - start
+
+    if gpu:
+        def stmt():
+            signature.backward(grad, retain_graph=True)
+            torch.cuda.synchronize()
+    else:
+        def stmt():
+            signature.backward(grad, retain_graph=True)
+
+    stmt()  # warm up
+
+    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
 
 
-def signatory_logsignature_backward(path, depth):
-    logsignature = signatory.LogSignature(depth)(path)
+def signatory_logsignature_backward(size, depth, repeat, number, gpu=False, mode='words', stream=False):
+    if gpu:
+        path = torch.rand(size, dtype=torch.float, device='cuda', requires_grad=True)
+    else:
+        path = torch.rand(size, dtype=torch.float, requires_grad=True)
+    logsignature = signatory.LogSignature(depth, mode=mode, stream=stream)(path)
     grad = torch.rand_like(logsignature)
-    start = time.time()
-    logsignature.backward(grad)
-    return time.time() - start
+
+    if gpu:
+        def stmt():
+            logsignature.backward(grad, retain_graph=True)
+            torch.cuda.synchronize()
+    else:
+        def stmt():
+            logsignature.backward(grad, retain_graph=True)
+
+    stmt()  # warm up
+
+    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
 
 
-def signatory_signature_forward_gpu(path, depth):
-    return signatory_signature_forward(path.to('cuda'), depth)
+def signatory_signature_forward_gpu(size, depth, repeat, number):
+    return signatory_signature_forward(size, depth, repeat, number, gpu=True)
 
 
-def signatory_logsignature_forward_gpu(path, depth):
-    return signatory_logsignature_forward(path.to('cuda'), depth)
+def signatory_logsignature_forward_gpu(size, depth, repeat, number):
+    return signatory_logsignature_forward(size, depth, repeat, number, gpu=True)
 
 
-def signatory_signature_backward_gpu(path, depth):
-    return signatory_signature_backward(path.to('cuda'), depth)
+def signatory_signature_backward_gpu(size, depth, repeat, number):
+    return signatory_signature_backward(size, depth, repeat, number, gpu=True)
 
 
-def signatory_logsignature_backward_gpu(path, depth):
-    return signatory_logsignature_backward(path.to('cuda'), depth)
+def signatory_logsignature_backward_gpu(size, depth, repeat, number):
+    return signatory_logsignature_backward(size, depth, repeat, number, gpu=True)
 
 
-signatory_fns = {'signature_forward': signatory_signature_forward,
-                 'logsignature_forward': signatory_logsignature_forward,
-                 'signature_backward': signatory_signature_backward,
-                 'logsignature_backward': signatory_logsignature_backward,
-                 'signature_forward_gpu': signatory_signature_forward_gpu,
-                 'logsignature_forward_gpu': signatory_logsignature_forward_gpu,
-                 'signature_backward_gpu': signatory_signature_backward_gpu,
-                 'logsignature_backward_gpu': signatory_logsignature_backward_gpu}
+signature_forward_fns = {'esig': esig_signature_forward,
+                         'iisignature': iisignature_signature_forward,
+                         'signatory': signatory_signature_forward,
+                         'signatory_gpu': signatory_signature_forward_gpu}
+
+signature_backward_fns = {'esig': esig_signature_backward,
+                          'iisignature': iisignature_signature_backward,
+                          'signatory': signatory_signature_backward,
+                          'signatory_gpu': signatory_signature_backward_gpu}
+
+logsignature_forward_fns = {'esig': esig_logsignature_forward,
+                            'iisignature': iisignature_logsignature_forward,
+                            'signatory': signatory_logsignature_forward,
+                            'signatory_gpu': signatory_logsignature_forward_gpu}
+
+logsignature_backward_fns = {'esig': esig_logsignature_backward,
+                             'iisignature': iisignature_logsignature_backward,
+                             'signatory': signatory_logsignature_backward,
+                             'signatory_gpu': signatory_logsignature_backward_gpu}
+
+signature_fns = {'forward': signature_forward_fns, 'backward': signature_backward_fns}
+
+logsignature_fns = {'forward': logsignature_forward_fns, 'backward': logsignature_backward_fns}
+
+all_fns = {'signature': signature_fns, 'logsignature': logsignature_fns}
 
 
-all_library_fns = {'esig': esig_fns, 'iisignature': iisignature_fns, 'signatory': signatory_fns}
+class Result:
+    def __init__(self, results):
+        self.results = results
+        self.min = min(results)
+
+    def __repr__(self):
+        if self.min is math.inf:
+            return '-'
+        else:
+            return "{:.3}".format(self.min)
 
 
-def run_tests():
-    size = (64, 16, 8)
-    depths = (3, 6)
-    repeats = 20
+def run_test(fn_dict, size, depth, repeat, number, print_name, skip=lambda library_name: False, **kwargs):
+    library_results = {}
+    for library_name, library_fn in fn_dict.items():
+        if skip(library_name):
+            continue
+        if print_name:
+            print(*print_name, library_name)
+        library_results[library_name] = Result(library_fn(size, depth, repeat, number, **kwargs))
+    return library_results
 
-    results = co.defaultdict(lambda: co.defaultdict(dict))
-    path = torch.rand(size, dtype=torch.double, requires_grad=True)
-    for library_name, library_fns in all_library_fns.items():
-        for library_fn_name, library_fn in library_fns.items():
+
+def run_tests(size=(16, 32, 8), depths=(4, 6), repeat=100, number=1):
+    results = {}
+    for fn_name, fns in all_fns.items():
+        fn_results = results[fn_name] = {}
+        for direction_name, directions in fns.items():
+            direction_results = fn_results[direction_name] = {}
             for depth in depths:
-                print(library_name, library_fn_name, depth)
-                results[library_name][library_fn_name][depth] = [library_fn(path, depth) for _ in range(repeats)]
-
+                direction_results[depth] = run_test(directions, size, depth, repeat, number,
+                                                    print_name=(fn_name, direction_name, depth))
     return results
 
 
-def process_results(results):
-    min_results = co.defaultdict(lambda: co.defaultdict(dict))
-    for library_name, results_by_library in results.items():
-        for library_fn_name, results_by_library_fn in results_by_library.items():
-            for depth, results_by_depth in results_by_library_fn.items():
-                min_results[library_name][library_fn_name][depth] = min(results_by_depth)
+def get_ratios(results):
+    ratios = {}
+    for fn_name, fn_results in results.items():
+        fn_ratios = ratios[fn_name] = {}
+        for direction_name, direction_results in fn_results.items():
+            direction_ratios = fn_ratios[direction_name] = {}
+            for depth, depth_results in direction_results.items():
+                depth_ratios = direction_ratios[depth] = {}
 
-    ratios = co.defaultdict(dict)
+                esig_results = depth_results['esig']
+                iisignature_results = depth_results['iisignature']
+                signatory_results = depth_results['signatory']
+                signatory_gpu_results = depth_results['signatory_gpu']
 
-    def remove_gpu_str(fn_str):
-        return fn_str.split('_gpu')[0]
-
-    depths = list(list(results.values())[0].values())[0].keys()
-    for signatory_fn_name in signatory_fns.keys():
-        for depth in depths:
-            signatory_time = min_results['signatory'][signatory_fn_name][depth]
-            iisignature_time = min_results['iisignature'][remove_gpu_str(signatory_fn_name)][depth]
-            esig_time = min_results['esig'][remove_gpu_str(signatory_fn_name)][depth]
-
-            ratios[signatory_fn_name][depth] = min(iisignature_time, esig_time) / signatory_time
-
-    return min_results, ratios
+                depth_ratios['cpu'] = min(esig_results.min, iisignature_results.min) / signatory_results.min
+                depth_ratios['gpu'] = min(esig_results.min, iisignature_results.min) / signatory_gpu_results.min
+    return ratios

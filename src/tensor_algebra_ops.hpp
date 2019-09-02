@@ -106,6 +106,7 @@ namespace signatory {
         torch::Scalar log_coefficient_at_depth(s_size_type depth_index, const misc::SigSpec& sigspec);
 
         // Computes the logarithm in the tensor algebra
+        // output_vector is assumed to be initialised with a copy of input_vector.
         void compute_log(std::vector<torch::Tensor>& output_vector,
                          const std::vector<torch::Tensor>& input_vector,
                          const misc::SigSpec& sigspec);
@@ -113,10 +114,7 @@ namespace signatory {
         // Computes the backwards pass through compute_log
         void compute_log_backward(std::vector<torch::Tensor>& grad_output_vector,
                                   std::vector<torch::Tensor>& grad_input_vector,
-                                  std::vector<torch::Tensor>& scratch_vector,
                                   const std::vector<torch::Tensor>& input_vector,
-                                  torch::Tensor scratch,
-                                  torch::Tensor scratch_init,
                                   const misc::SigSpec& sigspec);
     }  // namespace signatory::ta_ops
 }  // namespace signatory
