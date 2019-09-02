@@ -357,35 +357,13 @@ namespace signatory { namespace fla_ops {
     }
 
     torch::Tensor compress(const LyndonWords& lyndon_words, torch::Tensor input, const misc::SigSpec& sigspec) {
-        torch::Tensor compressed;
-        if (sigspec.stream) {
-            compressed = torch::empty({sigspec.output_stream_size,
-                                       sigspec.batch_size,
-                                       lyndon_words.amount},
-                                      sigspec.opts);
-        }
-        else {
-            compressed = torch::empty({sigspec.batch_size,
-                                       lyndon_words.amount},
-                                      sigspec.opts);
-        }
-
-        // Extract terms corresponding to Lyndon words
-        // This does mean that we just did a whole bunch of computation that isn't actually used in the output. We
-        // don't really have good ways to compute logsignatures. Even the Baker-Campbell-Hausdoff formula is
-        // expensive, and not obviously better than what we do.
-        // It also means that we're holding on to a lot of memory until the backward pass.
+        torch::Tensor indices = torch::empty({lyndon_words.amount}, sigspec.opts.dtype(torch::kInt64));
         for (s_size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index){
             for (auto& lyndon_word : lyndon_words[depth_index]) {
-                compressed.narrow(/*dim=*/channel_dim,
-                                  /*start=*/lyndon_word.compressed_index,
-                                  /*length=*/1).copy_(input.narrow(/*dim=*/channel_dim,
-                                                                   /*start=*/lyndon_word.tensor_algebra_index,
-                                                                   /*length=*/1),
-                                                      /*non_blocking=*/true);
+                indices[lyndon_word.compressed_index] = lyndon_word.tensor_algebra_index;
             }
         }
-        return compressed;
+        return torch::index_select(input, /*dim=*/channel_dim, /*index=*/indices);
     }
 
     torch::Tensor compress_backward(torch::Tensor grad_compressed, const LyndonWords& lyndon_words,

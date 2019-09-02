@@ -25,7 +25,6 @@
 #include "free_lie_algebra_ops.hpp"
 #include "logsignature.hpp"
 #include "misc.hpp"
-#include "parallel_for.hpp"
 #include "pycapsule.hpp"
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
@@ -124,24 +123,18 @@ namespace signatory {
         misc::slice_by_term(logsignature, logsignature_vector, sigspec);
 
         if (stream) {
-            misc::parallel_group_for(static_cast<decltype(sigspec.output_stream_size)>(0), sigspec.output_stream_size,
-                                     [&signature_vector, &logsignature_vector, &sigspec]
-                                     (typename std::vector<std::pair<int64_t, int64_t>>::iterator pair_ptr) {
-                                         // allocate vectors for the signature and logsignature by stream index
-                                         std::vector<torch::Tensor> signature_stream_vector;
-                                         std::vector<torch::Tensor> logsignature_stream_vector;
-                                         for (int64_t stream_index = pair_ptr->first;
-                                              stream_index < pair_ptr->second;
-                                              ++stream_index) {
-                                             misc::slice_at_stream(signature_vector, signature_stream_vector,
-                                                                   stream_index);
-                                             misc::slice_at_stream(logsignature_vector, logsignature_stream_vector,
-                                                                   stream_index);
-                                             ta_ops::compute_log(logsignature_stream_vector, signature_stream_vector,
-                                                                 sigspec);
-                                         }
-                                     });
-
+            std::vector<torch::Tensor> signature_stream_vector;
+            std::vector<torch::Tensor> logsignature_stream_vector;
+            for (int64_t stream_index = 0;
+                 stream_index < sigspec.output_stream_size;
+                 ++stream_index) {
+                misc::slice_at_stream(signature_vector, signature_stream_vector,
+                                      stream_index);
+                misc::slice_at_stream(logsignature_vector, logsignature_stream_vector,
+                                      stream_index);
+                ta_ops::compute_log(logsignature_stream_vector, signature_stream_vector,
+                                    sigspec);
+            }
         }
         else {
             ta_ops::compute_log(logsignature_vector, signature_vector, sigspec);
@@ -159,6 +152,11 @@ namespace signatory {
         else if (mode == LogSignatureMode::Brackets){
             logsignature = fla_ops::compress(*lyndon_info->lyndon_words, logsignature, sigspec);
             // Then apply the transforms. We rely on the triangularity property of the Lyndon basis for this to work.
+            bool cuda = logsignature.is_cuda();
+            if (cuda) {
+                logsignature = logsignature.cpu();
+            }
+            // This is essentially solving a sparse linear system... and it's horrendously slow on a GPU.
             for (const auto& transform_class : lyndon_info->transforms) {
                 for (const auto& transform : transform_class) {
                     int64_t source_index = std::get<0>(transform);
@@ -173,38 +171,9 @@ namespace signatory {
                     target.sub_(source, coefficient);
                 }
             }
-//            misc::parallel_chunk_for(lyndon_info->transforms.begin(),
-//                                     lyndon_info->transforms.end(),
-//                                     [logsignature]
-//                                     //
-//                                     // there's types...
-//                                     (typename std::vector<std::vector<typename std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>>::iterator>>::iterator bin_ptr) {
-//                                     // ...and then there's types!
-//                                     //
-//                                     // i.e. std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>*>*
-//                                     //                              \-----------------------------------/
-//                                     //                                            A transform
-//                                     //                  \------------------------------------------------/
-//                                     //                      Transforms grouped by lyndon anagram class
-//                                     //      \--------------------------------------------------------------/
-//                                     //        Bin of multiple transform classes. Summing the sizes of all
-//                                     //           transform classes should give roughly equal bin sizes
-//                                        for (const auto& transform_class_ptr : *bin_ptr) {
-//                                            for (const auto& transform : *transform_class_ptr) {
-//                                                int64_t source_index = std::get<0>(transform);
-//                                                int64_t target_index = std::get<1>(transform);
-//                                                int64_t coefficient = std::get<2>(transform);
-//                                                torch::Tensor source = logsignature.narrow(/*dim=*/channel_dim,
-//                                                                                           /*start=*/source_index,
-//                                                                                           /*length=*/1);
-//                                                torch::Tensor target = logsignature.narrow(/*dim=*/channel_dim,
-//                                                                                           /*start=*/target_index,
-//                                                                                           /*length=*/1);
-//                                                target.sub_(source, coefficient);
-//                                            }
-//                                        }
-//                                     },
-//                                     lyndon_info->transforms.size());
+            if (cuda) {
+                logsignature = logsignature.cuda();
+            }
         }
 
         backwards_info->set_logsignature_data(signature_vector,
@@ -267,6 +236,11 @@ namespace signatory {
              * transformations (which necessarily operate in-place) don't leak out. By doing it this way the memory that
              * we operate on is internal memory that we've claimed, not memory that we've been given in an input.
              */
+            bool cuda = grad_logsignature.is_cuda();
+            if (cuda) {
+                grad_logsignature = grad_logsignature.cpu();
+            }
+            // This is essentially solving a sparse linear system... and it's horrendously slow on a GPU.
             for (const auto& transform_class : lyndon_info->transforms_backward) {
                 for (auto tptr = transform_class.rbegin();
                      tptr != transform_class.rend();
@@ -283,29 +257,9 @@ namespace signatory {
                     grad_source.sub_(grad_target, coefficient);
                 }
             }
-//            misc::parallel_chunk_for(lyndon_info->transforms_backward.begin(),
-//                                     lyndon_info->transforms_backward.end(),
-//                                     [grad_logsignature]
-//                                     (typename std::vector<std::vector<typename std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>>::iterator>>::iterator bin_ptr) {
-//                                      // yuck. See the equivalent point in the forward pass for an explanation
-//                                        for (const auto& transform_class_ptr : *bin_ptr) {
-//                                            for (auto tptr = transform_class_ptr->rbegin();
-//                                                 tptr != transform_class_ptr->rend();
-//                                                 ++tptr)  {
-//                                                int64_t source_index = std::get<0>(*tptr);
-//                                                int64_t target_index = std::get<1>(*tptr);
-//                                                int64_t coefficient = std::get<2>(*tptr);
-//                                                torch::Tensor grad_source = grad_logsignature.narrow(/*dim=*/channel_dim,
-//                                                                                                     /*start=*/source_index,
-//                                                                                                     /*length=*/1);
-//                                                torch::Tensor grad_target = grad_logsignature.narrow(/*dim=*/channel_dim,
-//                                                                                                     /*start=*/target_index,
-//                                                                                                     /*length=*/1);
-//                                                grad_source.sub_(grad_target, coefficient);
-//                                            }
-//                                        }
-//                                     },
-//                                     lyndon_info->transforms_backward.size());
+            if (cuda) {
+                grad_logsignature = grad_logsignature.cuda();
+            }
         }
 
         torch::Tensor grad_signature = torch::zeros_like(grad_logsignature);
@@ -315,32 +269,27 @@ namespace signatory {
         misc::slice_by_term(grad_signature, grad_signature_vector, sigspec);
 
         if (sigspec.stream) {
-            misc::parallel_group_for(static_cast<decltype(sigspec.output_stream_size)>(0), sigspec.output_stream_size,
-                                     [&grad_logsignature_vector, &grad_signature_vector, &signature_vector, &sigspec]
-                                     (typename std::vector<std::pair<int64_t, int64_t>>::iterator pair_ptr) {
-                                        // allocate vectors for the signature and logsignature by stream index
-                                        std::vector<torch::Tensor> grad_logsignature_stream_vector;
-                                        std::vector<torch::Tensor> grad_signature_stream_vector;
-                                        std::vector<torch::Tensor> signature_stream_vector;
-                                        for (int64_t stream_index = pair_ptr->first;
-                                             stream_index < pair_ptr->second;
-                                             ++stream_index) {
-                                            misc::slice_at_stream(grad_logsignature_vector,
-                                                                  grad_logsignature_stream_vector,
-                                                                  stream_index);
-                                            misc::slice_at_stream(grad_signature_vector,
-                                                                  grad_signature_stream_vector,
-                                                                  stream_index);
-                                            misc::slice_at_stream(signature_vector,
-                                                                  signature_stream_vector,
-                                                                  stream_index);
+            std::vector<torch::Tensor> grad_logsignature_stream_vector;
+            std::vector<torch::Tensor> grad_signature_stream_vector;
+            std::vector<torch::Tensor> signature_stream_vector;
+            for (int64_t stream_index = 0;
+                 stream_index < sigspec.output_stream_size;
+                 ++stream_index) {
+                misc::slice_at_stream(grad_logsignature_vector,
+                                      grad_logsignature_stream_vector,
+                                      stream_index);
+                misc::slice_at_stream(grad_signature_vector,
+                                      grad_signature_stream_vector,
+                                      stream_index);
+                misc::slice_at_stream(signature_vector,
+                                      signature_stream_vector,
+                                      stream_index);
 
-                                            ta_ops::compute_log_backward(grad_logsignature_stream_vector,
-                                                                         grad_signature_stream_vector,
-                                                                         signature_stream_vector,
-                                                                         sigspec);
-                                        }
-                                     });
+                ta_ops::compute_log_backward(grad_logsignature_stream_vector,
+                                             grad_signature_stream_vector,
+                                             signature_stream_vector,
+                                             sigspec);
+            }
         }
         else {
             ta_ops::compute_log_backward(grad_logsignature_vector, grad_signature_vector, signature_vector, sigspec);

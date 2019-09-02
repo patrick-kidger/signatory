@@ -24,8 +24,7 @@
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
 
-// TODO: test with/without parallel for
-
+// TODO: try doing the word->brackets by manually computing the inverse and then using torch.sparse.mm?
 // TODO: switch to pytest over unittest; rationalise some tests when we do
 // TODO: add the examples to the tests
 // TODO: check for interrupts

@@ -48,7 +48,7 @@ class _LogSignatureFunction(autograd.Function):
         return backend.backward(ctx, grad_result, _impl.logsignature_backward) + (None, None)
 
 
-def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
+def logsignature(path, depth, stream=False, basepoint=False, mode="words"):
     # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], str) -> torch.Tensor
     """Applies the logsignature transform to a stream of data.
 
@@ -67,11 +67,11 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="brackets"):
         basepoint (bool or :class:`torch.Tensor`, optional): as :func:`signatory.signature`.
 
         mode (str, optional): How the output should be presented. Valid values are :attr:`"expand"`, :attr:`"brackets"`,
-            or :attr:`"words"`. Precisely what each of these options mean is described in the "Returns" section below.
-            As a rule of thumb: use :attr:`"words"` for new projects (as it is the fastest), and use :attr:`"brackets"`
-            for compatibility with other projects which do not provide equivalent functionality to :attr:`"words"`.
-            (Such as `iisignature <https://github.com/bottler/iisignature>`__). The mode :attr:`"expand"` is mostly only
-            interesting for mathematicians.
+            or :attr:`"words"`. Defaults to `"words"`. Precisely what each of these options mean is described in the
+            "Returns" section below. As a rule of thumb: use :attr:`"words"` for new projects (as it is the fastest),
+            and use :attr:`"brackets"` for compatibility with other projects which do not provide equivalent
+            functionality to :attr:`"words"`. (Such as `iisignature <https://github.com/bottler/iisignature>`__). The
+            mode :attr:`"expand"` is mostly only interesting for mathematicians.
 
     Returns:
         A :class:`torch.Tensor`. If :attr:`mode == "expand"` then it will be of the same shape as the returned tensor
