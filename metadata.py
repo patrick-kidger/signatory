@@ -63,8 +63,17 @@ with io.open(os.path.join(here, 'src', project, '__init__.py')) as f:
 with io.open(os.path.join(here, 'README.rst'), 'r', encoding='utf-8') as f:
     readme = f.read()
 
+
+try:
+    # Python 3
+    FailedToOpenError = FileNotFoundError
+except NameError:
+    # Python 2
+    FailedToOpenError = IOError
+
+
 try:
     with io.open(os.path.join(here, 'docs', 'fragments', 'description.rst'), 'r', encoding='utf-8') as f:
         description = f.read()
-except FileNotFoundError:
+except FailedToOpenError:
     description = '< No description when building from source. >'

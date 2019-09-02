@@ -54,7 +54,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Runs various commands for building and testing Signatory.")
     parser.add_argument('-v', '--version', action='version', version=metadata.version)
-    subparsers = parser.add_subparsers(dest='command', required=True, help='Which command to run')
+    subparsers = parser.add_subparsers(dest='command', help='Which command to run')
     install_parser = subparsers.add_parser('install')
     develop_parser = subparsers.add_parser('develop')
     test_parser = subparsers.add_parser('test', parents=[deviceparser])
@@ -82,7 +82,12 @@ def main():
 
     args = parser.parse_args()
 
-    args.cmd(args)
+    # Have to do it this was for Python 2/3 compatability
+    if hasattr(args, 'cmd'):
+        args.cmd(args)
+    else:
+        # No command was specified
+        print("Please enter a command. Use -h to see available commands.")
 
 
 here = os.path.realpath(os.path.dirname(__file__))
@@ -90,10 +95,11 @@ here = os.path.realpath(os.path.dirname(__file__))
 
 def run_commands(*commands):
     """Runs a collection of commands in a shell."""
-    if not isinstance(commands, (tuple, list)):
-        raise ValueError
-    print_commands = ["echo {}".format(command) for command in commands]
-    all_commands = [command_list[i] for i in range(len(commands)) for command_list in (print_commands, commands)]
+    print_commands = ["printf \"%s\n\" \">>> {}\"".format(command) for command in commands]
+    all_commands = []
+    for i in range(len(commands)):
+        all_commands.append(print_commands[i])
+        all_commands.append("{} > /dev/null".format(commands[i]))
     # && should work on both Windows and Linux. Not sure about Macs. Still Unix, so probably works?
     subprocess.run(' && '.join(all_commands), shell=True)
 
@@ -154,9 +160,9 @@ def prepublish(args=()):
     """Runs tests on all supported configurations to check before publishing."""
     # TODO: update to a proper system
     import metadata
+    print("Prepublishing version {}".format(metadata.version))
     run_commands("rm -rf {}".format(os.path.join(here, "dist")))
     genreadme()
-    print("Prepublishing version {}".format(metadata.version))
     run_commands("python {} sdist".format(os.path.join(here, 'setup.py')))
     for pythonv in ['2.7', '3.5', '3.6', '3.7']:
         build_and_test(pythonv, metadata.version)
@@ -164,15 +170,18 @@ def prepublish(args=()):
 
 def build_and_test(pythonv, signatoryv):
     # Kind of fragile but good enough for now
-    run_commands("conda create --prefix='/tmp/signatory-{pythonv} -y python={pythonv}".format(pythonv=pythonv),
+    # Only works through bash due to the 'conda init bash', 'conda activate', "/tmp" lines.
+    run_commands("conda create -p /tmp/signatory-{pythonv} -y python={pythonv}".format(pythonv=pythonv),
+                 ". ~/miniconda3/etc/profile.d/conda.sh",
                  "conda activate /tmp/signatory-{pythonv}".format(pythonv=pythonv),
                  "conda install -y pytorch=1.2.0 -c pytorch",
-                 "pip install dist/signatory-{signatoryv}.tar.gz".format(signatoryv=signatoryv),
+                 "pip install --upgrade pip",
+                 "pip install {here}/dist/signatory-{signatoryv}.tar.gz".format(here=here, signatoryv=signatoryv),
                  "pip install iisignature",
-                 "echo version={pythonv}".format(pythonv=pythonv),
                  "python {} test -f".format(os.path.join(here, "command.py")),
                  "conda deactivate",
-                 "conda env remove -p /tmp/signatory-{pythonv}".format(pythonv=pythonv))
+                 "conda env remove -p /tmp/signatory-{pythonv}".format(pythonv=pythonv),
+                 "conda clean -a -y")
 
     
 def genreadme(args=()):
