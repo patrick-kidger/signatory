@@ -258,7 +258,7 @@ namespace signatory {
                 }
             }
             if (cuda) {
-                grad_logsignature = grad_logsignature.cuda();
+                grad_logsignature = grad_logsignature.to(sigspec.opts);
             }
         }
 
