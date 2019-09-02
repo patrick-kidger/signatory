@@ -24,6 +24,8 @@
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
 
+
+// TODO: add sparse computations
 // TODO: try doing the word->brackets by manually computing the inverse and then using torch.sparse.mm?
 // TODO: switch to pytest over unittest; rationalise some tests when we do
 // TODO: add the examples to the tests
@@ -32,8 +34,7 @@
 // TODO: rename out_* to signature_*
 // TODO: add Python-level handling of (... x stream x channel) format
 // TODO: signature_jacobian, logsignature_jacobian
-// TODO: tensorflow
-// TODO: custom CUDA kernels for all of this would be lovely...
+// TODO: tensorflow?
 // TODO: support torchscript? https://pytorch.org/tutorials/advanced/torch_script_custom_ops.html
 // TODO: concatenating onto an already existing signature. A class that takes data and spits out signatures?
 

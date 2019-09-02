@@ -136,7 +136,7 @@ class LogSignature(nn.Module):
     Called with a single argument :attr:`path` of type :class:`torch.Tensor`.
     """
 
-    def __init__(self, depth, stream=False, basepoint=False, mode="brackets", **kwargs):
+    def __init__(self, depth, stream=False, basepoint=False, mode="words", **kwargs):
         # type: (int, bool, Union[bool, torch.Tensor], str, **Any) -> None
         super(LogSignature, self).__init__(**kwargs)
         self.depth = depth

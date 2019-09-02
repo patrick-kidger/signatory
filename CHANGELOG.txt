@@ -3,6 +3,7 @@
 Should now typically run even faster on typical batch sizes.
 Worked around a major memory leak due to PyTorch bug 25340.
 Worked around a minor issue (backwards operations silently failing if in-place operations are applied to the output of signature or logsignature), which was caused due to PyTorch bug 24413.
+Added speed benchmarks.
 
 1.0.0
 -----

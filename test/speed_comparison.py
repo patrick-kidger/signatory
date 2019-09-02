@@ -283,7 +283,7 @@ def run_test(fn_dict, size, depth, repeat, number, print_name, skip=lambda libra
     return library_results
 
 
-def run_tests(size=(16, 32, 8), depths=(4, 6), repeat=40, number=1):
+def run_tests(size=(16, 32, 8), depths=(4, 6), repeat=100, number=1):
     results = {}
     for fn_name, fns in all_fns.items():
         fn_results = results[fn_name] = {}

@@ -21,7 +21,6 @@ before we actually fail the tests, although warnings will be emitted if we're un
 """
 
 
-import torch
 import warnings
 
 import speed_comparison as speedc
