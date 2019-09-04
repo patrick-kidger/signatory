@@ -174,9 +174,9 @@ namespace signatory {
             }
 
             grad_next.copy_(grad_prev[0]);
-            s_size_type back_index = all_scratches.size();
-            for (s_size_type depth_index = 1; depth_index < sigspec.depth; ++depth_index) {
-                --back_index;
+            for (s_size_type depth_index = 1, back_index = all_scratches.size() - 1;
+                 depth_index < sigspec.depth;
+                 ++depth_index, --back_index) {
                 const std::vector<torch::Tensor>& grad_scratches = all_grad_scratches[back_index];
                 const std::vector<torch::Tensor>& scratches = all_scratches[back_index];
 
@@ -192,46 +192,43 @@ namespace signatory {
                 torch::bmm_out(/*out=*/out,
                                grad_prev_view,
                                next.unsqueeze(channel_dim));
-                //grad_scratch.unsqueeze(channel_dim).baddbmm_(grad_prev_view, next.unsqueeze(channel_dim));
                 grad_next.unsqueeze(channel_dim - 1).baddbmm_(scratch.unsqueeze(channel_dim - 1), grad_prev_view);
 
                 for (s_size_type j = depth_index - 1, k = 0; j >= 1; --j, ++k) {
                     torch::Tensor grad_scratch = grad_scratches[j];
                     torch::Tensor grad_old_scratch = grad_scratches[j - 1];
                     torch::Tensor old_scratch = scratches[j - 1];
-                    torch::Tensor view_grad_scratch = grad_scratch.view({sigspec.batch_size,
+                    torch::Tensor grad_scratch_view = grad_scratch.view({sigspec.batch_size,
                                                                          old_scratch.size(channel_dim),
                                                                          sigspec.input_channels});
-                    torch::Tensor narrow_next_divided = next_divided.narrow(/*dim=*/0,
+                    torch::Tensor next_divided_narrow = next_divided.narrow(/*dim=*/0,
                                                                             /*start=*/k,
                                                                             /*len=*/1).squeeze(0);
-                    torch::Tensor narrow_grad_next_divided = grad_next_divided.narrow(/*dim=*/0,
+                    torch::Tensor grad_next_divided_narrow = grad_next_divided.narrow(/*dim=*/0,
                                                                                       /*start=*/k,
                                                                                       /*len=*/1).squeeze(0);
 
                     grad_prev[j] += grad_scratch;
                     torch::Tensor out = grad_old_scratch.unsqueeze(channel_dim);
                     torch::bmm_out(/*out=*/out,
-                                   view_grad_scratch,
-                                   narrow_next_divided.unsqueeze(channel_dim));
-//                    grad_old_scratch.unsqueeze(channel_dim).baddbmm_(view_grad_scratch,
-//                                                                     narrow_next_divided.unsqueeze(channel_dim));
-                    narrow_grad_next_divided.unsqueeze(channel_dim - 1).baddbmm_(old_scratch.unsqueeze(channel_dim - 1),
-                                                                                 view_grad_scratch);
+                                   grad_scratch_view,
+                                   next_divided_narrow.unsqueeze(channel_dim));
+                    grad_next_divided_narrow.unsqueeze(channel_dim - 1).baddbmm_(old_scratch.unsqueeze(channel_dim - 1),
+                                                                                 grad_scratch_view);
                 }
-                torch::Tensor narrow_grad_next_divided = grad_next_divided.narrow(/*dim=*/0,
+                torch::Tensor grad_next_divided_narrow = grad_next_divided.narrow(/*dim=*/0,
                                                                                   /*start=*/depth_index - 1,
                                                                                   /*len=*/1).squeeze(0);
-                narrow_grad_next_divided += grad_scratches[0];
+                grad_next_divided_narrow += grad_scratches[0];
                 grad_prev[0] += grad_scratches[0];
             }
 
             // In principle when sigspec.depth == 1 then the code below should be a no-op, but BLAS throws an error here
             if (sigspec.depth > 1) {
-                torch::Tensor view_grad_next_divided = grad_next_divided.view({sigspec.depth - 1,
+                torch::Tensor grad_next_divided_view = grad_next_divided.view({sigspec.depth - 1,
                                                                                sigspec.batch_size * sigspec.input_channels});
-                torch::Tensor view_grad_next = grad_next.view({sigspec.batch_size * sigspec.input_channels});
-                view_grad_next.unsqueeze(0).addmm(sigspec.reciprocals.unsqueeze(0), view_grad_next_divided);
+                torch::Tensor grad_next_view = grad_next.view({sigspec.batch_size * sigspec.input_channels});
+                grad_next_view.unsqueeze(0).addmm_(sigspec.reciprocals.unsqueeze(0), grad_next_divided_view);
             }
         }
 

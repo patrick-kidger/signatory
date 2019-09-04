@@ -39,7 +39,10 @@ Then run
 import argparse
 import io
 import os
+import shlex
 import subprocess
+import sys
+import webbrowser
 #### DO NOT IMPORT NON-(STANDARD LIBRARY) MODULES HERE
 # Instead, lazily import them inside the command.
 # This allows all the commands that don't e.g. require a built version of Signatory to operate without it
@@ -93,8 +96,11 @@ here = os.path.realpath(os.path.dirname(__file__))
 
 
 def run_commands(*commands, stdout=True):
-    """Runs a collection of commands in a shell."""
-    print_commands = ["printf \"%s\n\" \">>> {}\"".format(command) for command in commands]
+    """Runs a collection of commands in a shell.
+
+    Note that it's not super robust - there aren't really reliable ways to do cross-platform shell scripting.
+    """
+    print_commands = ['echo {}'.format(shlex.quote("(running) " + command)) for command in commands]
     all_commands = []
     for i in range(len(commands)):
         all_commands.append(print_commands[i])
@@ -139,17 +145,16 @@ def benchmark(args):
         print('Using device {}'.format(args.device))
         results = speed.run_tests()
     speed.display_results(results)
-    import torch
-    torch.addcmul
 
     
 def docs(args=()):
-    """Build the documentation. After it has been built then it can be found in ./docs/_build/html/index.html
+    """Build the documentation. After it has been built then it can be found in ./docs/_build/html/index.html/
     The package 'py2annotate' will need to be installed. It can be installed via `pip install py2annotate`
     Note that the documentation is already available online at https://signatory.readthedocs.io
     """
     import py2annotate  # fail fast here if necessary
-    run_commands("sphinx-build -M html {}, {}".format(os.path.join(here, "docs"), os.path.join(here, "docs", "_build")))
+    run_commands("sphinx-build -M html {} {}".format(os.path.join(here, "docs"), os.path.join(here, "docs", "_build")))
+    webbrowser.open_new_tab('file:///{}'.format(os.path.join(here, 'docs', '_build', 'html', 'index.html')))
     
     
 def publish(args=()):

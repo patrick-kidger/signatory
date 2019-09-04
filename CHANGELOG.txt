@@ -1,3 +1,7 @@
+1.1.1
+-----
+Speed improvements to signature and logsignature both forwards and backwards.
+
 1.1.0
 -----
 Should now typically run even faster on typical batch sizes.

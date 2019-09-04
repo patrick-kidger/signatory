@@ -25,11 +25,9 @@
 #include "tensor_algebra_ops.hpp"
 
 
-// TODO: add tests for CUDA tensors.
 // TODO: add sparse computations
 // TODO: try doing the word->brackets by manually computing the inverse and then using torch.sparse.mm?
 // TODO: switch to pytest over unittest; rationalise some tests when we do
-// TODO: add the examples to the tests
 // TODO: check for interrupts
 // TODO: add handling of (... x stream x channel) format
 // TODO: signature_jacobian, logsignature_jacobian
@@ -188,37 +186,56 @@ namespace signatory {
         if (!grad_signature.is_floating_point()) {
             grad_signature = grad_signature.to(torch::kFloat32);
         }
-        if (clone) {
-            // This is provided as an option specifically for logsignature_backward: we control the input to
-            // signature_backward in this case, so we know that we don't need to clone.
-            grad_signature = grad_signature.clone();
-        }
 
-        std::vector<torch::Tensor> grad_signature_by_term;
+        // When computing the signature we essentially did a lot of computations of the form
+        // A \otimes exp(b),
+        // where A is a generic member of the tensor algebra, and b is a member of the lowest nonscalar part of the
+        // tensor algebra.
+        // Then signature_by_term_at_stream represents A.
+        // grad_signature_by_term_at_stream represents the gradient on A \otimes exp(b).
+        // Note the asymmetry.
         std::vector<torch::Tensor> grad_signature_by_term_at_stream;
         std::vector<torch::Tensor> signature_by_term_at_stream;
-        if (sigspec.stream) {
-            torch::Tensor grad_last_term = grad_signature.narrow(/*dim=*/stream_dim,
-                                                                 /*start=*/-1,
-                                                                 /*len=*/1).squeeze(stream_dim);
-            torch::Tensor last_term = signature.narrow(/*dim=*/stream_dim,
-                                                       /*start=*/-1,
-                                                       /*len=*/1).squeeze(stream_dim);
-            misc::slice_by_term(grad_last_term, grad_signature_by_term_at_stream, sigspec);
-            misc::slice_by_term(last_term, signature_by_term_at_stream, sigspec);
 
-            misc::slice_by_term(grad_signature, grad_signature_by_term, sigspec);
+        // There's some differences between the stream==true and stream==false cases.
+        // The essential difference is that in the stream==true case, we have recorded a lot more information, which we
+        // can just use. In the stream==false case this information must be recomputed.
+
+        torch::Tensor grad_signature_at_stream;
+        if (sigspec.stream) {
+            grad_signature_at_stream = grad_signature.narrow(/*dim=*/stream_dim,
+                                                             /*start=*/-1,
+                                                             /*length=*/1).squeeze(stream_dim);
         }
         else {
-            misc::slice_by_term(grad_signature, grad_signature_by_term_at_stream, sigspec);
-            misc::slice_by_term(signature.clone(), signature_by_term_at_stream, sigspec);
+            grad_signature_at_stream = grad_signature;
         }
 
-        // grad_path_increments is what we want to compute throughout the for loop.
+        if (clone) {
+            // Normally we want to clone so as not to leak changes.
+            // This is provided as an option specifically for logsignature_backward: we control the input to
+            // signature_backward in this case, so then we know that we don't need to clone.
+            grad_signature_at_stream = grad_signature_at_stream.clone();
+        }
+
+        misc::slice_by_term(grad_signature_at_stream, grad_signature_by_term_at_stream, sigspec);
+        if (!sigspec.stream) {
+            // We're going to recompute the signature, as we need it to perform the gradient computations.
+            // In particular we compute it backwards (which is possible via a particular reversibility property of the
+            // signature), in the sense that given some input path x_1, ... x_n we compute the signature of
+            // x_1, ... x_k for all k: during the forward pass we did this for k going from 2 to n. During this backward
+            // pass we do it for k going from n to 2.
+            // In particular we clone the signature here as we're going to modify it in-place during these computations
+            // and we don't want to leak changes to the original output.
+            misc::slice_by_term(signature.clone(), signature_by_term_at_stream, sigspec);
+        }  // if sigspec.stream then we already know the signature of x_1, ... x_k because we saved it as our result,
+           // and we don't need to worry about recomputing it.
+
         torch::Tensor grad_path_increments = torch::empty({sigspec.output_stream_size,
                                                            sigspec.batch_size,
                                                            sigspec.input_channels},
                                                           sigspec.opts);
+
         for (int64_t stream_index = sigspec.output_stream_size - 1; stream_index >= 1; --stream_index) {
             torch::Tensor grad_next = grad_path_increments.narrow(/*dim=*/stream_dim,
                                                                   /*start=*/stream_index,
@@ -226,22 +243,28 @@ namespace signatory {
             torch::Tensor next = path_increments.narrow(/*dim=*/stream_dim,
                                                         /*start=*/stream_index,
                                                         /*len=*/1).squeeze(stream_dim);
+
+            if (sigspec.stream) {
+                // Just look up signature_by_term_at_stream because we saved it for output
+                misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index - 1);
+            }
+            else {
+                // Recompute signature_by_term_at_stream
+                ta_ops::mult_fused_restricted_exp(-next, signature_by_term_at_stream, sigspec);
+            }
+
             ta_ops::mult_fused_restricted_exp_backward(grad_next, grad_signature_by_term_at_stream, next,
                                                        signature_by_term_at_stream, sigspec);
 
             if (sigspec.stream) {
-                misc::slice_at_stream(grad_signature_by_term, grad_signature_by_term_at_stream, stream_index - 1);
-                misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index - 1);
-                grad_signature.narrow(/*dim=*/stream_dim,
-                                      /*start=*/stream_index - 1,
-                                      /*len=*/1) += grad_signature.narrow(/*dim=*/stream_dim,
-                                                                          /*start=*/stream_index,
-                                                                          /*len=*/1);
-            }
-            else {
-                ta_ops::mult_fused_restricted_exp(-next, signature_by_term_at_stream, sigspec);
+                // If sigspec.stream then gradients may well have accumulated on the signatures of the partial paths, so
+                // add those on here.
+                grad_signature_at_stream += grad_signature.narrow(/*dim=*/stream_dim,
+                                                                  /*start=*/stream_index - 1,
+                                                                  /*len=*/1).squeeze(stream_dim);
             }
         }
+
         torch::Tensor grad_in = grad_path_increments.narrow(/*dim=*/stream_dim,
                                                             /*start=*/0,
                                                             /*len=*/1).squeeze(stream_dim);
