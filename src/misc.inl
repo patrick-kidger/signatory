@@ -40,7 +40,7 @@ namespace signatory {
             out.clear();
             out.reserve(in.size());
             for (auto elem : in) {
-                out.push_back(elem.narrow(/*dim=*/stream_dim, /*start=*/stream_index, /*len=*/1).squeeze(0));
+                out.push_back(elem.narrow(/*dim=*/stream_dim, /*start=*/stream_index, /*len=*/1).squeeze(stream_dim));
             }
         }
 

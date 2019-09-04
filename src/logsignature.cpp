@@ -113,31 +113,31 @@ namespace signatory {
         // // undo the transposing we just did in signature_forward...
         // signature = misc::transpose_reverse(signature, sigspec);
 
-        // organise the memory into a vector
-        std::vector<torch::Tensor> signature_vector;
-        misc::slice_by_term(signature, signature_vector, sigspec);
+
+        std::vector<torch::Tensor> signature_by_term_at_stream;
 
         // and allocate memory for the logsignature
         torch::Tensor logsignature = torch::empty_like(signature);
-        std::vector<torch::Tensor> logsignature_vector;
-        misc::slice_by_term(logsignature, logsignature_vector, sigspec);
+        std::vector<torch::Tensor> signature_by_term;
+        std::vector<torch::Tensor> logsignature_by_term;
+        misc::slice_by_term(signature, signature_by_term, sigspec);
+        misc::slice_by_term(logsignature, logsignature_by_term, sigspec);
 
         if (stream) {
-            std::vector<torch::Tensor> signature_stream_vector;
-            std::vector<torch::Tensor> logsignature_stream_vector;
+            std::vector<torch::Tensor> signature_by_term_at_stream;
+            std::vector<torch::Tensor> logsignature_by_term_at_stream;
+
             for (int64_t stream_index = 0;
                  stream_index < sigspec.output_stream_size;
                  ++stream_index) {
-                misc::slice_at_stream(signature_vector, signature_stream_vector,
-                                      stream_index);
-                misc::slice_at_stream(logsignature_vector, logsignature_stream_vector,
-                                      stream_index);
-                ta_ops::compute_log(logsignature_stream_vector, signature_stream_vector,
-                                    sigspec);
+                misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index);
+                misc::slice_at_stream(logsignature_by_term, logsignature_by_term_at_stream, stream_index);
+
+                ta_ops::log(logsignature_by_term_at_stream, signature_by_term_at_stream, sigspec);
             }
         }
         else {
-            ta_ops::compute_log(logsignature_vector, signature_vector, sigspec);
+            ta_ops::log(logsignature_by_term, signature_by_term, sigspec);
         }
 
         // Brackets and Words are the two possible compressed forms of the logsignature. So here we perform the
@@ -176,7 +176,7 @@ namespace signatory {
             }
         }
 
-        backwards_info->set_logsignature_data(signature_vector,
+        backwards_info->set_logsignature_data(signature_by_term,
                                               // Important: the capsule, not the lyndon_info itself! Then the resource
                                               // (i.e. the lyndon_info) is managed Python-style, so it doesn't matter
                                               // whether this is a capsule that was given to us, or that we generated
@@ -206,8 +206,8 @@ namespace signatory {
         grad_logsignature = misc::transpose_reverse(grad_logsignature, sigspec);
 
         // Unpack everything else from backwards_info
-        torch::Tensor signature = backwards_info->out;
-        const std::vector<torch::Tensor>& signature_vector = backwards_info->signature_vector;
+        torch::Tensor signature = backwards_info->signature;
+        const std::vector<torch::Tensor>& signature_by_term = backwards_info->signature_by_term;
         LogSignatureMode mode = backwards_info->mode;
         int64_t logsignature_channels = backwards_info->logsignature_channels;
         detail::LyndonInfo* lyndon_info = misc::unwrap_capsule<detail::LyndonInfo>(backwards_info->lyndon_info_capsule);
@@ -263,36 +263,34 @@ namespace signatory {
         }
 
         torch::Tensor grad_signature = torch::zeros_like(grad_logsignature);
-        std::vector<torch::Tensor> grad_logsignature_vector;
-        std::vector<torch::Tensor> grad_signature_vector;
-        misc::slice_by_term(grad_logsignature, grad_logsignature_vector, sigspec);
-        misc::slice_by_term(grad_signature, grad_signature_vector, sigspec);
+
+        std::vector<torch::Tensor> grad_logsignature_by_term;
+        std::vector<torch::Tensor> grad_signature_by_term;
+        misc::slice_by_term(grad_logsignature, grad_logsignature_by_term, sigspec);
+        misc::slice_by_term(grad_signature, grad_signature_by_term, sigspec);
 
         if (sigspec.stream) {
-            std::vector<torch::Tensor> grad_logsignature_stream_vector;
-            std::vector<torch::Tensor> grad_signature_stream_vector;
-            std::vector<torch::Tensor> signature_stream_vector;
-            for (int64_t stream_index = 0;
-                 stream_index < sigspec.output_stream_size;
-                 ++stream_index) {
-                misc::slice_at_stream(grad_logsignature_vector,
-                                      grad_logsignature_stream_vector,
+            std::vector<torch::Tensor> grad_logsignature_by_term_at_stream;
+            std::vector<torch::Tensor> grad_signature_by_term_at_stream;
+            std::vector<torch::Tensor> signature_by_term_at_stream;
+
+            for (int64_t stream_index = 0; stream_index < sigspec.output_stream_size; ++stream_index) {
+                misc::slice_at_stream(grad_logsignature_by_term,
+                                      grad_logsignature_by_term_at_stream,
                                       stream_index);
-                misc::slice_at_stream(grad_signature_vector,
-                                      grad_signature_stream_vector,
+                misc::slice_at_stream(grad_signature_by_term,
+                                      grad_signature_by_term_at_stream,
                                       stream_index);
-                misc::slice_at_stream(signature_vector,
-                                      signature_stream_vector,
+                misc::slice_at_stream(signature_by_term,
+                                      signature_by_term_at_stream,
                                       stream_index);
 
-                ta_ops::compute_log_backward(grad_logsignature_stream_vector,
-                                             grad_signature_stream_vector,
-                                             signature_stream_vector,
-                                             sigspec);
+                ta_ops::log_backward(grad_logsignature_by_term_at_stream, grad_signature_by_term_at_stream,
+                                     signature_by_term_at_stream, sigspec);
             }
         }
         else {
-            ta_ops::compute_log_backward(grad_logsignature_vector, grad_signature_vector, signature_vector, sigspec);
+            ta_ops::log_backward(grad_logsignature_by_term, grad_signature_by_term, signature_by_term, sigspec);
         }
 
         // TODO: uncomment this line once PyTorch bug 24413 is fixed

@@ -16,6 +16,7 @@
 of some tests."""
 
 
+import collections as co
 import esig.tosig
 import iisignature
 import math
@@ -24,7 +25,7 @@ import timeit
 import torch
 
 try:
-    # Being run directly
+    # Being run via commands.py
     from . import compatibility as compat
 except ImportError:
     # Being run via tests
@@ -33,7 +34,12 @@ except ImportError:
 
 @compat.lru_cache(maxsize=None)
 def prepare(channels, depth):
+    """A cache wrapper around iisignature.prepare, since it takes a long time."""
     return iisignature.prepare(channels, depth)
+
+
+# All of the following functions wrap the analogous functions from each package, to provide a consistent interface for
+# testing against each other.
 
 
 def esig_signature_forward(size, depth, repeat, number):
@@ -233,34 +239,36 @@ def signatory_logsignature_backward_gpu(size, depth, repeat, number):
     return signatory_logsignature_backward(size, depth, repeat, number, gpu=True)
 
 
-signature_forward_fns = {'esig': esig_signature_forward,
-                         'iisignature': iisignature_signature_forward,
-                         'signatory': signatory_signature_forward,
-                         'signatory_gpu': signatory_signature_forward_gpu}
+signature_forward_fns = co.OrderedDict([('signatory_cpu', signatory_signature_forward),
+                                        ('signatory_gpu', signatory_signature_forward_gpu),
+                                        ('iisignature', iisignature_signature_forward),
+                                        ('esig', esig_signature_forward)])
 
-signature_backward_fns = {'esig': esig_signature_backward,
-                          'iisignature': iisignature_signature_backward,
-                          'signatory': signatory_signature_backward,
-                          'signatory_gpu': signatory_signature_backward_gpu}
 
-logsignature_forward_fns = {'esig': esig_logsignature_forward,
-                            'iisignature': iisignature_logsignature_forward,
-                            'signatory': signatory_logsignature_forward,
-                            'signatory_gpu': signatory_logsignature_forward_gpu}
+signature_backward_fns = co.OrderedDict([('signatory_cpu', signatory_signature_backward),
+                                         ('signatory_gpu', signatory_signature_backward_gpu),
+                                         ('iisignature', iisignature_signature_backward),
+                                         ('esig', esig_signature_backward),])
 
-logsignature_backward_fns = {'esig': esig_logsignature_backward,
-                             'iisignature': iisignature_logsignature_backward,
-                             'signatory': signatory_logsignature_backward,
-                             'signatory_gpu': signatory_logsignature_backward_gpu}
+logsignature_forward_fns = co.OrderedDict([('signatory_cpu', signatory_logsignature_forward),
+                                           ('signatory_gpu', signatory_logsignature_forward_gpu),
+                                           ('iisignature', iisignature_logsignature_forward),
+                                           ('esig', esig_logsignature_forward),])
 
-signature_fns = {'forward': signature_forward_fns, 'backward': signature_backward_fns}
+logsignature_backward_fns = co.OrderedDict([('signatory_cpu', signatory_logsignature_backward),
+                                            ('signatory_gpu', signatory_logsignature_backward_gpu),
+                                            ('iisignature', iisignature_logsignature_backward),
+                                            ('esig', esig_logsignature_backward)])
 
-logsignature_fns = {'forward': logsignature_forward_fns, 'backward': logsignature_backward_fns}
+signature_fns = co.OrderedDict([('forward', signature_forward_fns), ('backward', signature_backward_fns)])
 
-all_fns = {'signature': signature_fns, 'logsignature': logsignature_fns}
+logsignature_fns = co.OrderedDict([('forward', logsignature_forward_fns), ('backward', logsignature_backward_fns)])
+
+all_fns = co.OrderedDict([('Signature', signature_fns), ('Logsignature', logsignature_fns)])
 
 
 class Result:
+    """Represents the speed of a particular function, across multiple runs."""
     def __init__(self, results):
         self.results = results
         self.min = min(results)
@@ -273,42 +281,57 @@ class Result:
 
 
 def run_test(fn_dict, size, depth, repeat, number, print_name, skip=lambda library_name: False, **kwargs):
+    """Runs a particular function across multiple different libraries and records their times."""
     library_results = {}
     for library_name, library_fn in fn_dict.items():
         if skip(library_name):
             continue
         if print_name:
-            print(*print_name, library_name)
+            print(print_name, library_name)
         library_results[library_name] = Result(library_fn(size, depth, repeat, number, **kwargs))
     return library_results
 
 
 def run_tests(size=(16, 32, 8), depths=(4, 6), repeat=100, number=1):
+    """Runs all functions across all libraries and records their times."""
     results = {}
     for fn_name, fns in all_fns.items():
-        fn_results = results[fn_name] = {}
         for direction_name, directions in fns.items():
-            direction_results = fn_results[direction_name] = {}
             for depth in depths:
-                direction_results[depth] = run_test(directions, size, depth, repeat, number,
-                                                    print_name=(fn_name, direction_name, depth))
+                name = "{}, {}, depth {}".format(fn_name, direction_name, depth)
+                result = run_test(directions, size, depth, repeat, number, name)
+                esig_results = result['esig']
+                iisignature_results = result['iisignature']
+                signatory_results = result['signatory']
+                signatory_gpu_results = result['signatory_gpu']
+                result['speedup_cpu'] = min(esig_results.min, iisignature_results.min) / signatory_results.min
+                result['speedup_gpu'] = min(esig_results.min, iisignature_results.min) / signatory_gpu_results.min
+                results[name] = result
     return results
 
 
-def get_ratios(results):
-    ratios = {}
-    for fn_name, fn_results in results.items():
-        fn_ratios = ratios[fn_name] = {}
-        for direction_name, direction_results in fn_results.items():
-            direction_ratios = fn_ratios[direction_name] = {}
-            for depth, depth_results in direction_results.items():
-                depth_ratios = direction_ratios[depth] = {}
-
-                esig_results = depth_results['esig']
-                iisignature_results = depth_results['iisignature']
-                signatory_results = depth_results['signatory']
-                signatory_gpu_results = depth_results['signatory_gpu']
-
-                depth_ratios['cpu'] = min(esig_results.min, iisignature_results.min) / signatory_results.min
-                depth_ratios['gpu'] = min(esig_results.min, iisignature_results.min) / signatory_gpu_results.min
-    return ratios
+def display_results(results):
+    """Formats the result of run_tests into a table."""
+    # Now we just make a pretty table out of the results.
+    # Coding this up was quite therapeutic.
+    operation_str = 'Operation'
+    padding = 1
+    max_row_heading_len = len(operation_str) + 2 * padding
+    for row_heading in results:
+        max_row_heading_len = max(max_row_heading_len, len(row_heading))
+    column_width_lower_bound = 4
+    column_widths = [max_row_heading_len]
+    column_headings = list(results[row_heading])
+    for column_heading in column_headings:
+        column_widths.append(max(column_width_lower_bound, len(column_heading)) + 2 * padding)
+    heading_str = "|".join("{{:^{}}}".format(column_width) for column_width in column_widths)
+    border_str = '+'.join('-' * column_width for column_width in column_widths)
+    print(heading_str.format(operation_str, *column_headings))
+    print(border_str)
+    for row_heading, row_values in results.items():
+        print("{{:<{}}}".format(max_row_heading_len).format(row_heading), end='')
+        for column_width, (column_heading, column_value), true_column_heading in zip(column_widths, row_values.items(),
+                                                                                     column_headings):
+            assert column_heading == true_column_heading
+            print("|{{:>{}}}".format(column_width).format(column_value), end='')
+        print('\n')

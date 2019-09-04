@@ -94,8 +94,8 @@ namespace signatory {
 
         // Retains information needed for the backwards pass.
         struct BackwardsInfo{
-            BackwardsInfo(SigSpec&& sigspec_, const std::vector<torch::Tensor>& out_vector_, torch::Tensor out_,
-                          torch::Tensor path_increments_);
+            BackwardsInfo(SigSpec&& sigspec_, const std::vector<torch::Tensor>& stream_vector_,
+                          torch::Tensor signature_, torch::Tensor path_increments_);
 
             void set_logsignature_data(const std::vector<torch::Tensor>& signature_vector_,
                                        py::object lyndon_info_capsule_,
@@ -103,14 +103,10 @@ namespace signatory {
                                        int64_t logsignature_channels_);
 
             SigSpec sigspec;
-            std::vector<torch::Tensor> out_vector;
-            torch::Tensor out;
+            std::vector<torch::Tensor> signature_by_term;
+            torch::Tensor signature;
             torch::Tensor path_increments;
 
-            std::vector<torch::Tensor> signature_vector;  // will be the same as out_vector when computing logsignatures
-                                                          // with stream==true. But we provide a separate vector here
-                                                          // for a consistent interface with the stream==false case as
-                                                          // well.
             py::object lyndon_info_capsule;
             LogSignatureMode mode;
             int64_t logsignature_channels;

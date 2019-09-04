@@ -80,8 +80,8 @@ namespace signatory {
             }  // and reciprocals will be empty - of size 0 - if depth == 1.
         };
 
-        BackwardsInfo::BackwardsInfo(SigSpec&& sigspec_, const std::vector<torch::Tensor>& out_vector_,
-                                     torch::Tensor out_, torch::Tensor path_increments_) :
+        BackwardsInfo::BackwardsInfo(SigSpec&& sigspec_, const std::vector<torch::Tensor>& signature_by_term_,
+                                     torch::Tensor signature_, torch::Tensor path_increments_) :
             // Call to detach works around PyTorch bug 25340, which is a won't-fix. Basically, it makes sure that
             // backwards_info doesn't have references to any other tensors, and therefore in particular doesn't have
             // references to the tensor that is the output of the signature function: because this output tensor has a
@@ -90,22 +90,30 @@ namespace signatory {
             // Python.)
             // Thus not doing this gives a massive memory leak.
             sigspec{sigspec_},
-            out{out_.detach()},
+            signature{signature_.detach()},
             path_increments{path_increments_.detach()}
             {
-                out_vector.reserve(out_vector_.size());
-                for (const auto& elem : out_vector_) {
-                    out_vector.push_back(elem.detach());
+                signature_by_term.reserve(signature_by_term_.size());
+                for (const auto& elem : signature_by_term_) {
+                    signature_by_term.push_back(elem.detach());
                 }
             };
 
-        void BackwardsInfo::set_logsignature_data(const std::vector<torch::Tensor>& signature_vector_,
+        void BackwardsInfo::set_logsignature_data(const std::vector<torch::Tensor>& signature_by_term_,
                                                   py::object lyndon_info_capsule_,
                                                   LogSignatureMode mode_,
                                                   int64_t logsignature_channels_) {
-            signature_vector.reserve(signature_vector_.size());
-            for (const auto& elem : signature_vector_) {
-                signature_vector.push_back(elem.detach());
+            if (signature_by_term.size() == 0) {
+                // We set signature_by_term if:
+                // (a) signature, stream=True
+                // (b) logsignature, stream=True
+                // (c) logsignature, stream=False
+                // In particular this function is called in cases (b) and (c). However (b) implies (a), so we don't need
+                // to set it in this case; this is what we check here.
+                signature_by_term.reserve(signature_by_term_.size());
+                for (const auto& elem : signature_by_term_) {
+                    signature_by_term.push_back(elem.detach());
+                }
             }
             lyndon_info_capsule = lyndon_info_capsule_;
             mode = mode_;

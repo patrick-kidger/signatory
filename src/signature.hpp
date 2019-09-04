@@ -25,7 +25,7 @@ namespace signatory {
 
     // See signatory.signature for documentation
     std::tuple<torch::Tensor, torch::Tensor>
-    signature_backward(torch::Tensor grad_out, py::object backwards_info_capsule, bool clone=true);
+    signature_backward(torch::Tensor grad_signature, py::object backwards_info_capsule, bool clone=true);
 }  // namespace signatory
 
 #endif //SIGNATORY_SIGNATURE_HPP

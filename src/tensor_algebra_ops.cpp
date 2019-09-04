@@ -24,57 +24,50 @@
 namespace signatory {
     namespace ta_ops {
         namespace detail {
-            // This is the loop that's used inside many of the forward operations in the tensor algebra
+            // This is the loop that's used inside some of the forward operations in the tensor algebra
             template<bool invert=false>
-            void compute_multdiv_inner(torch::Tensor tensor_at_depth_to_calculate,
-                                       const std::vector<torch::Tensor>& arg1,
-                                       const std::vector<torch::Tensor>& arg2,
-                                       s_size_type depth_to_calculate,
-                                       const misc::SigSpec& sigspec) {
-                for (s_size_type j = 0, k = depth_to_calculate - 1; j < depth_to_calculate; ++j, --k) {
-                    /* loop invariant: j + k = depth_to_calculate - 1 */
-                    torch::Tensor view_out = tensor_at_depth_to_calculate.view({sigspec.batch_size,
-                                                                                arg1[j].size(channel_dim),
-                                                                                arg2[k].size(channel_dim)});
-                    view_out.addcmul_(arg2[k].unsqueeze(channel_dim - 1),      /* += (this tensor times */
+            void multdiv_inner(torch::Tensor tensor_at_depth,
+                               const std::vector<torch::Tensor>& arg1,
+                               const std::vector<torch::Tensor>& arg2,
+                               s_size_type depth_index,
+                               const misc::SigSpec& sigspec) {
+                for (s_size_type j = 0, k = depth_index - 1; j < depth_index; ++j, --k) {
+                    /* loop invariant: j + k = depth_index - 1 */
+                    torch::Tensor out_view = tensor_at_depth.view({sigspec.batch_size,
+                                                                   arg1[j].size(channel_dim),
+                                                                   arg2[k].size(channel_dim)});
+                    out_view.addcmul_(arg2[k].unsqueeze(channel_dim - 1),      /* += (this tensor times */
                                       arg1[j].unsqueeze(channel_dim),          /*     this tensor times */
                                       (invert && misc::is_even(k)) ? -1 : 1);  /*     this scalar)      */
                 }
             }
 
-            // This is the loop that's used inside many of the backward operations in the tensor algebra
-            // No template argument as we only ever need to perform this with invert=false
-            void compute_multdiv_inner_backward(torch::Tensor grad_tensor_at_depth_to_calculate,
-                                                std::vector<torch::Tensor>& grad_arg1,
-                                                std::vector<torch::Tensor>& grad_arg2,
-                                                const std::vector<torch::Tensor> arg1,
-                                                const std::vector<torch::Tensor> arg2,
-                                                s_size_type depth_to_calculate,
-                                                const misc::SigSpec& sigspec) {
-                for (s_size_type j = depth_to_calculate - 1, k = 0; j >= 0; --j, ++k) {
-                    /* loop invariant: j + k = depth_to_calculate - 1 */
-                    torch::Tensor out_view = grad_tensor_at_depth_to_calculate.view({sigspec.batch_size,
-                                                                                     arg1[j].size(channel_dim),
-                                                                                     arg2[k].size(channel_dim)});
+            // This is the loop that's used inside some of the backward operations in the tensor algebra
+            void multdiv_inner_backward(torch::Tensor grad_tensor_at_depth,
+                                        std::vector<torch::Tensor>& grad_arg1,
+                                        std::vector<torch::Tensor>& grad_arg2,
+                                        const std::vector<torch::Tensor> arg1,
+                                        const std::vector<torch::Tensor> arg2,
+                                        s_size_type depth_index,
+                                        const misc::SigSpec& sigspec) {
+                for (s_size_type j = depth_index - 1, k = 0; j >= 0; --j, ++k) {
+                    /* loop invariant: j + k = depth_index - 1 */
+                    torch::Tensor out_view = grad_tensor_at_depth.view({sigspec.batch_size,
+                                                                        arg1[j].size(channel_dim),
+                                                                        arg2[k].size(channel_dim)});
 
                     grad_arg1[j].unsqueeze(channel_dim).baddbmm_(out_view, arg2[k].unsqueeze(channel_dim));
                     grad_arg2[k].unsqueeze(channel_dim - 1).baddbmm_(arg1[j].unsqueeze(channel_dim - 1), out_view);
                 }
             }
 
-            // This performs part of the logarithm computation
-            void compute_log_partial(std::vector<torch::Tensor>& logsignature_vector,
-                                     const std::vector<torch::Tensor>& signature_vector,
-                                     s_size_type lower_depth_index,
-                                     const misc::SigSpec& sigspec) {
-                for (s_size_type depth_index = sigspec.depth - 3; depth_index >= lower_depth_index; --depth_index) {
-                    compute_mult_partial(logsignature_vector, signature_vector,
-                                         log_coefficient_at_depth(depth_index, sigspec),
-                                         depth_index + 1, sigspec);
-                }
+            // The coefficient of a term in the power series of the logarithm
+            torch::Scalar log_coefficient_at_depth(s_size_type depth_index, const misc::SigSpec& sigspec) {
+                return ((misc::is_even(depth_index) ? -1 : 1) * sigspec.reciprocals[depth_index]).item();
             }
         }  // namespace signatory::ta_ops::detail
-        void compute_restricted_exp(torch::Tensor in, std::vector<torch::Tensor>& out, const misc::SigSpec& sigspec) {
+
+        void restricted_exp(torch::Tensor in, std::vector<torch::Tensor>& out, const misc::SigSpec& sigspec) {
             out[0].copy_(in);
             for (s_size_type i = 0; i < sigspec.depth - 1; ++i) {
                 torch::Tensor view_out = out[i + 1].view({sigspec.batch_size,
@@ -85,9 +78,9 @@ namespace signatory {
             }
         }
 
-        void compute_restricted_exp_backward(torch::Tensor grad_in, std::vector<torch::Tensor>& grad_out,
-                                             torch::Tensor in, const std::vector<torch::Tensor>& out,
-                                             const misc::SigSpec& sigspec) {
+        void restricted_exp_backward(torch::Tensor grad_in, std::vector<torch::Tensor>& grad_out,
+                                     torch::Tensor in, const std::vector<torch::Tensor>& out,
+                                     const misc::SigSpec& sigspec) {
             if (sigspec.depth >= 2) {
                 // grad_out is a vector of length sigspec.depth.
                 // grad_out[sigspec.depth - 1] doesn't need any gradients added on to it.
@@ -108,111 +101,192 @@ namespace signatory {
             }
         }
 
-        void compute_mult(std::vector<torch::Tensor>& arg1, std::vector<torch::Tensor>& arg2, bool rightret,
-                          const misc::SigSpec& sigspec) {
-            for (s_size_type depth_to_calculate = sigspec.depth - 1; depth_to_calculate >= 0; --depth_to_calculate) {
-                torch::Tensor tensor_at_depth_to_calculate = (rightret ? arg2 : arg1)[depth_to_calculate];
+        void mult_fused_restricted_exp(torch::Tensor next, std::vector<torch::Tensor>& prev,
+                                       const misc::SigSpec& sigspec) {
+            torch::Tensor next_divided = next.unsqueeze(0) * sigspec.reciprocals.unsqueeze(1).unsqueeze(2);
 
-                detail::compute_multdiv_inner(tensor_at_depth_to_calculate, arg1, arg2, depth_to_calculate, sigspec);
+            for (s_size_type depth_index = sigspec.depth - 1; depth_index >= 1; --depth_index) {
+                torch::Tensor scratch = prev[0] + next_divided.narrow(/*dim=*/0,
+                                                                      /*start=*/depth_index - 1,
+                                                                      /*len=*/1).squeeze(0);
+                for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
+                    auto old_scratch_size = scratch.size(channel_dim);
+                    torch::Tensor prev_view = prev[j].view({sigspec.batch_size,
+                                                            old_scratch_size,
+                                                            sigspec.input_channels});
+                    scratch = prev_view.addcmul(scratch.unsqueeze(channel_dim),
+                                                next_divided.narrow(/*dim=*/0,
+                                                                    /*start=*/k,
+                                                                    /*len=*/1).squeeze(0).unsqueeze(channel_dim - 1));
+                    scratch = scratch.view({sigspec.batch_size, old_scratch_size * sigspec.input_channels});
+                }
+                torch::Tensor prev_view = prev[depth_index].view({sigspec.batch_size,
+                                                                  scratch.size(channel_dim),
+                                                                  sigspec.input_channels});
+                prev_view.addcmul_(scratch.unsqueeze(channel_dim), next.unsqueeze(channel_dim - 1));
+            }
+            prev[0] += next;
+        }
 
-                tensor_at_depth_to_calculate += (rightret ? arg1 : arg2)[depth_to_calculate];
+        void mult_fused_restricted_exp_backward(torch::Tensor grad_next,
+                                                std::vector<torch::Tensor> grad_prev,
+                                                torch::Tensor next,
+                                                const std::vector<torch::Tensor>& prev,
+                                                const misc::SigSpec& sigspec) {
+            std::vector<std::vector<torch::Tensor>> all_scratches;
+            all_scratches.reserve(sigspec.depth - 1);
+
+            torch::Tensor next_divided = next.unsqueeze(0) * sigspec.reciprocals.unsqueeze(1).unsqueeze(2);
+
+            for (s_size_type depth_index = sigspec.depth - 1; depth_index >= 1; --depth_index) {
+                all_scratches.emplace_back();
+                std::vector<torch::Tensor>& scratches = all_scratches.back();
+                scratches.reserve(depth_index);
+                torch::Tensor scratch = prev[0] + next_divided.narrow(/*dim=*/0,
+                                                                      /*start=*/depth_index - 1,
+                                                                      /*len=*/1).squeeze(0);
+                scratches.push_back(scratch);
+                for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
+                    auto prev_scratch_size = scratch.size(channel_dim);
+                    torch::Tensor prev_view = prev[j].view({sigspec.batch_size,
+                                                            prev_scratch_size,
+                                                            sigspec.input_channels});
+                    scratch = prev_view.addcmul(scratch.unsqueeze(channel_dim),
+                                                next_divided.narrow(/*dim=*/0,
+                                                                    /*start=*/k,
+                                                                    /*len=*/1).squeeze(0).unsqueeze(channel_dim - 1));
+                    scratch = scratch.view({sigspec.batch_size, prev_scratch_size * sigspec.input_channels});
+                    scratches.push_back(scratch);
+                }
+            }
+
+            torch::Tensor grad_next_divided = torch::zeros_like(next_divided);
+
+            std::vector<std::vector<torch::Tensor>> all_grad_scratches;
+            all_grad_scratches.reserve(all_scratches.size());
+            for (const auto& scratches : all_scratches) {
+                all_grad_scratches.emplace_back();
+                all_grad_scratches.reserve(scratches.size());
+                std::vector<torch::Tensor>& grad_scratches = all_grad_scratches.back();
+                for (const auto& elem : scratches) {
+                    grad_scratches.push_back(torch::empty_like(elem));
+                }
+            }
+
+            grad_next.copy_(grad_prev[0]);
+            s_size_type back_index = all_scratches.size();
+            for (s_size_type depth_index = 1; depth_index < sigspec.depth; ++depth_index) {
+                --back_index;
+                const std::vector<torch::Tensor>& grad_scratches = all_grad_scratches[back_index];
+                const std::vector<torch::Tensor>& scratches = all_scratches[back_index];
+
+                torch::Tensor grad_scratch = grad_scratches.back();
+                torch::Tensor scratch = scratches.back();
+
+                torch::Tensor grad_prev_view = grad_prev[depth_index].view({sigspec.batch_size,
+                                                                            scratch.size(channel_dim),
+                                                                            sigspec.input_channels});
+                // "Cannot bind non-const lvalue reference to an rvalue"
+                // rvalues can contain handles to non-expiring resources y'know. >:(
+                torch::Tensor out = grad_scratch.unsqueeze(channel_dim);
+                torch::bmm_out(/*out=*/out,
+                               grad_prev_view,
+                               next.unsqueeze(channel_dim));
+                //grad_scratch.unsqueeze(channel_dim).baddbmm_(grad_prev_view, next.unsqueeze(channel_dim));
+                grad_next.unsqueeze(channel_dim - 1).baddbmm_(scratch.unsqueeze(channel_dim - 1), grad_prev_view);
+
+                for (s_size_type j = depth_index - 1, k = 0; j >= 1; --j, ++k) {
+                    torch::Tensor grad_scratch = grad_scratches[j];
+                    torch::Tensor grad_old_scratch = grad_scratches[j - 1];
+                    torch::Tensor old_scratch = scratches[j - 1];
+                    torch::Tensor view_grad_scratch = grad_scratch.view({sigspec.batch_size,
+                                                                         old_scratch.size(channel_dim),
+                                                                         sigspec.input_channels});
+                    torch::Tensor narrow_next_divided = next_divided.narrow(/*dim=*/0,
+                                                                            /*start=*/k,
+                                                                            /*len=*/1).squeeze(0);
+                    torch::Tensor narrow_grad_next_divided = grad_next_divided.narrow(/*dim=*/0,
+                                                                                      /*start=*/k,
+                                                                                      /*len=*/1).squeeze(0);
+
+                    grad_prev[j] += grad_scratch;
+                    torch::Tensor out = grad_old_scratch.unsqueeze(channel_dim);
+                    torch::bmm_out(/*out=*/out,
+                                   view_grad_scratch,
+                                   narrow_next_divided.unsqueeze(channel_dim));
+//                    grad_old_scratch.unsqueeze(channel_dim).baddbmm_(view_grad_scratch,
+//                                                                     narrow_next_divided.unsqueeze(channel_dim));
+                    narrow_grad_next_divided.unsqueeze(channel_dim - 1).baddbmm_(old_scratch.unsqueeze(channel_dim - 1),
+                                                                                 view_grad_scratch);
+                }
+                torch::Tensor narrow_grad_next_divided = grad_next_divided.narrow(/*dim=*/0,
+                                                                                  /*start=*/depth_index - 1,
+                                                                                  /*len=*/1).squeeze(0);
+                narrow_grad_next_divided += grad_scratches[0];
+                grad_prev[0] += grad_scratches[0];
+            }
+
+            // In principle when sigspec.depth == 1 then the code below should be a no-op, but BLAS throws an error here
+            if (sigspec.depth > 1) {
+                torch::Tensor view_grad_next_divided = grad_next_divided.view({sigspec.depth - 1,
+                                                                               sigspec.batch_size * sigspec.input_channels});
+                torch::Tensor view_grad_next = grad_next.view({sigspec.batch_size * sigspec.input_channels});
+                view_grad_next.unsqueeze(0).addmm(sigspec.reciprocals.unsqueeze(0), view_grad_next_divided);
             }
         }
 
-        void compute_mult_backward(std::vector<torch::Tensor>& grad_arg1, std::vector<torch::Tensor>& grad_arg2,
-                                   const std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
-                                   bool add_not_copy, const misc::SigSpec& sigspec) {
-            for (s_size_type depth_to_calculate = 0; depth_to_calculate < sigspec.depth; ++depth_to_calculate) {
-                torch::Tensor grad_tensor_at_depth_to_calculate = grad_arg2[depth_to_calculate];
-
-                if (add_not_copy) {
-                    grad_arg1[depth_to_calculate] += grad_tensor_at_depth_to_calculate;
-                }
-                else {
-                    grad_arg1[depth_to_calculate].copy_(grad_tensor_at_depth_to_calculate);
-                }
-
-                detail::compute_multdiv_inner_backward(grad_tensor_at_depth_to_calculate, grad_arg1, grad_arg2, arg1,
-                                                       arg2, depth_to_calculate, sigspec);
-            }
-        }
-
-        void compute_div(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
-                         const misc::SigSpec& sigspec) {
-            for (s_size_type depth_to_calculate = sigspec.depth - 1; depth_to_calculate >= 0; --depth_to_calculate) {
-                torch::Tensor tensor_at_depth_to_calculate = arg1[depth_to_calculate];
-
-                detail::compute_multdiv_inner</*invert=*/true>(tensor_at_depth_to_calculate, arg1, arg2,
-                                                               depth_to_calculate, sigspec);
-
-                if (misc::is_even(depth_to_calculate)) {
-                    tensor_at_depth_to_calculate -= arg2[depth_to_calculate];
-                }
-                else {
-                    tensor_at_depth_to_calculate += arg2[depth_to_calculate];
-                }
-            }
-        }
-
-        void compute_mult_partial(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
-                                  torch::Scalar scalar_term_value, s_size_type top_terms_to_skip,
-                                  const misc::SigSpec& sigspec) {
-            for (s_size_type depth_to_calculate = sigspec.depth - top_terms_to_skip - 1; depth_to_calculate >= 0;
-                 --depth_to_calculate) {
-                torch::Tensor tensor_at_depth_to_calculate = arg1[depth_to_calculate];
+        void mult_partial(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
+                          torch::Scalar scalar_term_value, s_size_type top_terms_to_skip, const misc::SigSpec& sigspec)
+        {
+            for (s_size_type depth_index = sigspec.depth - top_terms_to_skip - 1; depth_index >= 0; --depth_index) {
+                torch::Tensor tensor_at_depth = arg1[depth_index];
 
                 // corresponding to the zero scalar assumed to be associated with arg2
-                tensor_at_depth_to_calculate.zero_();
+                tensor_at_depth.zero_();
 
-                detail::compute_multdiv_inner(tensor_at_depth_to_calculate, arg1, arg2, depth_to_calculate, sigspec);
+                detail::multdiv_inner(tensor_at_depth, arg1, arg2, depth_index, sigspec);
 
-                tensor_at_depth_to_calculate.add_(arg2[depth_to_calculate], scalar_term_value);
+                tensor_at_depth.add_(arg2[depth_index], scalar_term_value);
             }
         }
 
-        void compute_mult_partial_backward(std::vector<torch::Tensor>& grad_arg1,
-                                           std::vector<torch::Tensor>& grad_arg2,
-                                           const std::vector<torch::Tensor>& arg1,
-                                           const std::vector<torch::Tensor>& arg2,
-                                           torch::Scalar scalar_value_term,
-                                           s_size_type top_terms_to_skip,
-                                           const misc::SigSpec& sigspec) {
-            for (s_size_type depth_to_calculate = 0; depth_to_calculate < sigspec.depth - top_terms_to_skip;
-                 ++depth_to_calculate) {
-                torch::Tensor grad_tensor_at_depth_to_calculate = grad_arg1[depth_to_calculate];
+        void mult_partial_backward(std::vector<torch::Tensor>& grad_arg1,
+                                   std::vector<torch::Tensor>& grad_arg2,
+                                   const std::vector<torch::Tensor>& arg1,
+                                   const std::vector<torch::Tensor>& arg2,
+                                   torch::Scalar scalar_value_term,
+                                   s_size_type top_terms_to_skip,
+                                   const misc::SigSpec& sigspec) {
+            for (s_size_type depth_index = 0; depth_index < sigspec.depth - top_terms_to_skip; ++depth_index) {
+                torch::Tensor grad_tensor_at_depth = grad_arg1[depth_index];
 
-                grad_arg2[depth_to_calculate].add_(grad_tensor_at_depth_to_calculate, scalar_value_term);
+                grad_arg2[depth_index].add_(grad_tensor_at_depth, scalar_value_term);
 
-                detail::compute_multdiv_inner_backward(grad_tensor_at_depth_to_calculate, grad_arg1, grad_arg2, arg1,
-                                                       arg2, depth_to_calculate, sigspec);
+                detail::multdiv_inner_backward(grad_tensor_at_depth, grad_arg1, grad_arg2, arg1, arg2,
+                                                       depth_index, sigspec);
 
-                grad_tensor_at_depth_to_calculate.zero_();
+                grad_tensor_at_depth.zero_();
             }
         }
 
-        torch::Scalar log_coefficient_at_depth(s_size_type depth_index, const misc::SigSpec& sigspec) {
-            return ((misc::is_even(depth_index) ? -1 : 1) * sigspec.reciprocals[depth_index]).item();
-        }
 
-        void compute_log(std::vector<torch::Tensor>& output_vector,
-                         const std::vector<torch::Tensor>& input_vector,
-                         const misc::SigSpec& sigspec) {
-            output_vector[0].copy_(input_vector[0] * log_coefficient_at_depth(sigspec.depth - 2, sigspec));
+        void log(std::vector<torch::Tensor>& output_vector, const std::vector<torch::Tensor>& input_vector,
+                 const misc::SigSpec& sigspec) {
+            output_vector[0].copy_(input_vector[0] * detail::log_coefficient_at_depth(sigspec.depth - 2, sigspec));
             for (s_size_type depth_index = sigspec.depth - 3; depth_index >= 0; --depth_index) {
-                compute_mult_partial(output_vector,
-                                     input_vector,
-                                     /*scalar_value_term=*/log_coefficient_at_depth(depth_index, sigspec),
-                                     /*top_terms_to_skip=*/depth_index + 1,
-                                     sigspec);
+                mult_partial(output_vector,
+                             input_vector,
+                             /*scalar_value_term=*/detail::log_coefficient_at_depth(depth_index, sigspec),
+                             /*top_terms_to_skip=*/depth_index + 1,
+                             sigspec);
             }
-            compute_mult_partial(output_vector, input_vector, /*scalar_value_term=*/1, /*top_terms_to_skip=*/0,
-                                 sigspec);
+            mult_partial(output_vector, input_vector, /*scalar_value_term=*/1, /*top_terms_to_skip=*/0, sigspec);
         }
 
-        void compute_log_backward(std::vector<torch::Tensor>& grad_output_vector,
-                                  std::vector<torch::Tensor>& grad_input_vector,
-                                  const std::vector<torch::Tensor>& input_vector,
-                                  const misc::SigSpec& sigspec) {
+        void log_backward(std::vector<torch::Tensor>& grad_output_vector,
+                          std::vector<torch::Tensor>& grad_input_vector,
+                          const std::vector<torch::Tensor>& input_vector,
+                          const misc::SigSpec& sigspec) {
             // Will have the logarithm progressively computed in it
             std::vector<torch::Tensor> scratch_vector;
             scratch_vector.reserve(input_vector.size());
@@ -229,34 +303,35 @@ namespace signatory {
             record_vector.reserve(sigspec.depth - 1);
 
             // Compute the logarithm forwards and remember every intermediate tensor
-            scratch_vector[0] *= log_coefficient_at_depth(sigspec.depth - 2, sigspec);
+            scratch_vector[0] *= detail::log_coefficient_at_depth(sigspec.depth - 2, sigspec);
             for (s_size_type depth_index = sigspec.depth - 3; depth_index >= 0; --depth_index) {
                 copy_vector.clear();
                 for (const auto& elem : scratch_vector) {
                     copy_vector.push_back(elem.clone());
                 }
                 record_vector.push_back(copy_vector);
-                compute_mult_partial(scratch_vector,
-                                     input_vector,
-                                     /*scalar_value_term=*/log_coefficient_at_depth(depth_index, sigspec),
-                                     /*top_terms_to_skip=*/depth_index + 1,
-                                     sigspec);
+                mult_partial(scratch_vector,
+                             input_vector,
+                             /*scalar_value_term=*/detail::log_coefficient_at_depth(depth_index, sigspec),
+                             /*top_terms_to_skip=*/depth_index + 1,
+                             sigspec);
             }
             record_vector.push_back(scratch_vector);
 
             // Now actually perform the backwards operation
             s_size_type backward_index = record_vector.size() - 1;
-            compute_mult_partial_backward(grad_output_vector, grad_input_vector, record_vector[backward_index],
-                                          input_vector, 1, 0, sigspec);
+            mult_partial_backward(grad_output_vector, grad_input_vector, record_vector[backward_index], input_vector, 1,
+                                  0, sigspec);
 
             for (s_size_type depth_index = 0; depth_index < sigspec.depth - 2; ++depth_index) {
                 --backward_index;
-                compute_mult_partial_backward(grad_output_vector, grad_input_vector, record_vector[backward_index],
-                                              input_vector, log_coefficient_at_depth(depth_index, sigspec),
-                                              depth_index + 1, sigspec);
+                mult_partial_backward(grad_output_vector, grad_input_vector, record_vector[backward_index],
+                                      input_vector, detail::log_coefficient_at_depth(depth_index, sigspec),
+                                      depth_index + 1, sigspec);
             }
 
-            grad_input_vector[0].add_(grad_output_vector[0], log_coefficient_at_depth(sigspec.depth - 2, sigspec));
+            grad_input_vector[0].add_(grad_output_vector[0],
+                                      detail::log_coefficient_at_depth(sigspec.depth - 2, sigspec));
         }
     }  // namespace signatory::ta_ops
 }  // namespace signatory

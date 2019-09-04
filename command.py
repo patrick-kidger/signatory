@@ -39,7 +39,6 @@ Then run
 import argparse
 import io
 import os
-import pprint
 import subprocess
 #### DO NOT IMPORT NON-(STANDARD LIBRARY) MODULES HERE
 # Instead, lazily import them inside the command.
@@ -93,13 +92,16 @@ def main():
 here = os.path.realpath(os.path.dirname(__file__))
 
 
-def run_commands(*commands):
+def run_commands(*commands, stdout=True):
     """Runs a collection of commands in a shell."""
     print_commands = ["printf \"%s\n\" \">>> {}\"".format(command) for command in commands]
     all_commands = []
     for i in range(len(commands)):
         all_commands.append(print_commands[i])
-        all_commands.append("{} > /dev/null".format(commands[i]))
+        if stdout:
+            all_commands.append(commands[i])
+        else:
+            all_commands.append("{} > /dev/null".format(commands[i]))
     # && should work on both Windows and Linux. Not sure about Macs. Still Unix, so probably works?
     subprocess.run(' && '.join(all_commands), shell=True)
 
@@ -136,10 +138,9 @@ def benchmark(args):
     with torch.cuda.device(args.device):
         print('Using device {}'.format(args.device))
         results = speed.run_tests()
-    ratios = speed.get_ratios(results)
-    pprint.pprint(results)
-    print('-----------------------')
-    pprint.pprint(ratios)
+    speed.display_results(results)
+    import torch
+    torch.addcmul
 
     
 def docs(args=()):
@@ -181,7 +182,8 @@ def build_and_test(pythonv, signatoryv):
                  "python {} test -f".format(os.path.join(here, "command.py")),
                  "conda deactivate",
                  "conda env remove -p /tmp/signatory-{pythonv}".format(pythonv=pythonv),
-                 "conda clean -a -y")
+                 "conda clean -a -y",
+                 stdout=False)
 
     
 def genreadme(args=()):
