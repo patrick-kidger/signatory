@@ -41,7 +41,6 @@ import io
 import os
 import shlex
 import subprocess
-import sys
 import webbrowser
 #### DO NOT IMPORT NON-(STANDARD LIBRARY) MODULES HERE
 # Instead, lazily import them inside the command.
@@ -76,14 +75,24 @@ def main():
     genreadme_parser.set_defaults(cmd=genreadme)
 
     test_parser.add_argument('-f', '--failfast', action='store_true', help='Stop tests on first failure.')
-    test_parser.add_argument('-n', '--nonames', action='store_false', dest='names', help="Don't print names and start "
-                                                                                         "time of the tests being run.")
-    test_parser.add_argument('-t', '--notimes', action='store_false', dest='times', help="Don't print the overall "
-                                                                                         "times of the tests that have "
-                                                                                         "been run.")
+    test_parser.add_argument('-n', '--nonames', action='store_false', dest='names',
+                             help="Don't print names and start time of the tests being run.")
+    test_parser.add_argument('-t', '--notimes', action='store_false', dest='times',
+                             help="Don't print the overall times of the tests that have been run.")
 
-    benchmark_parser.add_argument('-e', '--noesig', action='store_false', dest='esig', help="Skip esig tests as esig "
-                                                                                            "is typically very slow.")
+    benchmark_parser.add_argument('-e', '--noesig', action='store_false', dest='esig',
+                                  help="Skip esig tests as esig is typically very slow.")
+    benchmark_parser.add_argument('-t', '--type', choices=('typical', 'depths', 'channels', 'small'), default='typical',
+                                  help="What kind of benchmark to run. 'typical' tests on two typical size/depth "
+                                       "combinations and prints the results as a table to stdout. 'depth' and "
+                                       "'channels' are more thorough benchmarks (and will taking correspondingly "
+                                       "longer to run!) testing multiple depths or multiple channels respectively.")
+    benchmark_parser.add_argument('-o', '--output', choices=('table', 'graph'), default='table',
+                                  help="How to format the output. 'table' formats as a table, 'graph' formats as a "
+                                       "graph.")
+    benchmark_parser.add_argument('-f', '--fns', choices=('sigf', 'sigb', 'logsigf', 'logsigb', 'all'), default='all',
+                                  help="Which functions to run: signature forwards, signature backwards, logsignature "
+                                       "forwards, logsignature backwards, or all of them.")
 
     args = parser.parse_args()
 
@@ -146,8 +155,25 @@ def benchmark(args):
     import torch
     with torch.cuda.device(args.device):
         print('Using device {}'.format(args.device))
-        results = speed.run_tests(esig=args.esig)
-    speed.display_results(results)
+        if args.type == 'typical':
+            run_speeds = speed.RunSpeeds.typical(esig=args.esig, fns=args.fns)
+        elif args.type == 'depths':
+            run_speeds = speed.RunSpeeds.depths(esig=args.esig, fns=args.fns)
+        elif args.type == 'channels':
+            run_speeds = speed.RunSpeeds.channels(esig=args.esig, fns=args.fns)
+        elif args.type == 'small':
+            run_speeds = speed.RunSpeeds.small(esig=args.esig, fns=args.fns)
+        else:
+            raise RuntimeError
+        if args.output == 'graph':
+            run_speeds.check_graph()
+        run_speeds.run()
+        if args.output == 'graph':
+            run_speeds.graph()
+        elif args.output == 'table':
+            run_speeds.table()
+        else:
+            raise RuntimeError
 
     
 def docs(args=()):
