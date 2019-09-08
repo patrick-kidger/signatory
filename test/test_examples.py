@@ -30,7 +30,7 @@ class TestExamples(utils.EnhancedTestCase):
         out_dimension = 4
         sig_depth = 4
 
-        x = torch.rand(batch_size, 4, in_channels)
+        x = torch.rand(batch_size, 10, in_channels)
         signet = example_fn(in_channels, out_dimension, sig_depth)
         y = signet(x)
         self.assertEqual(y.shape, (batch_size, out_dimension))

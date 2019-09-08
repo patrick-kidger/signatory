@@ -459,7 +459,7 @@ class EnhancedTestCase(unittest.TestCase):
     """An enhanced test case."""
     
     def setUp(self):
-        if hasattr(unittest, 'print_tests') and unittest.print_tests:
+        if hasattr(unittest, 'print_test_names') and unittest.print_test_names:
             print("Starting {} at {}".format(self.id(), datetime.datetime.now()))
         self.start_time = time.time()
 

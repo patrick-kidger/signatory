@@ -32,7 +32,7 @@ class SigNet(nn.Module):
         self.signature = signatory.Signature(depth=sig_depth,
                                              basepoint=True)
         # +1 because signatory.Augment is used to add time as well
-        sig_channels = signatory.signature_channels(in_channels=in_channels + 1,
+        sig_channels = signatory.signature_channels(channels=in_channels + 1,
                                                     depth=sig_depth)
         self.linear = torch.nn.Linear(sig_channels,
                                       out_dimension)

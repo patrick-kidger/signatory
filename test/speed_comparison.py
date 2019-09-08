@@ -280,7 +280,7 @@ class Result:
             return "{:.3}".format(self.min)
 
 
-def run_test(fn_dict, size, depth, repeat, number, print_name, skip=lambda library_name: False, **kwargs):
+def run_test(fn_dict, size, depth, repeat, number, print_name=False, skip=lambda library_name: False, **kwargs):
     """Runs a particular function across multiple different libraries and records their times."""
     library_results = {}
     for library_name, library_fn in fn_dict.items():
@@ -292,20 +292,27 @@ def run_test(fn_dict, size, depth, repeat, number, print_name, skip=lambda libra
     return library_results
 
 
-def run_tests(size=(16, 32, 8), depths=(4, 6), repeat=100, number=1):
+def run_tests(size=(32, 128, 8), depths=(5, 7), repeat=50, number=1, esig=True):
     """Runs all functions across all libraries and records their times."""
+    print("Called with size {}, depths {}, repeat {}, number {} and esig {}".format(size, depths, repeat, number, esig))
+    if esig:
+        skip = lambda library_name: False
+    else:
+        skip = lambda library_name: library_name == 'esig'
     results = {}
     for fn_name, fns in all_fns.items():
         for direction_name, directions in fns.items():
             for depth in depths:
                 name = "{}, {}, depth {}".format(fn_name, direction_name, depth)
-                result = run_test(directions, size, depth, repeat, number, name)
-                esig_results = result['esig']
+                result = run_test(directions, size, depth, repeat, number, name, skip)
                 iisignature_results = result['iisignature']
-                signatory_results = result['signatory']
+                signatory_results = result['signatory_cpu']
                 signatory_gpu_results = result['signatory_gpu']
-                result['speedup_cpu'] = min(esig_results.min, iisignature_results.min) / signatory_results.min
-                result['speedup_gpu'] = min(esig_results.min, iisignature_results.min) / signatory_gpu_results.min
+                other_best = iisignature_results.min
+                if esig:
+                    other_best = min(result['esig'].min, other_best)
+                result['speedup_cpu'] = other_best / signatory_results.min
+                result['speedup_gpu'] = other_best / signatory_gpu_results.min
                 results[name] = result
     return results
 
@@ -330,8 +337,13 @@ def display_results(results):
     print(border_str)
     for row_heading, row_values in results.items():
         print("{{:<{}}}".format(max_row_heading_len).format(row_heading), end='')
-        for column_width, (column_heading, column_value), true_column_heading in zip(column_widths, row_values.items(),
+        for column_width, (column_heading, column_value), true_column_heading in zip(column_widths[1:],
+                                                                                     row_values.items(),
                                                                                      column_headings):
             assert column_heading == true_column_heading
-            print("|{{:>{}}}".format(column_width).format(column_value), end='')
-        print('\n')
+            if isinstance(column_value, float):
+                colvalstr = '{:.3}'.format(column_value)
+            else:
+                colvalstr = str(column_value)
+            print("|{{:>{}}}".format(column_width).format(colvalstr), end='')
+        print('')

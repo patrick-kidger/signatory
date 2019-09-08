@@ -81,11 +81,26 @@ namespace signatory {
         void restricted_exp_backward(torch::Tensor grad_in, std::vector<torch::Tensor>& grad_out,
                                      torch::Tensor in, const std::vector<torch::Tensor>& out,
                                      const misc::SigSpec& sigspec) {
-            if (sigspec.depth >= 2) {
+            // Pull out the first pass of the for loop below. Note the use of bmm_out over baddbmm_.
+            // The alternative to pulling this out is to call grad_in.zero_() before the loop, but that involves
+            // touching the data, which takes extra time.
+            if (sigspec.depth > 1) {
+                grad_out[sigspec.depth - 1] *= sigspec.reciprocals[sigspec.depth - 2];
+                torch::Tensor view_grad_out = grad_out[sigspec.depth - 1].view({sigspec.batch_size,
+                                                                                in.size(channel_dim),
+                                                                                out[sigspec.depth - 2]
+                                                                                        .size(channel_dim)});
+                torch::Tensor grad_in_unsqueeze = grad_in.unsqueeze(channel_dim);
+
+                torch::bmm_out(/*out=*/grad_in_unsqueeze, view_grad_out, out[sigspec.depth - 2].unsqueeze(channel_dim));
+                grad_out[sigspec.depth - 2].unsqueeze(channel_dim - 1).baddbmm_(in.unsqueeze(channel_dim - 1),
+                                                                                view_grad_out);
+
                 // grad_out is a vector of length sigspec.depth.
                 // grad_out[sigspec.depth - 1] doesn't need any gradients added on to it.
-                // (Hence the strange starting index for i)
-                for (s_size_type i = sigspec.depth - 2; i >= 0; --i) {
+                // grad_out[sigspec.depth - 2] is pulled out above
+                // Thus the strange starting index for i
+                for (s_size_type i = sigspec.depth - 3; i >= 0; --i) {
                     grad_out[i + 1] *= sigspec.reciprocals[i];
                     torch::Tensor view_grad_out = grad_out[i + 1].view({sigspec.batch_size,
                                                                         in.size(channel_dim),
@@ -96,9 +111,10 @@ namespace signatory {
                 }
                 grad_in += grad_out[0];
             }
-            else {  // implies depth == 1
+            else {  // sigspec.depth == 1
                 grad_in.copy_(grad_out[0]);
             }
+
         }
 
         void mult_fused_restricted_exp(torch::Tensor next, std::vector<torch::Tensor>& prev,

@@ -28,7 +28,7 @@
 // TODO: add sparse computations
 // TODO: try doing the word->brackets by manually computing the inverse and then using torch.sparse.mm?
 // TODO: switch to pytest over unittest; rationalise some tests when we do
-// TODO: check for interrupts
+// TODO: check for interrupts + release GIL?
 // TODO: add handling of (... x stream x channel) format
 // TODO: signature_jacobian, logsignature_jacobian
 // TODO: tensorflow?
@@ -217,9 +217,19 @@ namespace signatory {
             // signature_backward in this case, so then we know that we don't need to clone.
             grad_signature_at_stream = grad_signature_at_stream.clone();
         }
-
         misc::slice_by_term(grad_signature_at_stream, grad_signature_by_term_at_stream, sigspec);
-        if (!sigspec.stream) {
+
+        if (sigspec.stream) {
+            // if sigspec.stream then we already know the signature of x_1, ... x_k because we saved it as our result,
+            // and we don't need to worry about recomputing it (c.f. the else branch below).
+            if (sigspec.output_stream_size < 2) {
+                // However if sigspec.output_stream_size is so small that we never even enter the for loop below. In
+                // which case signature_by_term_at_stream isn't set. We fix that here for the sake of
+                // restricted_exp_backward after the for loop, which requires it to be set.
+                misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, 0);
+            }
+        }
+        else {
             // We're going to recompute the signature, as we need it to perform the gradient computations.
             // In particular we compute it backwards (which is possible via a particular reversibility property of the
             // signature), in the sense that given some input path x_1, ... x_n we compute the signature of
@@ -228,8 +238,7 @@ namespace signatory {
             // In particular we clone the signature here as we're going to modify it in-place during these computations
             // and we don't want to leak changes to the original output.
             misc::slice_by_term(signature.clone(), signature_by_term_at_stream, sigspec);
-        }  // if sigspec.stream then we already know the signature of x_1, ... x_k because we saved it as our result,
-           // and we don't need to worry about recomputing it.
+        }
 
         torch::Tensor grad_path_increments = torch::empty({sigspec.output_stream_size,
                                                            sigspec.batch_size,

@@ -35,7 +35,7 @@ class SigNet3(nn.Module):
 
         # +5 because self.augment1 is used to add time, and 2 other
         # channels, as well
-        sig_channels1 = signatory.signature_channels(in_channels=in_channels + 5,
+        sig_channels1 = signatory.signature_channels(channels=in_channels + 5,
                                                      depth=sig_depth)
         self.augment2 = signatory.Augment(in_channels=sig_channels1,
                                           layer_sizes=(8, 8, 4),
@@ -47,7 +47,7 @@ class SigNet3(nn.Module):
                                               stream=False)
 
         # 4 because that's the final layer size in self.augment2
-        sig_channels2 = signatory.signature_channels(in_channels=4,
+        sig_channels2 = signatory.signature_channels(channels=4,
                                                      depth=sig_depth)
         self.linear = torch.nn.Linear(sig_channels2, out_dimension)
 

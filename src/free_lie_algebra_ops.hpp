@@ -32,12 +32,11 @@ namespace signatory { namespace fla_ops {
 
     /* Represents all possible Lyndon words up to a certain order, for a certain alphabet.
      *
-     *       All Lyndon words of all depths, ordered by depth
-     *           /----------------------------------\
-     *    All Lyndon words of a particular depth, ordered lexicographically
-     *                       /---------------------\                          */
-    #define BASE std::vector<std::vector<LyndonWord>>
-    struct LyndonWords : private BASE {
+     *                       All Lyndon words of all depths, ordered by depth
+     *                           /----------------------------------\
+     *                    All Lyndon words of a particular depth, ordered lexicographically
+     *                                       /---------------------\                          */
+    struct LyndonWords : private std::vector<std::vector<LyndonWord>> {
         constexpr static struct WordTag {} word_tag {};
         constexpr static struct BracketTag {} bracket_tag {};
 
@@ -54,9 +53,9 @@ namespace signatory { namespace fla_ops {
          */
         LyndonWords(const misc::LyndonSpec& lyndonspec, BracketTag);
 
-        using BASE::operator[];
-        using BASE::begin;
-        using BASE::end;
+        using std::vector<std::vector<LyndonWord>>::operator[];
+        using std::vector<std::vector<LyndonWord>>::begin;
+        using std::vector<std::vector<LyndonWord>>::end;
 
         /* Computes the transforms that need to be applied to the coefficients of the Lyndon words to produce the
          * coefficients of the Lyndon basis.
@@ -75,7 +74,6 @@ namespace signatory { namespace fla_ops {
 
         misc::LyndonSpec lyndonspec;
     };
-    #undef BASE
 
     /* Represents a single Lyndon word. It is primarily represented by a pair of indices, corresponding to how
      * far into the list of all words and the list of all Lyndon words it is. (In both cases ordered by depth

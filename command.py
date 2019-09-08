@@ -82,6 +82,9 @@ def main():
                                                                                          "times of the tests that have "
                                                                                          "been run.")
 
+    benchmark_parser.add_argument('-e', '--noesig', action='store_false', dest='esig', help="Skip esig tests as esig "
+                                                                                            "is typically very slow.")
+
     args = parser.parse_args()
 
     # Have to do it this was for Python 2/3 compatability
@@ -143,7 +146,7 @@ def benchmark(args):
     import torch
     with torch.cuda.device(args.device):
         print('Using device {}'.format(args.device))
-        results = speed.run_tests()
+        results = speed.run_tests(esig=args.esig)
     speed.display_results(results)
 
     
