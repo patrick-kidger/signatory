@@ -35,12 +35,14 @@ if False:
 # noinspection PyProtectedMember
 class _LogSignatureFunction(autograd.Function):
     @staticmethod
-    def forward(ctx, path, depth, stream, basepoint, mode, lyndon_info):
+    def forward(ctx, path, depth, stream, basepoint, inverse, mode, lyndon_info):
         # lyndon_info isn't a documented parameter because it's only used internally in the package.
-        # It must be either None or the result of a call to _impl._make_lyndon_info
+        # It must be either None (as in logsignature) or the result of a call to _impl._make_lyndon_info (as in
+        # LogSignature).
 
         mode = backend.mode_convert(mode)
-        return backend.forward(ctx, path, depth, stream, basepoint, _impl.logsignature_forward, (mode, lyndon_info))
+        return backend.forward(ctx, path, depth, stream, basepoint, inverse, _impl.logsignature_forward,
+                               (mode, lyndon_info))
 
     @staticmethod
     @autograd_function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
@@ -48,14 +50,14 @@ class _LogSignatureFunction(autograd.Function):
         return backend.backward(ctx, grad_result, _impl.logsignature_backward) + (None, None)
 
 
-def logsignature(path, depth, stream=False, basepoint=False, mode="words"):
-    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], str) -> torch.Tensor
+def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode="words"):
+    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], bool, str) -> torch.Tensor
     """Applies the logsignature transform to a stream of data.
 
     The :attr:`modes` argument determines how the logsignature is represented.
 
     Note that if performing many logsignature calculations for the same depth and size of input, then you will
-    see a performance boost by using :class:`signatory.LogSignature` over :class:`signatory.logsignature`.
+    see a performance boost by using :class:`signatory.LogSignature` over :func:`signatory.logsignature`.
 
     Arguments:
         path (:class:`torch.Tensor`): as :func:`signatory.signature`.
@@ -66,7 +68,10 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="words"):
 
         basepoint (bool or :class:`torch.Tensor`, optional): as :func:`signatory.signature`.
 
-        mode (str, optional): How the output should be presented. Valid values are :attr:`"expand"`, :attr:`"brackets"`,
+        inverse (bool, optional): as :func:`signatory.signature`.
+
+        mode (str, optional): Defaults to :attr:`"words"`. How the output should be presented. Valid values are
+            :attr:`"expand"`, :attr:`"brackets"`,
             or :attr:`"words"`. Defaults to `"words"`. Precisely what each of these options mean is described in the
             "Returns" section below. As a rule of thumb: use :attr:`"words"` for new projects (as it is the fastest),
             and use :attr:`"brackets"` for compatibility with other projects which do not provide equivalent
@@ -83,7 +88,7 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="words"):
         over the signature in the first place.)
 
         We now go on to explain what the different values for :attr:`mode` mean. This discussion is in the "Returns"
-        section a the value of :attr:`mode` essentially just determines how the output is represented; the
+        section because the value of :attr:`mode` essentially just determines how the output is represented; the
         mathematical meaning is the same in all cases.
 
         If :attr:`mode == "expand"` then the logsignature is presented as a member of the tensor algebra; the numbers
@@ -93,9 +98,9 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="words"):
         basis of the free Lie algebra.
 
         If :attr:`mode == "words"` then the logsignature is presented in terms of the coefficients of a particular
-        basis of the free Lie algebra that is not a Hall basis. Every basis element is given as a sum of Lyndon
-        brackets. When each bracket is expanded out and the sum computed, the sum will contains precisely one Lyndon
-        word (and some collection of non-Lyndon words). Moreover
+        computationally efficient basis of the free Lie algebra that is not a Hall basis. Every basis element is given
+        as a sum of Lyndon brackets. When each bracket is expanded out and the sum computed, the sum will contain
+        precisely one Lyndon word (and some collection of non-Lyndon words). Moreover
         every Lyndon word is represented uniquely in this way. We identify these basis elements with each corresponding
         Lyndon word. This is natural as the coefficients in this basis are found just by extracting the coefficients of
         all Lyndon words from the tensor algebra representation of the logsignature.
@@ -104,12 +109,10 @@ def logsignature(path, depth, stream=False, basepoint=False, mode="words"):
         and then ordering each length class lexicographically.
     """
     # noinspection PyUnresolvedReferences
-    result = _LogSignatureFunction.apply(path, depth, stream, basepoint, mode, None)
+    result = _LogSignatureFunction.apply(path, depth, stream, basepoint, inverse, mode, None)
 
-    # TODO: remove when 24413 is fixed
-    # We have to do the transpose in the Python side to avoid a PyTorch bug.
+    # We have to do the transpose outside of autograd.Function.apply to avoid a PyTorch bug.
     # https://github.com/pytorch/pytorch/issues/24413
-    # This call has to be outside the autograd.Function.apply
     if stream:
         result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere and we
                                          # don't want to change it.
@@ -121,27 +124,29 @@ class LogSignature(nn.Module):
 
     Calling this module on an input :attr:`path` with the same number of channels as the last input :attr:`path` it was
     called with will be faster than the corresponding :func:`signatory.logsignature` function, as this module caches the
-    result of certain computations which depend only on this value. (For larger numbers of channels, this speedup will
-    be substantial.)
+    result of certain computations which depend only on this value. (For larger depths or numbers of channels, this
+    speedup will be substantial.)
 
     Arguments:
         depth (int): as :func:`signatory.logsignature`.
 
         stream (bool, optional): as :func:`signatory.logsignature`.
 
-        basepoint (bool or :class:`torch.Tensor`, optional): as :func:`signatory.logsignature`.
+        inverse (bool, optional): as :func:`signatory.logsignature`.
 
         mode (str, optional): as :func:`signatory.logsignature`.
 
-    Called with a single argument :attr:`path` of type :class:`torch.Tensor`.
+    Called with two arguments :attr:`path` and :attr:`basepoint`. :attr:`path` should be of type :class:`torch.Tensor`,
+    whilst :attr:`basepoint` should be of type `Union[bool, torch.Tensor]`. Both of them are treated as in
+    :func:`signatory.logsignature`.
     """
 
-    def __init__(self, depth, stream=False, basepoint=False, mode="words", **kwargs):
-        # type: (int, bool, Union[bool, torch.Tensor], str, **Any) -> None
+    def __init__(self, depth, stream=False, inverse=False, mode="words", **kwargs):
+        # type: (int, bool, bool, str, **Any) -> None
         super(LogSignature, self).__init__(**kwargs)
         self.depth = depth
         self.stream = stream
-        self.basepoint = basepoint
+        self.inverse = inverse
         self.mode = mode
 
     @staticmethod
@@ -151,18 +156,17 @@ class LogSignature(nn.Module):
         mode = backend.mode_convert(mode)
         return _impl.make_lyndon_info(channels, depth, mode)
 
-    def forward(self, path):
-        # type: (torch.Tensor) -> torch.Tensor
+    def forward(self, path, basepoint=False):
+        # type: (torch.Tensor, Union[bool, torch.Tensor]) -> torch.Tensor
 
         lyndon_info = self.lyndon_info_cache(path.size(-1), self.depth, self.mode)
         # don't call logsignature itself because that (deliberately) doesn't expose a lyndon_info argument.
         # noinspection PyProtectedMember, PyUnresolvedReferences
-        result = _LogSignatureFunction.apply(path, self.depth, self.stream, self.basepoint, self.mode, lyndon_info)
+        result = _LogSignatureFunction.apply(path, self.depth, self.stream, basepoint, self.inverse, self.mode,
+                                             lyndon_info)
 
-        # TODO: remove when 24413 is fixed
-        # We have to do the transpose in the Python side to avoid a PyTorch bug.
+        # We have to do the transpose outside of autograd.Function.apply to avoid a PyTorch bug.
         # https://github.com/pytorch/pytorch/issues/24413
-        # This call has to be outside the autograd.Function.apply
         if self.stream:
             result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere
                                              # and we don't want to change it.
@@ -218,7 +222,7 @@ def logsignature_channels(in_channels, depth):
         depth (int): The depth of the signature that is being computed.
 
     Returns:
-        An int specifying the number of channels in the logsignature of the path.
+        An :attr:`int` specifying the number of channels in the logsignature of the path.
     """
 
     if in_channels < 1:

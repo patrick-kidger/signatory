@@ -58,13 +58,13 @@ namespace signatory {
     }
 
     namespace misc {
-        LyndonSpec::LyndonSpec(int64_t input_channels, s_size_type depth) :
+        MinimalSpec::MinimalSpec(int64_t input_channels, s_size_type depth) :
             input_channels{input_channels},
             depth{depth}
         {};
 
-        SigSpec::SigSpec(torch::Tensor path, s_size_type depth, bool stream, bool basepoint) :
-            LyndonSpec(path.size(channel_dim), depth),
+        SigSpec::SigSpec(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, bool inverse) :
+            MinimalSpec(path.size(channel_dim), depth),
             opts{torch::TensorOptions().dtype(path.dtype()).device(path.device())},
             input_stream_size{path.size(stream_dim)},
             batch_size{path.size(batch_dim)},
@@ -73,7 +73,8 @@ namespace signatory {
             n_output_dims{stream ? 3 : 2},
             reciprocals{torch::ones({depth - 1}, opts)},
             stream{stream},
-            basepoint{basepoint}
+            basepoint{basepoint},
+            inverse{inverse}
         {
             if (depth > 1) {
                 reciprocals /= torch::linspace(2, depth, depth - 1, opts);
@@ -136,10 +137,10 @@ namespace signatory {
                 throw std::invalid_argument("Argument 'path' must be a 3-dimensional tensor, with dimensions "
                                             "corresponding to (batch, stream, channel) respectively.");
             }
-            if (path.size(0) == 0 || path.size(1) == 0 || path.size(2) == 0) {
+            if (path.size(batch_dim) == 0 || path.size(stream_dim) == 0 || path.size(channel_dim) == 0) {
                 throw std::invalid_argument("Argument 'path' cannot have dimensions of size zero.");
             }
-            if (!basepoint && path.size(1) == 1) {
+            if (!basepoint && path.size(stream_dim) == 1) {
                 throw std::invalid_argument("Argument 'path' must have stream dimension of size at least 2. (Need at "
                                             "least this many points to define a path.)");
             }
@@ -151,9 +152,8 @@ namespace signatory {
                     throw std::invalid_argument("Argument 'basepoint' must be a 2-dimensional tensor, corresponding to "
                                                 "(batch, channel) respectively.");
                 }
-                // basepoint_value has dimensions (batch, channel)
-                // path has dimensions (batch, stream, channel)
-                if (basepoint_value.size(0) != path.size(0) || basepoint_value.size(1) != path.size(2)) {
+                if (basepoint_value.size(channel_dim) != path.size(channel_dim) ||
+                    basepoint_value.size(batch_dim) != path.size(batch_dim)) {
                     throw std::invalid_argument("Arguments 'basepoint' and 'path' must have dimensions of the same "
                                                 "size.");
                 }
@@ -172,9 +172,9 @@ namespace signatory {
                     throw std::invalid_argument("Gradient must be a 3-dimensional tensor, with dimensions "
                                                 "corresponding to (batch, stream, channel) respectively.");
                 }
-                if (grad_out.size(0) != sigspec.batch_size ||
-                    grad_out.size(1) != sigspec.output_stream_size ||
-                    grad_out.size(2) != num_channels) {
+                if (grad_out.size(batch_dim) != sigspec.batch_size ||
+                    grad_out.size(stream_dim) != sigspec.output_stream_size ||
+                    grad_out.size(channel_dim) != num_channels) {
                     throw std::invalid_argument("Gradient has the wrong size.");
                 }
             }
@@ -183,8 +183,8 @@ namespace signatory {
                     throw std::invalid_argument("Gradient must be a 2-dimensional tensor, with dimensions"
                                                 "corresponding to (batch, channel) respectively.");
                 }
-                if (grad_out.size(0) != sigspec.batch_size ||
-                    grad_out.size(1) != num_channels) {
+                if (grad_out.size(batch_dim) != sigspec.batch_size ||
+                    grad_out.size(channel_dim) != num_channels) {
                     throw std::invalid_argument("Gradient has the wrong size.");
                 }
             }

@@ -20,6 +20,8 @@
 #ifndef SIGNATORY_TENSOR_ALGEBRA_OPS_HPP
 #define SIGNATORY_TENSOR_ALGEBRA_OPS_HPP
 
+#include <utility>  // std::pair
+
 #include "misc.hpp"
 
 
@@ -95,6 +97,21 @@ namespace signatory {
                           const std::vector<torch::Tensor>& input_vector,
                           const misc::SigSpec& sigspec);
     }  // namespace signatory::ta_ops
+
+    // Computes arg1_inp \otimes arg2_inp in the tensor algebra.
+    // 'arg1_inp' and 'arg2_inp' are tensors representing members of the tensor algebra.
+    // 'input_channels' and 'depth' are the corresponding numbers of channels and depths for these tensors. These must
+    // be consistent with the sizes of 'arg1_inp' and 'arg2_inp'.
+    // Both arguments are left unmodified. The result of the operation is returned.
+    torch::Tensor tensor_algebra_mult_forward(torch::Tensor arg1_inp, torch::Tensor arg2_inp, int64_t input_channels,
+                                              s_size_type depth);
+
+    // The corresponding backward operation for tensor_algebra_mult_forward.
+    // 'grad' should be the gradient on the output of tensor_algebra_mult_forward. All other arguments should be as they
+    // were inputted to tensor_algebra_mult_forward.
+    std::pair<torch::Tensor, torch::Tensor>
+    tensor_algebra_mult_backward(torch::Tensor grad, torch::Tensor arg1_inp, torch::Tensor arg2_inp,
+                                 int64_t input_channels, s_size_type depth);
 }  // namespace signatory
 
 #endif //SIGNATORY_TENSOR_ALGEBRA_OPS_HPP

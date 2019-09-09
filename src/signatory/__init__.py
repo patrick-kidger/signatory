@@ -20,12 +20,14 @@ from .augment import Augment
 from .logsignature_module import (logsignature,
                                   LogSignature,
                                   logsignature_channels)
+from .path import Path
 from .signature_module import (signature,
                                Signature,
                                signature_channels,
                                extract_signature_term)
-from .lyndon import (lyndon_words,
-                     lyndon_brackets)
+from .utility import (lyndon_words,
+                      lyndon_brackets,
+                      all_words)
 
 
 __version__ = "1.1.1"

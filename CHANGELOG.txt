@@ -1,6 +1,9 @@
 1.1.1
 -----
 Speed improvements to signature and logsignature both forwards and backwards.
+Added the all_words function
+Added the Path class
+signature and logsignature functions and classes now accept an 'inverse' option to calculate the inverse-signature or log-inverse-signature.
 
 1.1.0
 -----

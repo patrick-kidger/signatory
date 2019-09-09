@@ -49,10 +49,10 @@ namespace signatory {
     int64_t signature_channels(int64_t input_channels, int64_t depth);
 
     namespace misc {
-        // Encapsulates the things necessary for Lyndon word etc. computations. This will get passed around through
+        // Encapsulates the things necessary for certain computations. This will get passed around through
         // most such functions.
-        struct LyndonSpec {
-            LyndonSpec(int64_t input_channels, s_size_type depth);
+        struct MinimalSpec {
+            MinimalSpec(int64_t input_channels, s_size_type depth);
 
             int64_t input_channels;
             s_size_type depth;
@@ -60,8 +60,8 @@ namespace signatory {
 
         // Encapsulates all the things that aren't tensors for signature and logsignature computations. This will get
         // passed around through most such functions.
-        struct SigSpec : LyndonSpec {
-            SigSpec(torch::Tensor path, s_size_type depth, bool stream, bool basepoint);
+        struct SigSpec : MinimalSpec {
+            SigSpec(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, bool inverse);
 
             torch::TensorOptions opts;
             int64_t input_stream_size;
@@ -72,23 +72,18 @@ namespace signatory {
             torch::Tensor reciprocals;
             bool stream;
             bool basepoint;
+            bool inverse;
         };
 
-        // Argument 'in' is assumed to be a tensor for which one dimension has size equal to sigspec.output_channels
+        // Argument 'in' is assumed to be a tensor with channel dimension of size minimalspec.input_channels.
         // It is sliced up along that dimension, and the resulting tensors placed into 'out'.
         // Each resulting tensor corresponds to one of the (tensor, not scalar) terms in the signature.
-        inline void slice_by_term(torch::Tensor in, std::vector<torch::Tensor>& out, const SigSpec& sigspec);
+        inline void slice_by_term(torch::Tensor in, std::vector<torch::Tensor>& out, const MinimalSpec& minimalspec);
 
         // Argument 'in' is assumed to be a tensor for which its first dimension corresponds to the stream dimension.
         // Its slices along a particular index of that dimension are put in 'out'.
         inline void slice_at_stream(std::vector<torch::Tensor> in, std::vector<torch::Tensor>& out,
                                     int64_t stream_index);
-
-        // Convert from internally-used axis ordering to externally-visible axis ordering
-        inline torch::Tensor transpose(torch::Tensor tensor, const SigSpec& sigspec);
-
-        // Convert from externally-visible axis ordering to internally-used axis ordering
-        inline torch::Tensor transpose_reverse(torch::Tensor tensor, const SigSpec& sigspec);
 
         inline bool is_even(s_size_type index);
 

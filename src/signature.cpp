@@ -24,7 +24,7 @@
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
 
-
+// TODO: add testing for all_words
 // TODO: add sparse computations
 // TODO: try doing the word->brackets by manually computing the inverse and then using torch.sparse.mm?
 // TODO: switch to pytest over unittest; rationalise some tests when we do
@@ -43,15 +43,31 @@ namespace signatory {
                                               const misc::SigSpec& sigspec) {
             int64_t num_increments {sigspec.input_stream_size - 1};
             if (sigspec.basepoint) {
-                torch::Tensor path_increments = path.clone();
-                path_increments.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/1) -= basepoint_value;
-                path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -=
-                        path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments);
-                return path_increments;
+                if (sigspec.inverse) {
+                    torch::Tensor path_increments = torch::empty_like(path);
+                    path_increments.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/1).copy_(basepoint_value);
+                    path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments).copy_(
+                            path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments));
+                    path_increments -= path;
+                    return path_increments;
+                }
+                else {
+                    torch::Tensor path_increments = path.clone();
+                    path_increments.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/1) -= basepoint_value;
+                    path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -=
+                            path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments);
+                    return path_increments;
+                }
             }
             else {
-                return path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -
-                       path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments);
+                if (sigspec.inverse) {
+                    return path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments) -
+                           path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments);
+                }
+                else {
+                    return path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -
+                           path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments);
+                }
             }
         }
 
@@ -61,29 +77,58 @@ namespace signatory {
         compute_path_increments_backward(torch::Tensor grad_path_increments, const misc::SigSpec& sigspec) {
             int64_t num_increments{sigspec.input_stream_size - 1};
             if (sigspec.basepoint) {
-                torch::Tensor grad_path = grad_path_increments.clone();
-                grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments)
-                        -= grad_path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments);
-                return {grad_path, -grad_path_increments.narrow(/*dim=*/stream_dim,
-                                                                /*start=*/0,
-                                                                /*len=*/1).squeeze(stream_dim)};
+                if (sigspec.inverse) {
+                    torch::Tensor grad_path = torch::empty_like(grad_path_increments);
+                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments).copy_(
+                            grad_path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments));
+                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/-1, /*len=*/1).zero_();
+                    grad_path -= grad_path_increments;
+                    return {grad_path, grad_path_increments.narrow(/*dim=*/stream_dim,
+                                                                   /*start=*/0,
+                                                                   /*len=*/1).squeeze(stream_dim)};
+                }
+                else {
+                    torch::Tensor grad_path = grad_path_increments.clone();
+                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments)
+                            -= grad_path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments);
+                    return {grad_path, -grad_path_increments.narrow(/*dim=*/stream_dim,
+                                                                    /*start=*/0,
+                                                                    /*len=*/1).squeeze(stream_dim)};
+                }
             }
             else {
-                torch::Tensor grad_path = torch::empty({sigspec.input_stream_size,
-                                                        sigspec.batch_size,
-                                                        sigspec.input_channels},
-                                                       sigspec.opts);
-                grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/1).zero_();
-                grad_path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments).copy_(grad_path_increments);
-                grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments) -= grad_path_increments;
-                // no second return value in this case
-                return {grad_path, torch::empty({0}, sigspec.opts)};
+                if (sigspec.inverse) {
+                    torch::Tensor grad_path = torch::empty({sigspec.input_stream_size,
+                                                            sigspec.batch_size,
+                                                            sigspec.input_channels},
+                                                           sigspec.opts);
+                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/-1, /*len=*/1).zero_();
+                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/0,
+                                     /*len=*/num_increments).copy_(grad_path_increments);
+                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -= grad_path_increments;
+                    // no second return value in this case
+                    return {grad_path, torch::empty({0}, sigspec.opts)};
+
+                }
+                else {
+                    torch::Tensor grad_path = torch::empty({sigspec.input_stream_size,
+                                                            sigspec.batch_size,
+                                                            sigspec.input_channels},
+                                                           sigspec.opts);
+                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/1).zero_();
+                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/1,
+                                     /*len=*/num_increments).copy_(grad_path_increments);
+                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments) -= grad_path_increments;
+                    // no second return value in this case
+                    return {grad_path, torch::empty({0}, sigspec.opts)};
+                }
             }
         }
     }  // namespace signatory::detail
 
     std::tuple<torch::Tensor, py::object>
-    signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value)
+    signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
+                      bool inverse)
     {
         // No sense keeping track of gradients when we have a dedicated backwards function (and in-place operations mean
         // that in any case one cannot autograd through this function)
@@ -91,12 +136,6 @@ namespace signatory {
         basepoint_value = basepoint_value.detach();
         misc::checkargs(path, depth, basepoint, basepoint_value);
 
-        // Convert from (batch, stream, channel) to (stream, batch, channel), which is the representation we use
-        // internally.
-        // having 'path' have non-monotonically-decreasing strides doesn't slow things down very much, as 'path' is only
-        // really used to compute 'path_increments' below, and the extra speed from a more efficient internal
-        // representation more than compensates
-        path = path.transpose(0, 1);
         if (!path.is_floating_point()) {
             path = path.to(torch::kFloat32);
         }
@@ -105,7 +144,7 @@ namespace signatory {
             basepoint_value = basepoint_value.to(path.dtype());
         }
 
-        misc::SigSpec sigspec{path, depth, stream, basepoint};
+        misc::SigSpec sigspec{path, depth, stream, basepoint, inverse};
 
         torch::Tensor path_increments = detail::compute_path_increments(path, basepoint_value, sigspec);
 
@@ -156,11 +195,6 @@ namespace signatory {
                                                                                     signature,
                                                                                     path_increments);
 
-        // TODO: uncomment when 24413 is fixed
-        // We have to do the transpose in the Python side to avoid PyTorch bug 24413.
-        // https://github.com/pytorch/pytorch/issues/24413
-//        torch::Tensor out = misc::transpose(out, sigspec);
-
         return {signature, backwards_info_capsule};
     }
 
@@ -174,15 +208,8 @@ namespace signatory {
         torch::Tensor signature = backwards_info->signature;
         torch::Tensor path_increments = backwards_info->path_increments;
 
-        // TODO: remove when 24413 is fixed. Here we undo the transposing that autograd has done for us in the
-        //  pulled-out transposes
-        grad_signature = misc::transpose_reverse(grad_signature, sigspec);
-
-        // Check arguments
         misc::checkargs_backward(grad_signature, sigspec);
 
-        // Transpose and clone. (Clone so we don't leak changes through grad_out.)
-        grad_signature = misc::transpose_reverse(grad_signature, sigspec);
         if (!grad_signature.is_floating_point()) {
             grad_signature = grad_signature.to(torch::kFloat32);
         }
@@ -289,8 +316,6 @@ namespace signatory {
         torch::Tensor grad_basepoint_value;
         std::tie(grad_path, grad_basepoint_value) = detail::compute_path_increments_backward(grad_path_increments,
                                                                                              sigspec);
-        // convert from (stream, batch, channel) to (batch, stream, channel)
-        grad_path = grad_path.transpose(0, 1);
         return {grad_path, grad_basepoint_value};
     }
 }  // namespace signatory
