@@ -15,6 +15,8 @@
 """Provides operations relating to Lyndon words and Lyndon brackets."""
 
 
+import itertools as it
+
 # noinspection PyUnresolvedReferences
 from . import _impl
 
@@ -60,6 +62,32 @@ def lyndon_brackets(channels, depth):
         length, and then ordered lexicographically within each length class."""
 
     return _impl.lyndon_brackets(channels, depth)
+
+
+def all_words(channels, depth):
+    # type: (int, int) -> List[List[int]]
+    r"""Computes the collection of all words up to length :attr:`depth` in an alphabet of size
+    :attr:`channels`. Each letter is represented by an integer :math:`i` in the range
+    :math:`0 \leq i < \text{channels}`.
+
+    Arguments:
+        channels (int): The size of the alphabet.
+        depth (int): The maximum word length.
+
+    Returns:
+        A list of lists of integers. Each sub-list corresponds to one word. The words are ordered by length, and
+        then ordered lexicographically within each length class.
+    """
+
+    def generator():
+        r = range(channels)
+        for depth_index in range(1, depth + 1):
+            ranges = (r,) * depth_index
+            for elem in it.product(*ranges):
+                yield elem
+    # Just returning the generator would be much nicer, programmatically speaking, but then this is inconsistent with
+    # the lyndon_words function. This isn't expected to use a lot of memory so this is acceptable.
+    return list(generator())
 
 
 def lyndon_words_to_basis_transform(channels, depth):

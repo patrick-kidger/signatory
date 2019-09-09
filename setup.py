@@ -25,15 +25,13 @@ import metadata
 
 
 ext_modules = [cpp.CppExtension(name='_impl',
-                                sources=['src/free_lie_algebra_ops.cpp',
-                                         'src/logsignature.cpp',
+                                sources=['src/logsignature.cpp',
                                          'src/lyndon.cpp',
                                          'src/misc.cpp',
                                          'src/pytorchbind.cpp',
                                          'src/signature.cpp',
                                          'src/tensor_algebra_ops.cpp'],
-                                depends=['src/free_lie_algebra_ops.hpp',
-                                         'src/logsignature.hpp',
+                                depends=['src/logsignature.hpp',
                                          'src/lyndon.hpp',
                                          'src/misc.hpp',
                                          'src/signature.hpp',

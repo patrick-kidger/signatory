@@ -16,15 +16,19 @@
 of some tests."""
 
 
+import collections as co
 import esig.tosig
 import iisignature
+import itertools as it
 import math
+import matplotlib.pyplot as plt
+import numpy as np
 import signatory
 import timeit
 import torch
 
 try:
-    # Being run directly
+    # Being run via commands.py
     from . import compatibility as compat
 except ImportError:
     # Being run via tests
@@ -33,7 +37,12 @@ except ImportError:
 
 @compat.lru_cache(maxsize=None)
 def prepare(channels, depth):
+    """A cache wrapper around iisignature.prepare, since it takes a long time."""
     return iisignature.prepare(channels, depth)
+
+
+# All of the following functions wrap the analogous functions from each package, to provide a consistent interface for
+# testing against each other.
 
 
 def esig_signature_forward(size, depth, repeat, number):
@@ -233,82 +242,272 @@ def signatory_logsignature_backward_gpu(size, depth, repeat, number):
     return signatory_logsignature_backward(size, depth, repeat, number, gpu=True)
 
 
-signature_forward_fns = {'esig': esig_signature_forward,
-                         'iisignature': iisignature_signature_forward,
-                         'signatory': signatory_signature_forward,
-                         'signatory_gpu': signatory_signature_forward_gpu}
-
-signature_backward_fns = {'esig': esig_signature_backward,
-                          'iisignature': iisignature_signature_backward,
-                          'signatory': signatory_signature_backward,
-                          'signatory_gpu': signatory_signature_backward_gpu}
-
-logsignature_forward_fns = {'esig': esig_logsignature_forward,
-                            'iisignature': iisignature_logsignature_forward,
-                            'signatory': signatory_logsignature_forward,
-                            'signatory_gpu': signatory_logsignature_forward_gpu}
-
-logsignature_backward_fns = {'esig': esig_logsignature_backward,
-                             'iisignature': iisignature_logsignature_backward,
-                             'signatory': signatory_logsignature_backward,
-                             'signatory_gpu': signatory_logsignature_backward_gpu}
-
-signature_fns = {'forward': signature_forward_fns, 'backward': signature_backward_fns}
-
-logsignature_fns = {'forward': logsignature_forward_fns, 'backward': logsignature_backward_fns}
-
-all_fns = {'signature': signature_fns, 'logsignature': logsignature_fns}
+signatory_cpu_str = 'Signatory CPU'
+signatory_gpu_str = 'Signatory GPU'
+iisignature_str = 'iisignature'
+esig_str = 'esig'
+speedup_cpu_str = 'Speedup CPU'
+speedup_gpu_str = 'Speedup GPU'
+speedup_str = 'speedup'
 
 
-class Result:
-    def __init__(self, results):
-        self.results = results
-        self.min = min(results)
-
-    def __repr__(self):
-        if self.min is math.inf:
-            return '-'
-        else:
-            return "{:.3}".format(self.min)
+signature_forward_fns = co.OrderedDict([(signatory_cpu_str, signatory_signature_forward),
+                                        (signatory_gpu_str, signatory_signature_forward_gpu),
+                                        (iisignature_str, iisignature_signature_forward),
+                                        (esig_str, esig_signature_forward)])
 
 
-def run_test(fn_dict, size, depth, repeat, number, print_name, skip=lambda library_name: False, **kwargs):
-    library_results = {}
+signature_backward_fns = co.OrderedDict([(signatory_cpu_str, signatory_signature_backward),
+                                         (signatory_gpu_str, signatory_signature_backward_gpu),
+                                         (iisignature_str, iisignature_signature_backward),
+                                         (esig_str, esig_signature_backward),])
+
+logsignature_forward_fns = co.OrderedDict([(signatory_cpu_str, signatory_logsignature_forward),
+                                           (signatory_gpu_str, signatory_logsignature_forward_gpu),
+                                           (iisignature_str, iisignature_logsignature_forward),
+                                           (esig_str, esig_logsignature_forward),])
+
+logsignature_backward_fns = co.OrderedDict([(signatory_cpu_str, signatory_logsignature_backward),
+                                            (signatory_gpu_str, signatory_logsignature_backward_gpu),
+                                            (iisignature_str, iisignature_logsignature_backward),
+                                            (esig_str, esig_logsignature_backward)])
+
+signature_forward_fns_wrapper = {'Signature forward': signature_forward_fns}
+signature_backward_fns_wrapper = {'Signature backward': signature_backward_fns}
+logsignature_forward_fns_wrapper = {'Logsignature forward': logsignature_forward_fns}
+logsignature_backward_fns_wrapper = {'Logsignature backward': logsignature_backward_fns}
+
+all_fns = co.OrderedDict()
+all_fns.update(signature_forward_fns_wrapper)
+all_fns.update(signature_backward_fns_wrapper)
+all_fns.update(logsignature_forward_fns_wrapper)
+all_fns.update(logsignature_backward_fns_wrapper)
+
+
+def run_test(fn_dict, size, depth, repeat, number, print_name, esig, **kwargs):
+    """Runs a particular function across multiple different libraries and records their times."""
+    library_results = co.OrderedDict()
     for library_name, library_fn in fn_dict.items():
-        if skip(library_name):
+        if not esig and library_name == esig_str:
             continue
-        if print_name:
-            print(*print_name, library_name)
-        library_results[library_name] = Result(library_fn(size, depth, repeat, number, **kwargs))
+        print(print_name, library_name)
+        library_results[library_name] = min(library_fn(size, depth, repeat, number, **kwargs))
+
+    iisignature_results = library_results[iisignature_str]
+    signatory_results = library_results[signatory_cpu_str]
+    signatory_gpu_results = library_results[signatory_gpu_str]
+    other_best = iisignature_results
+    if esig:
+        other_best = min(library_results[esig_str], other_best)
+    library_results[speedup_cpu_str] = other_best / signatory_results
+    library_results[speedup_gpu_str] = other_best / signatory_gpu_results
+
     return library_results
 
 
-def run_tests(size=(16, 32, 8), depths=(4, 6), repeat=100, number=1):
-    results = {}
-    for fn_name, fns in all_fns.items():
-        fn_results = results[fn_name] = {}
-        for direction_name, directions in fns.items():
-            direction_results = fn_results[direction_name] = {}
-            for depth in depths:
-                direction_results[depth] = run_test(directions, size, depth, repeat, number,
-                                                    print_name=(fn_name, direction_name, depth))
-    return results
+class namedarray(object):
+    """Just a minimal helper for our needs elsewhere in this file. There are definitely fancier solutions available."""
+    def __init__(self, *size):
+        self.array = np.empty(size, dtype=object)
+        self.numdims = len(size)
+        self.dim_lookups = [co.OrderedDict() for _ in range(self.numdims)]
+
+    def __setitem__(self, key, value):
+        if not isinstance(key, tuple):
+            raise ValueError
+        if len(key) != self.numdims:
+            raise ValueError
+        indices = []
+        for elem, lookup in zip(key, self.dim_lookups):
+            if isinstance(elem, slice):
+                raise ValueError
+            try:
+                index = lookup[elem]
+            except KeyError:
+                index = lookup[elem] = len(lookup)
+            indices.append(index)
+        indices = tuple(indices)
+        self.array[indices] = value
+
+    def __getitem__(self, key):
+        if not isinstance(key, tuple):
+            raise ValueError
+        if len(key) != self.numdims:
+            raise ValueError
+        indices = []
+        for elem, lookup in zip(key, self.dim_lookups):
+            try:
+                index = lookup[elem]
+            except KeyError:
+                index = elem
+            indices.append(index)
+        indices = tuple(indices)
+        return self.array[indices]
+
+    def __iter__(self):
+        lookups = tuple(lookup.keys() for lookup in self.dim_lookups)
+        for index in it.product(*lookups):
+            yield index, self[index]
 
 
-def get_ratios(results):
-    ratios = {}
-    for fn_name, fn_results in results.items():
-        fn_ratios = ratios[fn_name] = {}
-        for direction_name, direction_results in fn_results.items():
-            direction_ratios = fn_ratios[direction_name] = {}
-            for depth, depth_results in direction_results.items():
-                depth_ratios = direction_ratios[depth] = {}
+class RunSpeeds(object):
+    """Runs all functions across all libraries and records their times for multiple sizes and depths."""
 
-                esig_results = depth_results['esig']
-                iisignature_results = depth_results['iisignature']
-                signatory_results = depth_results['signatory']
-                signatory_gpu_results = depth_results['signatory_gpu']
+    def __init__(self, sizes, depths, repeat=50, number=1, esig=True, fns='all'):
+        self.sizes = sizes
+        self.depths = depths
+        self.repeat = repeat
+        self.number = number
+        self.esig = esig
+        print("Called with sizes {}, depths {}, repeat {}, number {} and esig {}".format(sizes, depths, repeat, number,
+                                                                                         esig))
+        if fns == 'all':
+            self.fns = all_fns
+        elif fns == 'sigf':
+            self.fns = signature_forward_fns_wrapper
+        elif fns == 'sigb':
+            self.fns = signature_backward_fns_wrapper
+        elif fns == 'logsigf':
+            self.fns = logsignature_forward_fns_wrapper
+        elif fns == 'logsigb':
+            self.fns = logsignature_backward_fns_wrapper
+        else:
+            raise RuntimeError
 
-                depth_ratios['cpu'] = min(esig_results.min, iisignature_results.min) / signatory_results.min
-                depth_ratios['gpu'] = min(esig_results.min, iisignature_results.min) / signatory_gpu_results.min
-    return ratios
+    def check_graph(self):
+        if len(self.sizes) > 1 and len(self.depths) > 1:
+            raise RuntimeError("Cannot output as graph with multiple sizes and multiple depths.")
+        if self.fns is all_fns:
+            raise RuntimeError("Cannot output as graph with multiple functions.")
+        batch_size, stream_size, _ = next(iter(self.sizes))
+        for size in self.sizes:
+            if size[0] != batch_size or size[1] != stream_size:
+                raise RuntimeError("Cannot output as graph with multiple batch or stream sizes.")
+
+    def run(self):
+        results = namedarray(len(self.fns), len(self.sizes), len(self.depths))
+        for fn_name, fns in self.fns.items():
+            for size in self.sizes:
+                for depth in self.depths:
+                    result = run_test(fns, size, depth, self.repeat, self.number,
+                                      self._table_format_index(fn_name, size, depth), esig)
+                    results[fn_name, size, depth] = result
+        self.results = results
+
+    @staticmethod
+    def _table_format_index(fn_name, size, depth):
+        return "{}, size {}, depth {}".format(fn_name, size, depth)
+
+    def _graph_format_index(self, fn_name, size, depth):
+        if len(self.sizes) > 1:
+            return size[-1]
+        elif len(self.depths) > 1:
+            return depth
+
+    @classmethod
+    def typical(cls, **kwargs):
+        """Tests two typical use cases."""
+        new_kwargs = dict(sizes=((32, 128, 8),), depths=(5, 7))
+        new_kwargs.update(kwargs)
+        return cls(**new_kwargs)
+
+    @classmethod
+    def channels(cls, **kwargs):
+        """Tests a number of channels for a fixed depth."""
+        new_kwargs = dict(sizes=((32, 128, 4), (32, 128, 5), (32, 128, 6), (32, 128, 7), (32, 128, 8)), depths=(7,))
+        new_kwargs.update(kwargs)
+        return cls(**new_kwargs)
+
+    @classmethod
+    def depths(cls, **kwargs):
+        """Tests depths for a fixed number of channels."""
+        new_kwargs = dict(sizes=((32, 128, 4),), depths=(2, 3, 4, 5, 6, 7, 8, 9, 10))
+        new_kwargs.update(kwargs)
+        return cls(**new_kwargs)
+
+    @classmethod
+    def small(cls, **kwargs):
+        """Tests on very small data. This doesn't given meaningful results - the millisecond overhead of PyTorch/NumPy
+        ends up giving a greater noise than there is signal - but it serves to test the speed-testing framework.
+        """
+        new_kwargs = dict(sizes=((1, 2, 2),), depths=(2, 3, 4, 5))
+        new_kwargs.update(kwargs)
+        return cls(**new_kwargs)
+
+    def graph(self):
+        """Formats the result as a graph."""
+        self.check_graph()
+
+        fig = plt.figure()
+        ax = fig.gca()
+
+        _, example_row_value = next(iter(self.results))
+        x_axes = [[] for _ in range(len(example_row_value))]
+        y_axes = [[] for _ in range(len(example_row_value))]
+        labels = []
+        for column_heading in example_row_value.keys():
+            if speedup_str in column_heading:
+                continue
+            labels.append(column_heading)
+        for row_heading, row_value in self.results:
+            for x_axis, y_axis, (column_heading, column_value) in zip(x_axes, y_axes, row_value.items()):
+                if speedup_str in column_heading:
+                    continue
+                x_axis.append(self._graph_format_index(*row_heading))
+                y_axis.append(column_value)
+
+        for x_axis, y_axis, label in zip(x_axes, y_axes, labels):
+            ax.plot(x_axis, y_axis, label=label)
+        ax.legend(loc='lower right')
+        ax.set_title(list(self.fns.keys())[0])
+        ax.set_ylabel("Time in seconds")
+        if len(self.sizes) > 1:
+            ax.set_xlabel("Number of channels")
+        elif len(self.depths) > 1:
+            ax.set_xlabel("Depth")
+            ax.set_yscale('log')
+        else:
+            raise RuntimeError
+        start, end = ax.get_xlim()
+        ax.xaxis.set_ticks(range(int(math.ceil(start)), int(math.floor(end)) + 1))
+        plt.show()
+
+    def table(self):
+        """Formats the results into a table."""
+
+        def val_to_str(val):
+            if isinstance(val, float):
+                return '{:.3}'.format(val)
+            else:
+                return str(val)
+
+        operation_str = 'Operation'
+        padding = 1
+        max_row_heading_len = len(operation_str) + 2 * padding
+        for row_heading, _ in self.results:
+            max_row_heading_len = max(max_row_heading_len, len(self._table_format_index(*row_heading)))
+
+        column_headings = []
+        column_width_lower_bound = 4
+        column_widths = [max_row_heading_len]
+        _, example_row_value = next(iter(self.results))
+        for column_heading, _ in example_row_value.items():
+            column_headings.append(column_heading)
+            column_widths.append(max(column_width_lower_bound, len(column_heading)) + 2 * padding)
+        for _, row_value in self.results:
+            for column_width_index, (_, column_value) in enumerate(row_value.items()):
+                column_widths[column_width_index] = max(column_widths[column_width_index],
+                                                        len(val_to_str(column_value)) + 2 * padding)
+
+        heading_str = "|".join("{{:^{}}}".format(column_width) for column_width in column_widths)
+        border_str = '+'.join('-' * column_width for column_width in column_widths)
+        print(heading_str.format(operation_str, *column_headings))
+        print(border_str)
+        for row_heading, row_value in self.results:
+            print("{{:<{}}}".format(max_row_heading_len).format(self._table_format_index(*row_heading)), end='')
+            for column_width, (column_heading, column_value), true_column_heading in zip(column_widths[1:],
+                                                                                         row_value.items(),
+                                                                                         column_headings):
+                assert column_heading == true_column_heading
+                print("|{{:>{}}}".format(column_width).format(val_to_str(column_value)), end='')
+            print('')

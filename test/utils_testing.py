@@ -70,7 +70,8 @@ class Config(object):
     call these functions in an appropriate, comparable, manner.
     """
 
-    def __init__(self, mode, logsignature_class, stream, size, depth, prep, basepoint, requires_grad, device, rep):
+    def __init__(self, mode, logsignature_class, stream, size, depth, prep, basepoint, inverse, requires_grad, device,
+                 rep):
         self.signature_or_logsignature = None
         if mode is expand:
             self.signatory_mode = "expand"
@@ -104,6 +105,7 @@ class Config(object):
         self.depth = depth
         self.prep = prep
         self.basepoint_size = size[0], size[2]
+        self.inverse = inverse
         self.rep = rep
 
         if basepoint is with_grad:
@@ -199,13 +201,21 @@ class Config(object):
             raise RuntimeError("Calling logsignature when already called signature")
         self.signature_or_logsignature = False
 
-    def signature(self, store=True):
+    def signature(self, store=True, path=None, stream=None, basepoint=None, inverse=None):
         """Calls signatory.signature"""
         self._using_signature()
+        if path is None:
+            path = self.path
+        if stream is None:
+            stream = self.stream
+        if basepoint is None:
+            basepoint = self.basepoint
+        if inverse is None:
+            inverse = self.inverse
         if random.choice([True, False]):
-            signatory_out = signatory.signature(self.path, self.depth, self.stream, self.basepoint)
+            signatory_out = signatory.signature(path, self.depth, stream=stream, basepoint=basepoint, inverse=inverse)
         else:
-            signatory_out = signatory.Signature(self.depth, self.stream, self.basepoint)(self.path)
+            signatory_out = signatory.Signature(self.depth, stream=stream, inverse=inverse)(path, basepoint=basepoint)
         if store:
             self.signatory_out = signatory_out
         return signatory_out
@@ -229,6 +239,9 @@ class Config(object):
     def sig(self):
         """Calls iisignature.sig"""
         self._using_signature()
+        if self.inverse:
+            raise RuntimeError("iisignature does not support inverses.")
+
         if self.basepoint is True:
             basepointed_path = torch.cat([torch.zeros(self.N, 1, self.C, dtype=torch.double), self.path_cpu],
                                          dim=1)
@@ -258,11 +271,11 @@ class Config(object):
         """Calls signatory.logsignature"""
         self._using_logsignature()
         if self.logsignature_class:
-            signatory_out = signatory.LogSignature(self.depth, self.stream,
-                                                   self.basepoint, self.signatory_mode)(self.path)
+            signatory_out = signatory.LogSignature(self.depth, stream=self.stream, inverse=self.inverse,
+                                                   mode=self.signatory_mode)(self.path, self.basepoint, )
         else:
-            signatory_out = signatory.logsignature(self.path, self.depth, self.stream, self.basepoint,
-                                                   self.signatory_mode)
+            signatory_out = signatory.logsignature(self.path, self.depth, stream=self.stream, basepoint=self.basepoint,
+                                                   inverse=self.inverse, mode=self.signatory_mode)
         if store:
             self.signatory_out = signatory_out
         return signatory_out
@@ -286,6 +299,9 @@ class Config(object):
     def logsig(self):
         """Calls iisignature.logsig"""
         self._using_logsignature()
+        if self.inverse:
+            raise RuntimeError("iisignature does not support inverses.")
+
         if self.stream:
             raise RuntimeError("iisignature.logsig does not support stream=True")
         if self.basepoint is True:
@@ -324,12 +340,14 @@ class Config(object):
                      "path.requires_grad={requires_grad}\n"
                      "depth={depth}\n"
                      "basepoint={basepoint}\n"
+                     "inverse={inverse}\n"
                      "device={device}\n"
                      "logsignature_class={logsignature_class}\n"
                      "rep={rep}"
                      .format(mode=self.signatory_mode, stream=self.stream, size=self.size,
                              requires_grad=self.path.requires_grad, depth=self.depth, basepoint=self.basepoint,
-                             device=self.device, logsignature_class=self.logsignature_class, rep=self.rep))
+                             inverse=self.inverse, device=self.device, logsignature_class=self.logsignature_class,
+                             rep=self.rep))
         for key, value in kwargs.items():
             returnval += '\n{key}={value}'.format(key=key, value=value)
 
@@ -381,7 +399,8 @@ class ConfigIter(object):
                  size=None,              # what sizes to iterate over; supersedes (N, L, C) is passed
                  mode=None,              # what logsignature modes to operate in, if using logsignatures
                  requires_grad=False,    # set to True if wanting to do backwards calls
-                 repeats=1):
+                 repeats=1,
+                 inverse=(False, True)):
 
         if basepoint is None:
             if requires_grad:
@@ -410,6 +429,9 @@ class ConfigIter(object):
                 device.remove('cuda')
                 device = tuple(device)
 
+        if isinstance(inverse, bool):
+            inverse = (inverse,)
+
         self.device = device
         self.mode = mode
         self.logsignature_class = logsignature_class
@@ -422,6 +444,7 @@ class ConfigIter(object):
         self.requires_grad = requires_grad
         self.basepoint = basepoint
         self.repeats = repeats
+        self.inverse = inverse
 
     def size_iter(self):
         if self.size is not None:
@@ -445,9 +468,10 @@ class ConfigIter(object):
                         for logsignature_class in self.logsignature_class:
                             for stream in self.stream:
                                 for basepoint in self.basepoint:
-                                    for rep in range(self.repeats):
-                                        yield Config(mode, logsignature_class, stream, size, depth, prepare, basepoint,
-                                                     self.requires_grad, device, rep)
+                                    for inverse in self.inverse:
+                                        for rep in range(self.repeats):
+                                            yield Config(mode, logsignature_class, stream, size, depth, prepare,
+                                                         basepoint, inverse, self.requires_grad, device, rep)
 
     @staticmethod
     @compat.lru_cache(maxsize=1)
@@ -459,7 +483,7 @@ class EnhancedTestCase(unittest.TestCase):
     """An enhanced test case."""
     
     def setUp(self):
-        if hasattr(unittest, 'print_tests') and unittest.print_tests:
+        if hasattr(unittest, 'print_test_names') and unittest.print_test_names:
             print("Starting {} at {}".format(self.id(), datetime.datetime.now()))
         self.start_time = time.time()
 

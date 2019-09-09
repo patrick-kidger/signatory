@@ -22,8 +22,8 @@
 #include <utility>     // std::pair
 #include <vector>     // std::vector
 
-#include "free_lie_algebra_ops.hpp"
 #include "logsignature.hpp"
+#include "lyndon.hpp"
 #include "misc.hpp"
 #include "pycapsule.hpp"
 #include "signature.hpp"
@@ -36,7 +36,7 @@ namespace signatory {
         // logsignature transformation just once, so that repeated use of the logsignature transformation is more
         // efficient.
         struct LyndonInfo {
-            LyndonInfo(std::unique_ptr<fla_ops::LyndonWords> lyndon_words,
+            LyndonInfo(std::unique_ptr<lyndon::LyndonWords> lyndon_words,
                        std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>>&& transforms,
                        std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>>&& transforms_backward) :
                 lyndon_words{std::move(lyndon_words)},
@@ -45,7 +45,7 @@ namespace signatory {
             {};
 
             // A list of Lyndon words
-            std::unique_ptr<fla_ops::LyndonWords> lyndon_words;
+            std::unique_ptr<lyndon::LyndonWords> lyndon_words;
             
             // The transforms for going from Lyndon words to Lyndon basis
             // This is in terms of the 'compressed' index, i.e. in the free Lie algebra
@@ -59,21 +59,66 @@ namespace signatory {
 
             constexpr static auto capsule_name = "signatory.LyndonInfoCapsule";
         };
+
+        // Compresses a representation of a member of the free Lie algebra.
+        // In the tensor algebra it is represented by coefficients of all words. This just extracts the coefficients of
+        // all the Lyndon words.
+        // The list of all Lyndon words must have already been computed, and passed in as an argument.
+        torch::Tensor compress(const lyndon::LyndonWords& lyndon_words, torch::Tensor input,
+                               const misc::SigSpec& sigspec) {
+            torch::Tensor indices = torch::empty({lyndon_words.amount}, sigspec.opts.dtype(torch::kInt64));
+            for (s_size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index){
+                for (auto& lyndon_word : lyndon_words[depth_index]) {
+                    indices[lyndon_word.compressed_index] = lyndon_word.tensor_algebra_index;
+                }
+            }
+            return torch::index_select(input, /*dim=*/channel_dim, /*index=*/indices);
+        }
+
+        // The backwards operation corresponding to compress.
+        torch::Tensor compress_backward(torch::Tensor grad_compressed, const lyndon::LyndonWords& lyndon_words,
+                                        const misc::SigSpec& sigspec) {
+            torch::Tensor grad_expanded;
+            if (sigspec.stream) {
+                grad_expanded = torch::zeros({sigspec.output_stream_size,
+                                              sigspec.batch_size,
+                                              sigspec.output_channels},
+                                             sigspec.opts);
+            }
+            else {
+                grad_expanded = torch::zeros({sigspec.batch_size,
+                                              sigspec.output_channels},
+                                             sigspec.opts);
+            }
+
+            for (s_size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index){
+                for (auto& lyndon_word: lyndon_words[depth_index]) {
+                    grad_expanded.narrow(/*dim=*/channel_dim,
+                            /*start=*/lyndon_word.tensor_algebra_index,
+                            /*length=*/1).copy_(
+                            grad_compressed.narrow(/*dim=*/channel_dim,
+                                    /*start=*/lyndon_word.compressed_index,
+                                    /*length=*/1),
+                            /*non_blocking=*/true);
+                }
+            }
+            return grad_expanded;
+        }
     }  // namespace signatory::detail
 
     py::object make_lyndon_info(int64_t channels, s_size_type depth, LogSignatureMode mode) {
         misc::checkargs_channels_depth(channels, depth);
-        std::unique_ptr<fla_ops::LyndonWords> lyndon_words;
+        std::unique_ptr<lyndon::LyndonWords> lyndon_words;
         std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>> transforms;
         std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>> transforms_backward;
-        misc::LyndonSpec lyndonspec{channels, depth};
+        misc::MinimalSpec lyndonspec{channels, depth};
 
         // no make_unique in C++11
         if (mode == LogSignatureMode::Words) {
-            lyndon_words.reset(new fla_ops::LyndonWords(lyndonspec, fla_ops::LyndonWords::word_tag));
+            lyndon_words.reset(new lyndon::LyndonWords(lyndonspec, lyndon::LyndonWords::word_tag));
         }
         else if (mode == LogSignatureMode::Brackets) {
-            lyndon_words.reset(new fla_ops::LyndonWords(lyndonspec, fla_ops::LyndonWords::bracket_tag));
+            lyndon_words.reset(new lyndon::LyndonWords(lyndonspec, lyndon::LyndonWords::bracket_tag));
             lyndon_words->to_lyndon_basis(transforms, transforms_backward);
             lyndon_words->delete_extra();
         }
@@ -84,60 +129,48 @@ namespace signatory {
 
     std::tuple<torch::Tensor, py::object>
     logsignature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint,
-                         torch::Tensor basepoint_value, LogSignatureMode mode, py::object lyndon_info_capsule)
+                         torch::Tensor basepoint_value, bool inverse, LogSignatureMode mode,
+                         py::object lyndon_info_capsule)
     {
         if (depth == 1) {
-            return signature_forward(path, depth, stream, basepoint, basepoint_value);
+            return signature_forward(path, depth, stream, basepoint, basepoint_value, inverse);
         }  // this isn't just a fast return path: we also can't index the reciprocals tensor if depth == 1, so we'd need
            // faffier code below - and it's already quite faffy enough
-
-        // No sense keeping track of gradients when we have a dedicated backwards function (and in-place operations mean
-        // that in any case one cannot autograd through this function)
-        path = path.detach();
-        basepoint_value = basepoint_value.detach();
 
         // first call the regular signature
         torch::Tensor signature;
         py::object backwards_info_capsule;
         std::tie(signature, backwards_info_capsule) = signature_forward(path, depth, stream, basepoint,
-                                                                        basepoint_value);
+                                                                        basepoint_value, inverse);
 
         // unpack sigspec
         misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<misc::BackwardsInfo>(backwards_info_capsule);
         const misc::SigSpec& sigspec = backwards_info->sigspec;
 
-        // TODO: uncomment when 24413 is fixed
-        // We have to do the transpose in the Python side to avoid a PyTorch bug.
-        // https://github.com/pytorch/pytorch/issues/24413
-        // (In particular this means we don't have a transpose to undo here.)
-        // // undo the transposing we just did in signature_forward...
-        // signature = misc::transpose_reverse(signature, sigspec);
-
-        // organise the memory into a vector
-        std::vector<torch::Tensor> signature_vector;
-        misc::slice_by_term(signature, signature_vector, sigspec);
+        std::vector<torch::Tensor> signature_by_term_at_stream;
 
         // and allocate memory for the logsignature
         torch::Tensor logsignature = torch::empty_like(signature);
-        std::vector<torch::Tensor> logsignature_vector;
-        misc::slice_by_term(logsignature, logsignature_vector, sigspec);
+        std::vector<torch::Tensor> signature_by_term;
+        std::vector<torch::Tensor> logsignature_by_term;
+        misc::slice_by_term(signature, signature_by_term, sigspec);
+        misc::slice_by_term(logsignature, logsignature_by_term, sigspec);
 
         if (stream) {
-            std::vector<torch::Tensor> signature_stream_vector;
-            std::vector<torch::Tensor> logsignature_stream_vector;
+            std::vector<torch::Tensor> signature_by_term_at_stream;
+            std::vector<torch::Tensor> logsignature_by_term_at_stream;
+
             for (int64_t stream_index = 0;
                  stream_index < sigspec.output_stream_size;
                  ++stream_index) {
-                misc::slice_at_stream(signature_vector, signature_stream_vector,
-                                      stream_index);
-                misc::slice_at_stream(logsignature_vector, logsignature_stream_vector,
-                                      stream_index);
-                ta_ops::compute_log(logsignature_stream_vector, signature_stream_vector,
-                                    sigspec);
+                misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index);
+                misc::slice_at_stream(logsignature_by_term, logsignature_by_term_at_stream, stream_index);
+
+                ta_ops::log(logsignature_by_term_at_stream, signature_by_term_at_stream, sigspec);
             }
         }
         else {
-            ta_ops::compute_log(logsignature_vector, signature_vector, sigspec);
+            ta_ops::log(logsignature_by_term, signature_by_term, sigspec);
         }
 
         // Brackets and Words are the two possible compressed forms of the logsignature. So here we perform the
@@ -147,10 +180,10 @@ namespace signatory {
         }
         detail::LyndonInfo* lyndon_info = misc::unwrap_capsule<detail::LyndonInfo>(lyndon_info_capsule);
         if (mode == LogSignatureMode::Words) {
-            logsignature = fla_ops::compress(*lyndon_info->lyndon_words, logsignature, sigspec);
+            logsignature = detail::compress(*lyndon_info->lyndon_words, logsignature, sigspec);
         }
         else if (mode == LogSignatureMode::Brackets){
-            logsignature = fla_ops::compress(*lyndon_info->lyndon_words, logsignature, sigspec);
+            logsignature = detail::compress(*lyndon_info->lyndon_words, logsignature, sigspec);
             // Then apply the transforms. We rely on the triangularity property of the Lyndon basis for this to work.
             bool cuda = logsignature.is_cuda();
             if (cuda) {
@@ -176,7 +209,7 @@ namespace signatory {
             }
         }
 
-        backwards_info->set_logsignature_data(signature_vector,
+        backwards_info->set_logsignature_data(signature_by_term,
                                               // Important: the capsule, not the lyndon_info itself! Then the resource
                                               // (i.e. the lyndon_info) is managed Python-style, so it doesn't matter
                                               // whether this is a capsule that was given to us, or that we generated
@@ -185,10 +218,6 @@ namespace signatory {
                                               mode,
                                               logsignature.size(channel_dim));
 
-        // TODO: uncomment when 24413 is fixed
-        // We have to do the transpose in the Python side to avoid a PyTorch bug.
-        // https://github.com/pytorch/pytorch/issues/24413
-        // logsignature = misc::transpose(logsignature, sigspec);
         return {logsignature, backwards_info_capsule};
     }
 
@@ -201,20 +230,15 @@ namespace signatory {
             return signature_backward(grad_logsignature, backwards_info_capsule);
         }
 
-        // TODO: Remove this line when PyTorch bug 24413 is fixed. Here we undo the transposing that has been
-        //  automatically done via autograd outside
-        grad_logsignature = misc::transpose_reverse(grad_logsignature, sigspec);
-
         // Unpack everything else from backwards_info
-        torch::Tensor signature = backwards_info->out;
-        const std::vector<torch::Tensor>& signature_vector = backwards_info->signature_vector;
+        torch::Tensor signature = backwards_info->signature;
+        const std::vector<torch::Tensor>& signature_by_term = backwards_info->signature_by_term;
         LogSignatureMode mode = backwards_info->mode;
         int64_t logsignature_channels = backwards_info->logsignature_channels;
         detail::LyndonInfo* lyndon_info = misc::unwrap_capsule<detail::LyndonInfo>(backwards_info->lyndon_info_capsule);
 
         misc::checkargs_backward(grad_logsignature, sigspec, logsignature_channels);
 
-        grad_logsignature = misc::transpose_reverse(grad_logsignature, sigspec);
         if (!grad_logsignature.is_floating_point()) {
             grad_logsignature = grad_logsignature.to(torch::kFloat32);
         }
@@ -224,10 +248,10 @@ namespace signatory {
             grad_logsignature = grad_logsignature.clone();  // Clone so we don't leak changes through grad_logsignature.
         }
         else if (mode == LogSignatureMode::Words){
-            grad_logsignature = fla_ops::compress_backward(grad_logsignature, *lyndon_info->lyndon_words, sigspec);
+            grad_logsignature = detail::compress_backward(grad_logsignature, *lyndon_info->lyndon_words, sigspec);
         }
         else {  // mode == LogSignatureMode::Brackets
-            grad_logsignature = fla_ops::compress_backward(grad_logsignature, *lyndon_info->lyndon_words, sigspec);
+            grad_logsignature = detail::compress_backward(grad_logsignature, *lyndon_info->lyndon_words, sigspec);
 
             /* This is a deliberate asymmetry between the forwards and backwards: in the forwards pass we applied the
              * linear transformation after compression, but on the backwards we don't apply the transforms before
@@ -263,40 +287,36 @@ namespace signatory {
         }
 
         torch::Tensor grad_signature = torch::zeros_like(grad_logsignature);
-        std::vector<torch::Tensor> grad_logsignature_vector;
-        std::vector<torch::Tensor> grad_signature_vector;
-        misc::slice_by_term(grad_logsignature, grad_logsignature_vector, sigspec);
-        misc::slice_by_term(grad_signature, grad_signature_vector, sigspec);
+
+        std::vector<torch::Tensor> grad_logsignature_by_term;
+        std::vector<torch::Tensor> grad_signature_by_term;
+        misc::slice_by_term(grad_logsignature, grad_logsignature_by_term, sigspec);
+        misc::slice_by_term(grad_signature, grad_signature_by_term, sigspec);
 
         if (sigspec.stream) {
-            std::vector<torch::Tensor> grad_logsignature_stream_vector;
-            std::vector<torch::Tensor> grad_signature_stream_vector;
-            std::vector<torch::Tensor> signature_stream_vector;
-            for (int64_t stream_index = 0;
-                 stream_index < sigspec.output_stream_size;
-                 ++stream_index) {
-                misc::slice_at_stream(grad_logsignature_vector,
-                                      grad_logsignature_stream_vector,
+            std::vector<torch::Tensor> grad_logsignature_by_term_at_stream;
+            std::vector<torch::Tensor> grad_signature_by_term_at_stream;
+            std::vector<torch::Tensor> signature_by_term_at_stream;
+
+            for (int64_t stream_index = 0; stream_index < sigspec.output_stream_size; ++stream_index) {
+                misc::slice_at_stream(grad_logsignature_by_term,
+                                      grad_logsignature_by_term_at_stream,
                                       stream_index);
-                misc::slice_at_stream(grad_signature_vector,
-                                      grad_signature_stream_vector,
+                misc::slice_at_stream(grad_signature_by_term,
+                                      grad_signature_by_term_at_stream,
                                       stream_index);
-                misc::slice_at_stream(signature_vector,
-                                      signature_stream_vector,
+                misc::slice_at_stream(signature_by_term,
+                                      signature_by_term_at_stream,
                                       stream_index);
 
-                ta_ops::compute_log_backward(grad_logsignature_stream_vector,
-                                             grad_signature_stream_vector,
-                                             signature_stream_vector,
-                                             sigspec);
+                ta_ops::log_backward(grad_logsignature_by_term_at_stream, grad_signature_by_term_at_stream,
+                                     signature_by_term_at_stream, sigspec);
             }
         }
         else {
-            ta_ops::compute_log_backward(grad_logsignature_vector, grad_signature_vector, signature_vector, sigspec);
+            ta_ops::log_backward(grad_logsignature_by_term, grad_signature_by_term, signature_by_term, sigspec);
         }
 
-        // TODO: uncomment this line once PyTorch bug 24413 is fixed
-//        grad_signature = misc::transpose(grad_signature, sigspec);
         return signature_backward(grad_signature, backwards_info_capsule, false);
     }
 }  // namespace signatory

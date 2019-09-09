@@ -39,8 +39,9 @@ Then run
 import argparse
 import io
 import os
-import pprint
+import shlex
 import subprocess
+import webbrowser
 #### DO NOT IMPORT NON-(STANDARD LIBRARY) MODULES HERE
 # Instead, lazily import them inside the command.
 # This allows all the commands that don't e.g. require a built version of Signatory to operate without it
@@ -74,11 +75,24 @@ def main():
     genreadme_parser.set_defaults(cmd=genreadme)
 
     test_parser.add_argument('-f', '--failfast', action='store_true', help='Stop tests on first failure.')
-    test_parser.add_argument('-n', '--nonames', action='store_false', dest='names', help="Don't print names and start "
-                                                                                         "time of the tests being run.")
-    test_parser.add_argument('-t', '--notimes', action='store_false', dest='times', help="Don't print the overall "
-                                                                                         "times of the tests that have "
-                                                                                         "been run.")
+    test_parser.add_argument('-n', '--nonames', action='store_false', dest='names',
+                             help="Don't print names and start time of the tests being run.")
+    test_parser.add_argument('-t', '--notimes', action='store_false', dest='times',
+                             help="Don't print the overall times of the tests that have been run.")
+
+    benchmark_parser.add_argument('-e', '--noesig', action='store_false', dest='esig',
+                                  help="Skip esig tests as esig is typically very slow.")
+    benchmark_parser.add_argument('-t', '--type', choices=('typical', 'depths', 'channels', 'small'), default='typical',
+                                  help="What kind of benchmark to run. 'typical' tests on two typical size/depth "
+                                       "combinations and prints the results as a table to stdout. 'depth' and "
+                                       "'channels' are more thorough benchmarks (and will taking correspondingly "
+                                       "longer to run!) testing multiple depths or multiple channels respectively.")
+    benchmark_parser.add_argument('-o', '--output', choices=('table', 'graph'), default='table',
+                                  help="How to format the output. 'table' formats as a table, 'graph' formats as a "
+                                       "graph.")
+    benchmark_parser.add_argument('-f', '--fns', choices=('sigf', 'sigb', 'logsigf', 'logsigb', 'all'), default='all',
+                                  help="Which functions to run: signature forwards, signature backwards, logsignature "
+                                       "forwards, logsignature backwards, or all of them.")
 
     args = parser.parse_args()
 
@@ -93,13 +107,19 @@ def main():
 here = os.path.realpath(os.path.dirname(__file__))
 
 
-def run_commands(*commands):
-    """Runs a collection of commands in a shell."""
-    print_commands = ["printf \"%s\n\" \">>> {}\"".format(command) for command in commands]
+def run_commands(*commands, stdout=True):
+    """Runs a collection of commands in a shell.
+
+    Note that it's not super robust - there aren't really reliable ways to do cross-platform shell scripting.
+    """
+    print_commands = ['echo {}'.format(shlex.quote("(running) " + command)) for command in commands]
     all_commands = []
     for i in range(len(commands)):
         all_commands.append(print_commands[i])
-        all_commands.append("{} > /dev/null".format(commands[i]))
+        if stdout:
+            all_commands.append(commands[i])
+        else:
+            all_commands.append("{} > /dev/null".format(commands[i]))
     # && should work on both Windows and Linux. Not sure about Macs. Still Unix, so probably works?
     subprocess.run(' && '.join(all_commands), shell=True)
 
@@ -135,20 +155,35 @@ def benchmark(args):
     import torch
     with torch.cuda.device(args.device):
         print('Using device {}'.format(args.device))
-        results = speed.run_tests()
-    ratios = speed.get_ratios(results)
-    pprint.pprint(results)
-    print('-----------------------')
-    pprint.pprint(ratios)
+        if args.type == 'typical':
+            run_speeds = speed.RunSpeeds.typical(esig=args.esig, fns=args.fns)
+        elif args.type == 'depths':
+            run_speeds = speed.RunSpeeds.depths(esig=args.esig, fns=args.fns)
+        elif args.type == 'channels':
+            run_speeds = speed.RunSpeeds.channels(esig=args.esig, fns=args.fns)
+        elif args.type == 'small':
+            run_speeds = speed.RunSpeeds.small(esig=args.esig, fns=args.fns)
+        else:
+            raise RuntimeError
+        if args.output == 'graph':
+            run_speeds.check_graph()
+        run_speeds.run()
+        if args.output == 'graph':
+            run_speeds.graph()
+        elif args.output == 'table':
+            run_speeds.table()
+        else:
+            raise RuntimeError
 
     
 def docs(args=()):
-    """Build the documentation. After it has been built then it can be found in ./docs/_build/html/index.html
+    """Build the documentation. After it has been built then it can be found in ./docs/_build/html/index.html/
     The package 'py2annotate' will need to be installed. It can be installed via `pip install py2annotate`
     Note that the documentation is already available online at https://signatory.readthedocs.io
     """
     import py2annotate  # fail fast here if necessary
-    run_commands("sphinx-build -M html {}, {}".format(os.path.join(here, "docs"), os.path.join(here, "docs", "_build")))
+    run_commands("sphinx-build -M html {} {}".format(os.path.join(here, "docs"), os.path.join(here, "docs", "_build")))
+    webbrowser.open_new_tab('file:///{}'.format(os.path.join(here, 'docs', '_build', 'html', 'index.html')))
     
     
 def publish(args=()):
@@ -181,7 +216,8 @@ def build_and_test(pythonv, signatoryv):
                  "python {} test -f".format(os.path.join(here, "command.py")),
                  "conda deactivate",
                  "conda env remove -p /tmp/signatory-{pythonv}".format(pythonv=pythonv),
-                 "conda clean -a -y")
+                 "conda clean -a -y",
+                 stdout=False)
 
     
 def genreadme(args=()):

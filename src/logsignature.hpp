@@ -31,7 +31,8 @@ namespace signatory {
     // See signatory.logsignature for documentation
     std::tuple<torch::Tensor, py::object>
     logsignature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint,
-                         torch::Tensor basepoint_value, LogSignatureMode mode, py::object lyndon_info_capsule);
+                         torch::Tensor basepoint_value, bool inverse, LogSignatureMode mode,
+                         py::object lyndon_info_capsule);
 
     // See signatory.logsignature for documentation
     std::tuple<torch::Tensor, torch::Tensor>

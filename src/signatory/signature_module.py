@@ -32,8 +32,8 @@ if False:
 
 class _SignatureFunction(autograd.Function):
     @staticmethod
-    def forward(ctx, path, depth, stream, basepoint):
-        return backend.forward(ctx, path, depth, stream, basepoint, _impl.signature_forward)
+    def forward(ctx, path, depth, stream, basepoint, inverse):
+        return backend.forward(ctx, path, depth, stream, basepoint, inverse, _impl.signature_forward)
 
     @staticmethod
     @autograd_function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
@@ -41,8 +41,8 @@ class _SignatureFunction(autograd.Function):
         return backend.backward(ctx, grad_result, _impl.signature_backward)
 
 
-def signature(path, depth, stream=False, basepoint=False):
-    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor]) -> torch.Tensor
+def signature(path, depth, stream=False, basepoint=False, inverse=False):
+    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], bool) -> torch.Tensor
     r"""Applies the signature transform to a stream of data.
 
     The input :attr:`path` is expected to be a three-dimensional tensor, with dimensions :math:`(N, L, C)`, where
@@ -51,22 +51,19 @@ def signature(path, depth, stream=False, basepoint=False):
     :math:`x_i \in \mathbb{R}^C`. (This is the same as :class:`torch.nn.Conv1d`, for example.)
 
     If :attr:`basepoint` is True then an additional point :math:`x_0 = 0 \in \mathbb{R}^C` is prepended to the path.
-    (Alternatively it can be a :class:`torch.Tensor1` of shape :math:`(N, C)` specifying the point to prepend.)
+    (Alternatively it can be a :class:`torch.Tensor` of shape :math:`(N, C)` specifying the point to prepend.)
 
     Each path is then lifted to a piecewise linear path :math:`X \colon [0, 1] \to \mathbb{R}^C`, and the signature
-    transform of this path is then computed. This (by the definition of the signature transform) gives a sequence of
-    tensors of shape
-
-    .. math::
-        (N, C), (N, C, C), \ldots (N, C, \ldots, C),
-
-    where the final tensor has :attr:`depth` many dimensions of size :math:`C`. These are then flattened down and
-    concatenated to give a single tensor of shape
+    transform of this path is then computed, giving a tensor of shape
 
     .. math::
         (N, C + C^2 + \cdots + C^\text{depth}).
 
-    (This value may be computed via the :func:`signatory.signature_channels` function.)
+    In mathematical notation, the piecewise linear path we select is the one generated from the differences, so the
+    signature is defined as
+
+    .. math::
+        \exp(x_2 - x_1) \otimes \exp(x_3 - x_2) \otimes \cdots \otimes \exp(x_L - x_{L - 1}).
 
     If :attr:`stream` is True then  the signatures of all paths :math:`(x_1, \ldots, x_j)`, for :math:`j=2, \ldots, L`,
     are computed. (Or :math:`(x_0, \ldots, x_j)`, for :math:`j=1, \ldots, L` if :attr:`basepoint` is provided. In
@@ -100,6 +97,15 @@ def signature(path, depth, stream=False, basepoint=False):
             Alternatively it may be a :class:`torch.Tensor` specifying the point to prepend, in which case it should
             have shape :math:`(N, C)`
 
+        inverse (bool, optional): Defaults to False. If True then it is in fact the inverse signature that is computed.
+            That is,
+
+            .. math::
+                \exp(x_{L - 1} - x_L) \otimes \cdots \otimes \exp(x_2 - x_3) \otimes \exp(x_1 - x_2).
+
+            From a machine learning perspective it does not particularly matter whether the signature or the inverse
+            signature is computed - both represent essentially the same information as each other.
+
     Returns:
         A :class:`torch.Tensor`. Given an input :class:`torch.Tensor` of shape :math:`(N, L, C)`, and input arguments
         :attr:`depth`, :attr:`basepoint`, :attr:`stream`, then the return value is, in pseudocode:
@@ -119,16 +125,13 @@ def signature(path, depth, stream=False, basepoint=False):
 
     """
     # noinspection PyUnresolvedReferences
-    result = _SignatureFunction.apply(path, depth, stream, basepoint)
+    result = _SignatureFunction.apply(path, depth, stream, basepoint, inverse)
 
-    # TODO: remove when 24413 is fixed
-    # We have to do the transpose in the Python side to avoid a PyTorch bug.
+    # We have to do the transpose outside of autograd.Function.apply to avoid a PyTorch bug.
     # https://github.com/pytorch/pytorch/issues/24413
-    # This call has to be outside the autograd.Function.apply
     if stream:
         result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere and we
                                          # don't want to change it.
-
     return result
 
 
@@ -140,21 +143,23 @@ class Signature(nn.Module):
 
         stream (bool, optional): as :func:`signatory.signature`.
 
-        basepoint (bool or :class:`torch.Tensor`, optional): as :func:`signatory.signature`.
+        inverse (bool, optional): as :func:`signatory.signature`.
 
-    Called with a single argument :attr:`path` of type :class:`torch.Tensor`.
+    Called with two arguments :attr:`path` and :attr:`basepoint`. :attr:`path` should be of type :class:`torch.Tensor`,
+    whilst :attr:`basepoint` should be of type `Union[bool, torch.Tensor]`. Both of them are treated as in
+    :func:`signatory.logsignature`.
     """
 
-    def __init__(self, depth, stream=False, basepoint=False, **kwargs):
-        # type: (int, bool, Union[bool, torch.Tensor], **Any) -> None
+    def __init__(self, depth, stream=False, inverse=False, **kwargs):
+        # type: (int, bool, bool, **Any) -> None
         super(Signature, self).__init__(**kwargs)
         self.depth = depth
         self.stream = stream
-        self.basepoint = basepoint
+        self.inverse = inverse
 
-    def forward(self, path):
-        # type: (torch.Tensor) -> torch.Tensor
-        return signature(path, self.depth, self.stream, self.basepoint)
+    def forward(self, path, basepoint=False):
+        # type: (torch.Tensor, Union[bool, torch.Tensor]) -> torch.Tensor
+        return signature(path, self.depth, self.stream, basepoint, self.inverse)
 
     def extra_repr(self):
         return 'depth={depth}, stream={stream}, basepoint={basepoint}'.format(depth=self.depth, stream=self.stream,
@@ -191,11 +196,11 @@ def extract_signature_term(sig_tensor, channels, depth):
     term of that, returning a tensor with just :math:`C^\text{depth}` channels.
 
     Arguments:
-        sig_tensor (:class:`torch.Tensor`): The signature to extract the term from. Should be the result of the
+        sig_tensor (:class:`torch.Tensor`): The signature to extract the term from. Should be a result from the
             :func:`signatory.signature` function.
 
         channels (int): The number of input channels :math:`C`. (In principle this is determined by the size of
-            :attr:`sig_tensor`, but it is hard to compute from this.)
+            :attr:`sig_tensor`, but it is hard to compute this value from :attr:`sig_tensor`.)
 
         depth (int): The depth of the term to be extracted from the signature.
 
