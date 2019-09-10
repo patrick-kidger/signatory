@@ -59,20 +59,6 @@ class TestSignatureArguments(utils.EnhancedTestCase):
             with self.assertRaises(ValueError):
                 c.signature()
 
-    def test_arguments(self):
-        for c in utils.ConfigIter(L=(1, 2, 3, 4),
-                                  requires_grad=True):
-            if not c.has_basepoint() and c.L == 1:
-                with self.assertRaises(ValueError):
-                    c.signature()
-            else:
-                try:
-                    c.signature()
-                except Exception:
-                    self.fail(c.fail())
-
-
-class TestSignatureShapes(utils.EnhancedTestCase):
     @staticmethod
     def correct_shape(size, depth, stream, basepoint):
         N, L, C = size
@@ -84,13 +70,21 @@ class TestSignatureShapes(utils.EnhancedTestCase):
         else:
             return N, signatory.signature_channels(C, depth)
 
-    def test_shapes(self):
-        for c in utils.ConfigIter(requires_grad=True):
-            signatory_out = c.signature()
-            correct_shape = self.correct_shape(c.size, c.depth, c.stream, c.basepoint)
-            self.assertEqual(signatory_out.shape, correct_shape, c.fail())
-            # PyTorch automatically tests backward shapes every time we call backward: which we do a whole bunch in the
-            # test suite so we don't explicitly test it here.
+    # Hybrid test for speed
+    def test_arguments_and_shape(self):
+        for c in utils.ConfigIter(N=(1, 2),   # reduced space to test because this test is too slow otherwise
+                                  L=(1, 2, 3),
+                                  depth=(1, 2, 3)):
+            if not c.has_basepoint() and c.L == 1:
+                with self.assertRaises(ValueError):
+                    c.signature()
+            else:
+                try:
+                    signatory_out = c.signature()
+                except Exception:
+                    self.fail(c.fail())
+                correct_shape = self.correct_shape(c.size, c.depth, c.stream, c.basepoint)
+                self.assertEqual(signatory_out.shape, correct_shape, c.fail())
 
 
 class TestLogSignatureArguments(utils.EnhancedTestCase):
@@ -134,21 +128,6 @@ class TestLogSignatureArguments(utils.EnhancedTestCase):
             with self.assertRaises(ValueError):
                 c.logsignature()
 
-    def test_arguments(self):
-        for c in utils.ConfigIter(mode=utils.all_modes,
-                                  L=(1, 2, 3, 4),
-                                  requires_grad=True):
-            if not c.has_basepoint() and c.L == 1:
-                with self.assertRaises(ValueError):
-                    c.logsignature()
-            else:
-                try:
-                    c.logsignature()
-                except Exception:
-                    self.fail(c.fail())
-
-
-class TestLogSignatureShapes(utils.EnhancedTestCase):
     @staticmethod
     def correct_shape(size, depth, stream, basepoint, mode):
         N, L, C = size
@@ -164,11 +143,19 @@ class TestLogSignatureShapes(utils.EnhancedTestCase):
         else:
             return N, channel_fn(C, depth)
 
-    def test_shapes(self):
+    # Hybrid test for speed
+    def test_arguments_and_shape(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
-                                  requires_grad=True):
-            signatory_out = c.logsignature()
-            correct_shape = self.correct_shape(c.size, c.depth, c.stream, c.basepoint, c.signatory_mode)
-            self.assertEqual(signatory_out.shape, correct_shape, c.fail())
-            # PyTorch automatically tests backward shapes every time we call backward: which we do a whole bunch in the
-            # test suite so we don't explicitly test it here.
+                                  N=(1, 2),   # reduced space to test because this test is too slow otherwise
+                                  L=(1, 2, 3),
+                                  depth=(1, 2, 3)):
+            if not c.has_basepoint() and c.L == 1:
+                with self.assertRaises(ValueError):
+                    c.logsignature()
+            else:
+                try:
+                    signatory_out = c.logsignature()
+                except Exception:
+                    self.fail(c.fail())
+                correct_shape = self.correct_shape(c.size, c.depth, c.stream, c.basepoint, c.signatory_mode)
+                self.assertEqual(signatory_out.shape, correct_shape, c.fail())

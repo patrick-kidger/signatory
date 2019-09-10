@@ -25,15 +25,15 @@ import utils_testing as utils
 
 class TestSignatureGrad(utils.EnhancedTestCase):
     @staticmethod
-    def gradcheck(path, depth, stream, basepoint, **kwargs):
-        return autograd.gradcheck(signatory.signature, (path, depth, stream, basepoint), **kwargs)
+    def gradcheck(path, depth, stream, basepoint, inverse, **kwargs):
+        return autograd.gradcheck(signatory.signature, (path, depth, stream, basepoint, inverse), **kwargs)
 
     def test_gradcheck_edge(self):
         for c in utils.ConfigIter(depth=(1, 2, 3),
                                   requires_grad=True,
                                   size=((1, 2, 1), (1, 4, 4), (4, 2, 4), (4, 4, 1))):
             try:
-                self.gradcheck(c.path, c.depth, c.stream, c.basepoint)
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.inverse)
             except RuntimeError:
                 self.fail(c.fail())
 
@@ -41,7 +41,7 @@ class TestSignatureGrad(utils.EnhancedTestCase):
     def test_gradcheck_grid(self):
         for c in utils.ConfigIter(requires_grad=True):
             try:
-                self.gradcheck(c.path, c.depth, c.stream, c.basepoint)
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.inverse)
             except RuntimeError:
                 self.fail(c.fail())
 
@@ -49,7 +49,7 @@ class TestSignatureGrad(utils.EnhancedTestCase):
         for c in utils.ConfigIter(requires_grad=True,
                                   size=utils.random_size()):
             try:
-                self.gradcheck(c.path, c.depth, c.stream, c.basepoint)
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.inverse)
             except RuntimeError:
                 self.fail(c.fail())
 
@@ -59,7 +59,7 @@ class TestSignatureGrad(utils.EnhancedTestCase):
                                   size=utils.large_size(),
                                   depth=utils.large_depth()):
             try:
-                self.gradcheck(c.path, c.depth, c.stream, c.basepoint)
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.inverse)
             except RuntimeError:
                 self.fail(c.fail())
 
@@ -69,8 +69,8 @@ class TestSignatureGrad(utils.EnhancedTestCase):
 
 class TestLogSignatureGrad(utils.EnhancedTestCase):
     @staticmethod
-    def gradcheck(path, depth, stream, basepoint, mode, **kwargs):
-        return autograd.gradcheck(signatory.logsignature, (path, depth, stream, basepoint, mode), **kwargs)
+    def gradcheck(path, depth, stream, basepoint, inverse, mode, **kwargs):
+        return autograd.gradcheck(signatory.logsignature, (path, depth, stream, basepoint, inverse, mode), **kwargs)
 
     def test_gradcheck_edge(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
@@ -78,7 +78,7 @@ class TestLogSignatureGrad(utils.EnhancedTestCase):
                                   requires_grad=True,
                                   size=((1, 2, 1), (1, 3, 3), (3, 2, 3), (3, 3, 1))):
             try:
-                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.signatory_mode)
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.inverse, c.signatory_mode)
             except RuntimeError:
                 self.fail(c.fail())
 
@@ -87,7 +87,7 @@ class TestLogSignatureGrad(utils.EnhancedTestCase):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   requires_grad=True):
             try:
-                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.signatory_mode)
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.inverse, c.signatory_mode)
             except RuntimeError:
                 self.fail(c.fail())
 
@@ -96,7 +96,7 @@ class TestLogSignatureGrad(utils.EnhancedTestCase):
                                   requires_grad=True,
                                   size=utils.random_size()):
             try:
-                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.signatory_mode)
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.inverse, c.signatory_mode)
             except RuntimeError:
                 self.fail(c.fail())
 
@@ -107,6 +107,6 @@ class TestLogSignatureGrad(utils.EnhancedTestCase):
                                   size=utils.large_size(),
                                   depth=utils.large_depth()):
             try:
-                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.signatory_mode)
+                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.inverse, c.signatory_mode)
             except RuntimeError:
                 self.fail(c.fail())

@@ -1,3 +1,12 @@
+1.1.1
+-----
+Speed improvements to signature and logsignature both forwards and backwards.
+Added the all_words function
+Added the Path class
+signature and logsignature functions and classes now accept an 'inverse' option to calculate the inverse-signature or log-inverse-signature.
+
+BREAKING CHANGES: Minor ones only. Signature and Logsignature now take basepoint as a call-time argument rather than as an init-time argument. The position of the logsignature and Logsignature 'mode' argument has changed due to the addition of the new 'inverse' argument.
+
 1.1.0
 -----
 Should now typically run even faster on typical batch sizes.

@@ -22,8 +22,9 @@
                              // signatory::make_lyndon_info
 #include "misc.hpp"          // signatory::LogSignatureMode, signatory::signature_channels
 #include "signature.hpp"     // signatory::signature_forward, signatory::signature_backward,
-#include "lyndon.hpp"     // signatory::lyndon_words, signatory::lyndon_brackets,
+#include "lyndon.hpp"        // signatory::lyndon_words, signatory::lyndon_brackets,
                              // signatory::lyndon_words_to_basis_transform
+#include "tensor_algebra_ops.hpp"  // signatory::tensor_algebra_mult_forward, signatory::tensor_algebra_mult_backward
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("logsignature_forward",
@@ -52,4 +53,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("lyndon_words_to_basis_transform",
           &signatory::lyndon_words_to_basis_transform,
           py::return_value_policy::move);
+    m.def("tensor_algebra_mult_forward",
+          &signatory::tensor_algebra_mult_forward);
+    m.def("tensor_algebra_mult_backward",
+        &signatory::tensor_algebra_mult_backward);
 }

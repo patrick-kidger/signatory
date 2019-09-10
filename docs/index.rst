@@ -17,6 +17,7 @@ Consult the sidebar on the left hand side of this page for documentation.
 
     /pages/reference/signatures
     /pages/reference/logsignatures
+    /pages/reference/path
     /pages/reference/utilities
 
 .. toctree::
