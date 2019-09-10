@@ -62,7 +62,7 @@ def main():
     benchmark_parser = subparsers.add_parser('benchmark', parents=[deviceparser])
     docs_parser = subparsers.add_parser('docs')
     publish_parser = subparsers.add_parser('publish')
-    prepublish_parser = subparsers.add_parser('prepublish')
+    prepublish_parser = subparsers.add_parser('prepublish', parents=[deviceparser])
     genreadme_parser = subparsers.add_parser('genreadme')
 
     install_parser.set_defaults(cmd=install)
@@ -94,6 +94,9 @@ def main():
                                   help="Which functions to run: signature forwards, signature backwards, logsignature "
                                        "forwards, logsignature backwards, or all of them.")
 
+    prepublish_parser.add_argument('-l', '--loc', default='/tmp', dest='directory',
+                                   help="Where to place the conda environments used for testing.")
+
     args = parser.parse_args()
 
     # Have to do it this was for Python 2/3 compatability
@@ -107,11 +110,17 @@ def main():
 here = os.path.realpath(os.path.dirname(__file__))
 
 
-def run_commands(*commands, stdout=True):
+def run_commands(*commands, **kwargs):
     """Runs a collection of commands in a shell.
 
     Note that it's not super robust - there aren't really reliable ways to do cross-platform shell scripting.
     """
+
+    # For Python 2 compatability.
+    stdout = kwargs.pop('stdout', True)
+    if kwargs:
+        raise ValueError
+
     print_commands = ['echo {}'.format(shlex.quote("(running) " + command)) for command in commands]
     all_commands = []
     for i in range(len(commands)):
@@ -151,27 +160,27 @@ def test(args):
 
 def benchmark(args):
     """Run speed benchmarks."""
-    import test.speed_comparison as speed
+    import test.benchmark as bench
     import torch
     with torch.cuda.device(args.device):
         print('Using device {}'.format(args.device))
         if args.type == 'typical':
-            run_speeds = speed.RunSpeeds.typical(esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.typical(test_esig=args.esig, fns=args.fns)
         elif args.type == 'depths':
-            run_speeds = speed.RunSpeeds.depths(esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.depths(test_esig=args.esig, fns=args.fns)
         elif args.type == 'channels':
-            run_speeds = speed.RunSpeeds.channels(esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.channels(test_esig=args.esig, fns=args.fns)
         elif args.type == 'small':
-            run_speeds = speed.RunSpeeds.small(esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.small(test_esig=args.esig, fns=args.fns)
         else:
             raise RuntimeError
         if args.output == 'graph':
-            run_speeds.check_graph()
-        run_speeds.run()
+            runner.check_graph()
+        runner.run()
         if args.output == 'graph':
-            run_speeds.graph()
+            runner.graph()
         elif args.output == 'table':
-            run_speeds.table()
+            runner.table()
         else:
             raise RuntimeError
 
@@ -191,7 +200,7 @@ def publish(args=()):
     run_commands("twine upload {}".format(os.path.join(here, "dist", "*")))
 
 
-def prepublish(args=()):
+def prepublish(args):
     """Runs tests on all supported configurations to check before publishing."""
     # TODO: update to a proper system
     import metadata
@@ -199,23 +208,27 @@ def prepublish(args=()):
     run_commands("rm -rf {}".format(os.path.join(here, "dist")))
     genreadme()
     run_commands("python {} sdist".format(os.path.join(here, 'setup.py')))
+    device_str = ' -d {}'.format(args.device)
     for pythonv in ['2.7', '3.5', '3.6', '3.7']:
-        build_and_test(pythonv, metadata.version)
+        build_and_test(pythonv, metadata.version, device_str, args.directory)
 
 
-def build_and_test(pythonv, signatoryv):
+def build_and_test(pythonv, signatoryv, device_str, directory):
     # Kind of fragile but good enough for now
-    # Only works through bash due to the 'conda init bash', 'conda activate', "/tmp" lines.
-    run_commands("conda create -p /tmp/signatory-{pythonv} -y python={pythonv}".format(pythonv=pythonv),
+    # Only works through bash due to the 'conda init bash', 'conda activate'
+    run_commands("conda clean -a -y",
+                 "conda create -p {directory}/signatory-{pythonv} -y python={pythonv}".format(directory=directory,
+                                                                                              pythonv=pythonv),
                  ". ~/miniconda3/etc/profile.d/conda.sh",
-                 "conda activate /tmp/signatory-{pythonv}".format(pythonv=pythonv),
+                 "conda activate {directory}/signatory-{pythonv}".format(directory=directory, pythonv=pythonv),
                  "conda install -y pytorch=1.2.0 -c pytorch",
                  "pip install --upgrade pip",
                  "pip install {here}/dist/signatory-{signatoryv}.tar.gz".format(here=here, signatoryv=signatoryv),
                  "pip install iisignature",
-                 "python {} test -f".format(os.path.join(here, "command.py")),
+                 "python {} test -f{}".format(os.path.join(here, "command.py"), device_str),
                  "conda deactivate",
-                 "conda env remove -p /tmp/signatory-{pythonv}".format(pythonv=pythonv),
+                 "conda env remove -p /signatory-{pythonv}".format(directory=directory,
+                                                                   pythonv=pythonv),
                  "conda clean -a -y",
                  stdout=False)
 

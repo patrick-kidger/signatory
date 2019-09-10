@@ -29,8 +29,7 @@ class SigNet(nn.Module):
                                          kernel_size=1,
                                          include_original=True,
                                          include_time=True)
-        self.signature = signatory.Signature(depth=sig_depth,
-                                             basepoint=True)
+        self.signature = signatory.Signature(depth=sig_depth)
         # +1 because signatory.Augment is used to add time as well
         sig_channels = signatory.signature_channels(channels=in_channels + 1,
                                                     depth=sig_depth)
@@ -45,7 +44,7 @@ class SigNet(nn.Module):
                                " signature")
         # x in a three dimensional tensor of shape (batch, stream, in_channels + 1),
         # as time has been added as a value
-        y = self.signature(x)
+        y = self.signature(x, basepoint=True)
         # y is a two dimensional tensor of shape (batch, terms), corresponding to
         # the terms of the signature
         z = self.linear(y)

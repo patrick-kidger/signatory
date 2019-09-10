@@ -32,6 +32,17 @@ if False:
     from typing import Any, Union
 
 
+def _mode_convert(mode):
+    if mode == "expand":
+        return _impl.LogSignatureMode.Expand
+    elif mode == "brackets":
+        return _impl.LogSignatureMode.Brackets
+    elif mode == "words":
+        return _impl.LogSignatureMode.Words
+    else:
+        raise ValueError("Invalid values for argument 'mode'. Valid values are 'expand', 'brackets', or 'words'.")
+
+
 # noinspection PyProtectedMember
 class _LogSignatureFunction(autograd.Function):
     @staticmethod
@@ -40,7 +51,7 @@ class _LogSignatureFunction(autograd.Function):
         # It must be either None (as in logsignature) or the result of a call to _impl._make_lyndon_info (as in
         # LogSignature).
 
-        mode = backend.mode_convert(mode)
+        mode = _mode_convert(mode)
         return backend.forward(ctx, path, depth, stream, basepoint, inverse, _impl.logsignature_forward,
                                (mode, lyndon_info))
 
@@ -153,7 +164,7 @@ class LogSignature(nn.Module):
     # This computation can be pretty slow! We definitely want to reuse it between instances
     @compat.lru_cache(maxsize=None)
     def lyndon_info_cache(channels, depth, mode):
-        mode = backend.mode_convert(mode)
+        mode = _mode_convert(mode)
         return _impl.make_lyndon_info(channels, depth, mode)
 
     def forward(self, path, basepoint=False):

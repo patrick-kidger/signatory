@@ -20,8 +20,10 @@ import collections as co
 import esig.tosig
 import iisignature
 import itertools as it
+import functools as ft
 import math
 import matplotlib.pyplot as plt
+import memory_profiler as mem
 import numpy as np
 import signatory
 import timeit
@@ -45,201 +47,202 @@ def prepare(channels, depth):
 # testing against each other.
 
 
-def esig_signature_forward(size, depth, repeat, number):
-    path = torch.rand(size, dtype=torch.float).numpy()
-    if not len(esig.tosig.stream2sig(path[0], depth)):
-        # esig doesn't support larger depths and just returns an empty array
-        #
-        # and also spams stdout complaining
+class BenchmarkBase(object):
+    def __init__(self, depth, repeat, number):
+        self.depth = depth
+        self.repeat = repeat
+        self.number = number
+
+    def stmt(self):
+        raise NotImplementedError
+
+    def time(self):
+        self.stmt()  # warm up
+        return timeit.Timer(stmt=self.stmt).repeat(repeat=self.repeat, number=self.number)
+
+    @mem.profile
+    def memory(self):
+        self.stmt()
+
+
+class esig_signature_forward(BenchmarkBase):
+    def __init__(self, size, **kwargs):
+        self.path = torch.rand(size, dtype=torch.float).numpy()
+        super(esig_signature_forward, self).__init__(**kwargs)
+
+    def stmt(self):
+        for batch_elem in self.path:
+            esig.tosig.stream2sig(batch_elem, self.depth)
+
+    def time(self):
+        if not len(esig.tosig.stream2sig(self.path[0], self.depth)):
+            # esig doesn't support larger depths and just returns an empty array
+            #
+            # and also spams stdout complaining
+            return [math.inf]
+
+        return super(esig_signature_forward, self).time()
+
+
+class esig_logsignature_forward(BenchmarkBase):
+    def __init__(self, size, **kwargs):
+        self.path = torch.rand(size, dtype=torch.float).numpy()
+        super(esig_logsignature_forward, self).__init__(**kwargs)
+
+    def stmt(self):
+        for batch_elem in self.path:
+            esig.tosig.stream2logsig(batch_elem, self.depth)
+
+    def time(self):
+        if not len(esig.tosig.stream2logsig(self.path[0], self.depth)):
+            # esig doesn't support larger depths and just returns an empty array
+            #
+            # and also spams stdout complaining
+            return [math.inf]
+
+        return super(esig_signature_backward, self).time()
+
+
+class esig_signature_backward(BenchmarkBase):
+    def __init__(self, size, **kwargs):
+        super(esig_signature_backward, self).__init__(**kwargs)
+
+    def stmt(self):
+        pass
+
+    def time(self):
+        # esig doesn't provide this operation.
         return [math.inf]
 
-    def stmt():
-        for batch_elem in path:
-            esig.tosig.stream2sig(batch_elem, depth)
 
-    stmt()  # warm up
+class esig_logsignature_backward(BenchmarkBase):
+    def __init__(self, size, **kwargs):
+        super(esig_logsignature_backward, self).__init__(**kwargs)
 
-    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
+    def stmt(self):
+        pass
 
-
-def esig_logsignature_forward(size, depth, repeat, number):
-    path = torch.rand(size, dtype=torch.float).numpy()
-    if not len(esig.tosig.stream2logsig(path[0], depth)):
-        # esig doesn't support larger depths and just returns an empty array
-        #
-        # and also spams stdout complaining
+    def time(self):
+        # esig doesn't provide this operation.
         return [math.inf]
 
-    def stmt():
-        for batch_elem in path:
-            esig.tosig.stream2logsig(batch_elem, depth)
 
-    stmt()  # warm up
+class iisignature_signature_forward(BenchmarkBase):
+    def __init__(self, size, stream=False, **kwargs):
+        self.path = torch.rand(size, dtype=torch.float).numpy()
+        self.stream=stream
+        super(iisignature_signature_forward, self).__init__(**kwargs)
 
-    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
-
-
-def esig_signature_backward(size, depth, repeat, number):
-    # esig doesn't provide this operation.
-    return [math.inf]
-
-
-def esig_logsignature_backward(size, depth, repeat, number):
-    # esig doesn't provide this operation.
-    return [math.inf]
+    def stmt(self):
+        if self.stream:
+            iisignature.sig(self.path, self.depth, 2)
+        else:
+            iisignature.sig(self.path, self.depth, 0)
 
 
-def iisignature_signature_forward(size, depth, repeat, number, stream=False):
-    path = torch.rand(size, dtype=torch.float).numpy()
+class iisignature_logsignature_forward(BenchmarkBase):
+    def __init__(self, size, **kwargs):
+        self.path = torch.rand(size, dtype=torch.float).numpy()
+        super(iisignature_logsignature_forward, self).__init__(**kwargs)
+        self.prep = prepare(self.path.shape[-1], self.depth)
 
-    if stream:
-        def stmt():
-            iisignature.sig(path, depth, 2)
-    else:
-        def stmt():
-            iisignature.sig(path, depth, 0)
-
-    stmt()  # warm up
-
-    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
+    def stmt(self):
+        iisignature.logsig(self.path, self.prep)
 
 
-def iisignature_logsignature_forward(size, depth, repeat, number):
-    path = torch.rand(size, dtype=torch.float).numpy()
-    prep = prepare(path.shape[-1], depth)
+class iisignature_signature_backward(BenchmarkBase):
+    def __init__(self, size, **kwargs):
+        self.path = torch.rand(size, dtype=torch.float).numpy()
+        super(iisignature_signature_backward, self).__init__(**kwargs)
+        signature = iisignature.sig(self.path, self.depth)
+        self.grad = torch.rand_like(torch.tensor(signature, dtype=torch.float)).numpy()
 
-    def stmt():
-        iisignature.logsig(path, prep)
-
-    stmt()  # warm up
-
-    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
-
-
-def iisignature_signature_backward(size, depth, repeat, number):
-    path = torch.rand(size, dtype=torch.float).numpy()
-    signature = iisignature.sig(path, depth)
-    grad = torch.rand_like(torch.tensor(signature, dtype=torch.float)).numpy()
-
-    def stmt():
-        iisignature.sigbackprop(grad, path, depth)
-
-    stmt()  # warm up
-
-    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
+    def stmt(self):
+        iisignature.sigbackprop(self.grad, self.path, self.depth)
 
 
-def iisignature_logsignature_backward(size, depth, repeat, number):
-    path = torch.rand(size, dtype=torch.float).numpy()
-    prep = prepare(path.shape[-1], depth)
-    logsignature = iisignature.logsig(path, prep)
-    grad = torch.rand_like(torch.tensor(logsignature, dtype=torch.float)).numpy()
+class iisignature_logsignature_backward(BenchmarkBase):
+    def __init__(self, size, **kwargs):
+        self.path = torch.rand(size, dtype=torch.float).numpy()
+        super(iisignature_logsignature_backward, self).__init__(**kwargs)
+        self.prep = prepare(self.path.shape[-1], self.depth)
+        logsignature = iisignature.logsig(self.path, self.prep)
+        self.grad = torch.rand_like(torch.tensor(logsignature, dtype=torch.float)).numpy()
 
-    def stmt():
-        iisignature.logsigbackprop(grad, path, prep)
-
-    stmt()  # warm up
-
-    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
+    def stmt(self):
+        iisignature.logsigbackprop(self.grad, self.path, self.prep)
 
 
-def signatory_signature_forward(size, depth, repeat, number, stream=False, gpu=False):
-    if gpu:
-        path = torch.rand(size, dtype=torch.float, device='cuda')
-    else:
-        path = torch.rand(size, dtype=torch.float)
+class signatory_signature_forward(BenchmarkBase):
+    def __init__(self, size, stream=False, gpu=False, **kwargs):
+        if gpu:
+            self.path = torch.rand(size, dtype=torch.float, device='cuda')
+        else:
+            self.path = torch.rand(size, dtype=torch.float)
+        super(signatory_signature_forward, self).__init__(**kwargs)
+        self.stream = stream
+        self.gpu = gpu
 
-    if gpu:
-        def stmt():
-            signatory.signature(path, depth, stream=stream)
+    def stmt(self):
+        signatory.signature(self.path, self.depth, stream=self.stream)
+        if self.gpu:
             torch.cuda.synchronize()
-    else:
-        def stmt():
-            signatory.signature(path, depth, stream=stream)
-
-    stmt()  # warm up
-
-    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
 
 
-def signatory_logsignature_forward(size, depth, repeat, number, gpu=False, mode='words', stream=False):
-    if gpu:
-        path = torch.rand(size, dtype=torch.float, device='cuda')
-    else:
-        path = torch.rand(size, dtype=torch.float)
-    # ensure that we're doing a fair test by caching if we can
-    # (equivalent to the call to 'prepare' in iisignature)
-    signatory.LogSignature(depth, mode=mode, stream=stream)(path)
+class signatory_logsignature_forward(BenchmarkBase):
+    def __init__(self, size, stream=False, gpu=False, mode='words', **kwargs):
+        if gpu:
+            self.path = torch.rand(size, dtype=torch.float, device='cuda')
+        else:
+            self.path = torch.rand(size, dtype=torch.float)
+        super(signatory_logsignature_forward, self).__init__(**kwargs)
+        # ensure that we're doing a fair test by caching if we can
+        # (equivalent to the call to 'prepare' in iisignature)
+        signatory.LogSignature(self.depth, mode=mode, stream=stream)(self.path)
+        self.stream = stream
+        self.gpu = gpu
+        self.mode = mode
 
-    if gpu:
-        def stmt():
-            signatory.LogSignature(depth, mode=mode, stream=stream)(path)
+    def stmt(self):
+        signatory.LogSignature(self.depth, mode=self.mode, stream=self.stream)(self.path)
+        if self.gpu:
             torch.cuda.synchronize()
-    else:
-        def stmt():
-            signatory.LogSignature(depth, mode=mode, stream=stream)(path)
-
-    stmt()  # warm up
-
-    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
 
 
-def signatory_signature_backward(size, depth, repeat, number, gpu=False):
-    if gpu:
-        path = torch.rand(size, dtype=torch.float, device='cuda', requires_grad=True)
-    else:
-        path = torch.rand(size, dtype=torch.float, requires_grad=True)
-    signature = signatory.signature(path, depth)
-    grad = torch.rand_like(signature)
+class signatory_signature_backward(BenchmarkBase):
+    def __init__(self, size, gpu=False, **kwargs):
+        if gpu:
+            self.path = torch.rand(size, dtype=torch.float, device='cuda', requires_grad=True)
+        else:
+            self.path = torch.rand(size, dtype=torch.float, requires_grad=True)
+        super(signatory_signature_backward, self).__init__(**kwargs)
+        self.gpu = gpu
+        self.signature = signatory.signature(self.path, self.depth)
+        self.grad = torch.rand_like(self.signature)
 
-    if gpu:
-        def stmt():
-            signature.backward(grad, retain_graph=True)
+    def stmt(self):
+        self.signature.backward(self.grad, retain_graph=True)
+        if self.gpu:
             torch.cuda.synchronize()
-    else:
-        def stmt():
-            signature.backward(grad, retain_graph=True)
-
-    stmt()  # warm up
-
-    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
 
 
-def signatory_logsignature_backward(size, depth, repeat, number, gpu=False, mode='words', stream=False):
-    if gpu:
-        path = torch.rand(size, dtype=torch.float, device='cuda', requires_grad=True)
-    else:
-        path = torch.rand(size, dtype=torch.float, requires_grad=True)
-    logsignature = signatory.LogSignature(depth, mode=mode, stream=stream)(path)
-    grad = torch.rand_like(logsignature)
+class signatory_logsignature_backward(BenchmarkBase):
+    def __init__(self, size, stream=False, gpu=False, mode='words', **kwargs):
+        if gpu:
+            self.path = torch.rand(size, dtype=torch.float, device='cuda', requires_grad=True)
+        else:
+            self.path = torch.rand(size, dtype=torch.float, requires_grad=True)
+        super(signatory_logsignature_backward, self).__init__(**kwargs)
+        self.logsignature = signatory.LogSignature(self.depth, mode=mode, stream=stream)(self.path)
+        self.grad = torch.rand_like(self.logsignature)
+        self.stream = stream
+        self.gpu = gpu
+        self.mode = mode
 
-    if gpu:
-        def stmt():
-            logsignature.backward(grad, retain_graph=True)
+    def stmt(self):
+        self.logsignature.backward(self.grad, retain_graph=True)
+        if self.gpu:
             torch.cuda.synchronize()
-    else:
-        def stmt():
-            logsignature.backward(grad, retain_graph=True)
-
-    stmt()  # warm up
-
-    return timeit.Timer(stmt=stmt).repeat(repeat=repeat, number=number)
-
-
-def signatory_signature_forward_gpu(size, depth, repeat, number):
-    return signatory_signature_forward(size, depth, repeat, number, gpu=True)
-
-
-def signatory_logsignature_forward_gpu(size, depth, repeat, number):
-    return signatory_logsignature_forward(size, depth, repeat, number, gpu=True)
-
-
-def signatory_signature_backward_gpu(size, depth, repeat, number):
-    return signatory_signature_backward(size, depth, repeat, number, gpu=True)
-
-
-def signatory_logsignature_backward_gpu(size, depth, repeat, number):
-    return signatory_logsignature_backward(size, depth, repeat, number, gpu=True)
 
 
 signatory_cpu_str = 'Signatory CPU'
@@ -252,23 +255,23 @@ speedup_str = 'speedup'
 
 
 signature_forward_fns = co.OrderedDict([(signatory_cpu_str, signatory_signature_forward),
-                                        (signatory_gpu_str, signatory_signature_forward_gpu),
+                                        (signatory_gpu_str, ft.partial(signatory_signature_forward, gpu=True)),
                                         (iisignature_str, iisignature_signature_forward),
                                         (esig_str, esig_signature_forward)])
 
 
 signature_backward_fns = co.OrderedDict([(signatory_cpu_str, signatory_signature_backward),
-                                         (signatory_gpu_str, signatory_signature_backward_gpu),
+                                         (signatory_gpu_str, ft.partial(signatory_signature_backward, gpu=True)),
                                          (iisignature_str, iisignature_signature_backward),
-                                         (esig_str, esig_signature_backward),])
+                                         (esig_str, esig_signature_backward)])
 
 logsignature_forward_fns = co.OrderedDict([(signatory_cpu_str, signatory_logsignature_forward),
-                                           (signatory_gpu_str, signatory_logsignature_forward_gpu),
+                                           (signatory_gpu_str, ft.partial(signatory_logsignature_forward, gpu=True)),
                                            (iisignature_str, iisignature_logsignature_forward),
-                                           (esig_str, esig_logsignature_forward),])
+                                           (esig_str, esig_logsignature_forward)])
 
 logsignature_backward_fns = co.OrderedDict([(signatory_cpu_str, signatory_logsignature_backward),
-                                            (signatory_gpu_str, signatory_logsignature_backward_gpu),
+                                            (signatory_gpu_str, ft.partial(signatory_logsignature_backward, gpu=True)),
                                             (iisignature_str, iisignature_logsignature_backward),
                                             (esig_str, esig_logsignature_backward)])
 
@@ -284,20 +287,21 @@ all_fns.update(logsignature_forward_fns_wrapper)
 all_fns.update(logsignature_backward_fns_wrapper)
 
 
-def run_test(fn_dict, size, depth, repeat, number, print_name, esig, **kwargs):
+def run_test(fn_dict, size, depth, repeat, number, print_name, test_esig, **kwargs):
     """Runs a particular function across multiple different libraries and records their times."""
     library_results = co.OrderedDict()
     for library_name, library_fn in fn_dict.items():
-        if not esig and library_name == esig_str:
+        if (not test_esig) and (library_name == esig_str):
             continue
         print(print_name, library_name)
-        library_results[library_name] = min(library_fn(size, depth, repeat, number, **kwargs))
+        library_results[library_name] = min(library_fn(size=size, depth=depth, repeat=repeat, number=number,
+                                                       **kwargs).time())
 
     iisignature_results = library_results[iisignature_str]
     signatory_results = library_results[signatory_cpu_str]
     signatory_gpu_results = library_results[signatory_gpu_str]
     other_best = iisignature_results
-    if esig:
+    if test_esig:
         other_best = min(library_results[esig_str], other_best)
     library_results[speedup_cpu_str] = other_best / signatory_results
     library_results[speedup_gpu_str] = other_best / signatory_gpu_results
@@ -350,17 +354,17 @@ class namedarray(object):
             yield index, self[index]
 
 
-class RunSpeeds(object):
+class BenchmarkRunner(object):
     """Runs all functions across all libraries and records their times for multiple sizes and depths."""
 
-    def __init__(self, sizes, depths, repeat=50, number=1, esig=True, fns='all'):
+    def __init__(self, sizes, depths, repeat=50, number=1, test_esig=True, fns='all'):
         self.sizes = sizes
         self.depths = depths
         self.repeat = repeat
         self.number = number
-        self.esig = esig
+        self.test_esig = test_esig
         print("Called with sizes {}, depths {}, repeat {}, number {} and esig {}".format(sizes, depths, repeat, number,
-                                                                                         esig))
+                                                                                         test_esig))
         if fns == 'all':
             self.fns = all_fns
         elif fns == 'sigf':
@@ -373,6 +377,12 @@ class RunSpeeds(object):
             self.fns = logsignature_backward_fns_wrapper
         else:
             raise RuntimeError
+
+        self._results = None
+
+    @property
+    def results(self):
+        return self._results
 
     def check_graph(self):
         if len(self.sizes) > 1 and len(self.depths) > 1:
@@ -390,9 +400,9 @@ class RunSpeeds(object):
             for size in self.sizes:
                 for depth in self.depths:
                     result = run_test(fns, size, depth, self.repeat, self.number,
-                                      self._table_format_index(fn_name, size, depth), esig)
+                                      self._table_format_index(fn_name, size, depth), self.test_esig)
                     results[fn_name, size, depth] = result
-        self.results = results
+        self._results = results
 
     @staticmethod
     def _table_format_index(fn_name, size, depth):
@@ -421,7 +431,7 @@ class RunSpeeds(object):
     @classmethod
     def depths(cls, **kwargs):
         """Tests depths for a fixed number of channels."""
-        new_kwargs = dict(sizes=((32, 128, 4),), depths=(2, 3, 4, 5, 6, 7, 8, 9, 10))
+        new_kwargs = dict(sizes=((32, 128, 4),), depths=(2, 3, 4, 5, 6, 7, 8, 9))
         new_kwargs.update(kwargs)
         return cls(**new_kwargs)
 

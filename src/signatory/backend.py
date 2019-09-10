@@ -67,14 +67,3 @@ def backward(ctx, grad_result, fn_backward):
     grad_path = grad_path.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
 
     return grad_path, None, None, grad_basepoint_value, None
-
-
-def mode_convert(mode):
-    if mode == "expand":
-        return _impl.LogSignatureMode.Expand
-    elif mode == "brackets":
-        return _impl.LogSignatureMode.Brackets
-    elif mode == "words":
-        return _impl.LogSignatureMode.Words
-    else:
-        raise ValueError("Invalid values for argument 'mode'. Valid values are 'expand', 'brackets', or 'words'.")

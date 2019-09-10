@@ -29,8 +29,7 @@ class SigNet2(nn.Module):
                                          kernel_size=4,
                                          include_original=True,
                                          include_time=True)
-        self.signature = signatory.Signature(depth=sig_depth,
-                                             basepoint=True)
+        self.signature = signatory.Signature(depth=sig_depth)
         # +3 because signatory.Augment is used to add time, and 2 other channels,
         # as well
         sig_channels = signatory.signature_channels(channels=in_channels + 3,
@@ -45,7 +44,7 @@ class SigNet2(nn.Module):
             raise RuntimeError("Given an input with too short a stream to take the"
                                " signature")
         # x in a three dimensional tensor of shape (batch, stream, in_channels + 3)
-        y = self.signature(x)
+        y = self.signature(x, basepoint=True)
         # y is a two dimensional tensor of shape (batch, sig_channels),
         # corresponding to the terms of the signature
         z = self.linear(y)

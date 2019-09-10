@@ -24,7 +24,7 @@ import utils_testing as utils
 
 class TestPath(utils.EnhancedTestCase):
     def test_path(self):
-        for c in utils.ConfigIter(inverse=False, stream=False):
+        for c in utils.ConfigIter(inverse=False, stream=False, N=(1, 2), depth=(1, 2, 4)):
             path_obj = signatory.Path(c.path, c.depth, basepoint=c.basepoint)
             for start in range(-2 * c.path.size(1), 2 * c.path.size(1)):
                 for end in range(-2 * c.path.size(1), 2 * c.path.size(1)):

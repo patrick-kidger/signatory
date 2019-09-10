@@ -41,7 +41,7 @@ words = object()
 all_modes = (expand, brackets, words)
 
 
-def random_size(num=20):
+def random_size(num=10):
     """Creates some random sizes to test with."""
     for _ in range(num):
         batch_size = int(torch.randint(low=1, high=10, size=(1,)))
@@ -392,10 +392,10 @@ class ConfigIter(object):
                  logsignature_class=(True, False),
                  stream=(False, True),
                  basepoint=None,
-                 N=(1, 2, 3, 10),        # |
-                 L=(2, 3, 4, 10),        # | what sizes to iterate over: (N[i], L[j], C[k]) for all i, j, k.
-                 C=(1, 2, 3, 6),         # |
-                 depth=(1, 2, 3, 4, 6),  # what depths to iterate over
+                 N=(1, 2, 5),            # |
+                 L=(2, 3, 10),           # | what sizes to iterate over: (N[i], L[j], C[k]) for all i, j, k.
+                 C=(1, 2, 6),            # |
+                 depth=(1, 2, 4, 6),     # what depths to iterate over
                  size=None,              # what sizes to iterate over; supersedes (N, L, C) is passed
                  mode=None,              # what logsignature modes to operate in, if using logsignatures
                  requires_grad=False,    # set to True if wanting to do backwards calls
