@@ -1,5 +1,3 @@
-.. currentmodule:: examples-intervals
-
 .. _examples-intervals:
 
 Signatures on intervals

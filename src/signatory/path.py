@@ -22,13 +22,15 @@ from . import signature_module as smodule
 
 # noinspection PyUnreachableCode
 if False:
-    from typing import Any, List, Union
+    from typing import List, Union
 
 
 class Path(object):
     """Calculates signatures on intervals of an input path.
 
-    By doing some precomputation, it can rapidly calculate the signature of the input path over any interval.
+    By doing some precomputation, it can rapidly calculate the signature of the input path over any interval. This is
+    particularly useful if you need the signature of a Path over many different intervals: using this class will be much
+    faster than computing the signature of each sub-path each time.
 
     Arguments:
         path (torch.Tensor): As :func:`signatory.signature`.
@@ -46,15 +48,16 @@ class Path(object):
 
         self._path = []
 
-        basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
-        if basepoint:
-            self._path.append(basepoint_value)
-
         self._length = 0
         self._signature_length = 0
         self._signature_lengths = []
 
-        self._update(path, basepoint_value, None, None)
+        use_basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
+        if use_basepoint:
+            self._length += 1
+            self._path.append(basepoint_value.unsqueeze(-2))  # unsqueeze a stream dimension
+
+        self._update(path, basepoint, None, None)
 
         self._batch_sizes = self.shape[:-2]
         self._signature_channels = self.signature_size(-1)
@@ -63,6 +66,11 @@ class Path(object):
     def update(self, path):
         # type: (torch.Tensor) -> None
         """Concatenates the given path onto the path already stored.
+
+        This means that the signature of the new overall path can now be asked for via :meth:`signatory.Path.signature`.
+        Furthermore this will be dramatically faster than concatenating the two paths together and then creating a new
+        Path object: the 'concatenation' occurs implicitly, without actually involving any recomputation or reallocation
+        of memory.
 
         Arguments:
             path (torch.Tensor): The path to concatenate on. As :func:`signatory.signature`.
@@ -102,40 +110,48 @@ class Path(object):
             start (int or None, optional): Defaults to the start of the path. The start point of the interval to 
                 calculate the signature on.
 
-            end (int or None, optional): Defaults to the end of the path. The end point of the interval to calcluate 
+            end (int or None, optional): Defaults to the end of the path. The end point of the interval to calculate
                 the signature on.
 
         Returns:
-            The signature on the interval :attr:`[start, end]`. That is, let :attr:`p` be the input :attr:`path`
-            with basepoint prepended. Then this function is equivalent to
-            :attr:`signatory.signature(p[start:end], depth)`.
+            The signature on the interval :attr:`[start, end]`.
+
+            Let :attr:`p = torch.cat(self.path, dim=1)`, so that it is all given paths (from both initialisation and
+            :meth:`signatory.Path.update`) concatenated together, additionally with any basepoint prepended. Then this
+            function will return a value equal to :attr:`signatory.signature(p[start:end], depth)`.
         """
 
         old_start = start
         old_end = end
 
-        length = self._signature_length + 1
         if start is None:
             start = 0
         if end is None:
-            end = length
+            end = self._length
         # We're duplicating slicing behaviour, which means to accept values even beyond the normal indexing range
-        if start < -length:
-            start = -length
-        elif start > length:
-            start = length
-        if end < -length:
-            end = -length
-        elif end > length:
-            end = length
+        if start < -self._length:
+            start = -self._length
+        elif start > self._length:
+            start = self._length
+        if end < -self._length:
+            end = -self._length
+        elif end > self._length:
+            end = self._length
         # Accept negative indices
         if start < 0:
-            start += length
+            start += self._length
         if end < 0:
-            end += length
+            end += self._length
+
+        if end - start == 1:
+            # Friendlier help message for a common mess-up.
+            raise ValueError("start={}, end={} is interpreted as {}, {} for path of length {}, which "
+                             "does not describe a valid interval. The given start and end differ by only one, but "
+                             "recall that a single point is not sufficent to define a path."
+                             .format(old_start, old_end, start, end, self._length))
 
         if end - start < 2:
-            raise ValueError("start={}, end={} is interpreted as start={}, end={} for path of length {}, which "
+            raise ValueError("start={}, end={} is interpreted as {}, {} for path of length {}, which "
                              "does not describe a valid interval.".format(old_start, old_end, start, end, self._length))
 
         start -= 1
@@ -153,12 +169,12 @@ class Path(object):
         rev = self._inverse_signature[index_start][:, adjusted_start, :]
         sig = self._signature[index_end][:, adjusted_end, :]
 
-        return backend.TensorAlgebraMult.apply(rev, sig, self._channels, self.depth)
+        return smodule.signature_combine(rev, sig, self._channels, self.depth)
 
     @property
     def path(self):
         # type: () -> List[torch.Tensor]
-        """The paths that this Path was created with."""
+        """The path(s) that this Path was created with."""
         return self._path
 
     @property

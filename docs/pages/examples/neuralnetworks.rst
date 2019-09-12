@@ -1,5 +1,3 @@
-.. currentmodule:: examples-neuralnetworks
-
 .. _examples-neuralnetworks:
 
 Using signatures in neural networks

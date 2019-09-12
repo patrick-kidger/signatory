@@ -1,9 +1,9 @@
-.. currentmodule:: reference-libraryapi
-
 .. _reference-libraryapi:
 
 Library API
 ###########
+
+.. module:: signatory
 
 For quick reference these are a list of all provided functions, grouped by which reference page they are on.
 
@@ -43,3 +43,11 @@ For quick reference these are a list of all provided functions, grouped by which
     signatory.all_words
     signatory.lyndon_words
     signatory.lyndon_brackets
+
+.. toctree::
+    :caption: Reference pages
+
+    /pages/reference/signatures
+    /pages/reference/logsignatures
+    /pages/reference/path
+    /pages/reference/utilities

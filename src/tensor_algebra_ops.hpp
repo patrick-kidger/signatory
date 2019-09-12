@@ -45,7 +45,8 @@ namespace signatory {
         // Computes a fused multiply-exponentiate.
         // 'next' should be a member of the lowest nonscalar level of the tensor algebra.
         // 'prev' should be a general member of the tensor algebra.
-        // Then 'prev' is modified to hold prev \otimes \exp(next)
+        // If sigspec.inverse == false then 'prev' is modified to hold prev \otimes \exp(next)
+        // If sigspec.inverse == true then 'prev' is modified to hold \exp(next) \otimes prev
         void mult_fused_restricted_exp(torch::Tensor next, std::vector<torch::Tensor>& prev,
                                        const misc::SigSpec& sigspec);
 

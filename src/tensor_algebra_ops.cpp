@@ -177,6 +177,8 @@ namespace signatory {
                                                 const misc::SigSpec& sigspec) {
             // If you're reading this function and trying to understand it...
             // ...then good luck.
+            // It's a backwards through quite a complicated operation, so there isn't much getting around the fact that
+            // it's going to be a bit involved.
 
             std::vector<std::vector<torch::Tensor>> all_scratches;
             all_scratches.reserve(sigspec.depth - 1);
@@ -425,9 +427,19 @@ namespace signatory {
     torch::Tensor tensor_algebra_mult_forward(torch::Tensor arg1_inp, torch::Tensor arg2_inp, int64_t input_channels,
                                               s_size_type depth) {
         int64_t num_signature_channels = signature_channels(input_channels, depth);
+        if (arg1_inp.ndimension() != 2 || arg2_inp.ndimension()) {
+            throw std::invalid_argument("sig_tensor1 and sig_tensor2 should both be 2-dimensional, corresponding to"
+                                        "(batch, signature_channels).")
+        }
+        if (arg1_inp.size(batch_dim) != arg2_inp.size(batch_dim)) {
+            throw std::invalid_argument("sig_tensor1 and sig_tensor2 do not have the same number of batch elements.");
+        }
+        if (arg1_inp.size(channel_dim) != arg2_inp.size(channel_dim)) {
+            throw std::invalid_argument("sig_tensor1 and sig_tensor2 do not have the same number of channels.");
+        }
         if (arg1_inp.size(channel_dim) != num_signature_channels ||
             arg2_inp.size(channel_dim) != num_signature_channels) {
-            throw std::invalid_argument("Incorrect number of channels.");
+            throw std::invalid_argument("sig_tensor1 or sig_tensor2 did not have the expected number of channels.");
         }
 
         torch::Tensor ret = arg1_inp.detach().clone();
@@ -450,6 +462,9 @@ namespace signatory {
     std::pair<torch::Tensor, torch::Tensor>
     tensor_algebra_mult_backward(torch::Tensor grad, torch::Tensor arg1_inp, torch::Tensor arg2_inp,
                                  int64_t input_channels, s_size_type depth) {
+        if (grad.size(batch_dim) != arg1_inp.size(batch_dim) || grad.size(channel_dim) != arg1_inp.size(channel_dim)) {
+            throw std::invalid_argument("grad is of the wrong size.")
+        }
         torch::Tensor grad_arg1_inp = grad.clone();
         torch::Tensor grad_arg2_inp = torch::zeros_like(arg2_inp);
 

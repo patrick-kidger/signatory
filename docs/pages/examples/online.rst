@@ -1,5 +1,3 @@
-.. currentmodule:: examples-online
-
 .. _examples-online:
 
 Online computation of signatures

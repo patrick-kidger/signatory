@@ -107,8 +107,8 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
         inverse (bool, optional): as :func:`signatory.signature`.
 
         mode (str, optional): Defaults to :attr:`"words"`. How the output should be presented. Valid values are
-            :attr:`"expand"`, :attr:`"brackets"`,
-            or :attr:`"words"`. Defaults to `"words"`. Precisely what each of these options mean is described in the
+            :attr:`"expand"`, :attr:`"brackets"`, or :attr:`"words"`. Precisely what each of these options mean is
+            described in the
             "Returns" section below. As a rule of thumb: use :attr:`"words"` for new projects (as it is the fastest),
             and use :attr:`"brackets"` for compatibility with other projects which do not provide equivalent
             functionality to :attr:`"words"`. (Such as `iisignature <https://github.com/bottler/iisignature>`__). The
@@ -119,7 +119,7 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
         from :func:`signatory.signature`. If :attr:`mode in ("brackets", "words")` then it will again be of the
         same shape, except that the channel dimension will instead be of size
         :attr:`signatory.logsignature_channels(C, depth)`, where :attr:`C` is the number of input channels, i.e.
-        :attr:`path.size(2)`.
+        :attr:`path.size(-1)`.
         (Thus the logsignature is much smaller than the signature, which is the whole point of using the logsignature
         over the signature in the first place.)
 
@@ -171,10 +171,6 @@ class LogSignature(nn.Module):
         inverse (bool, optional): as :func:`signatory.logsignature`.
 
         mode (str, optional): as :func:`signatory.logsignature`.
-
-    Called with two arguments :attr:`path` and :attr:`basepoint`. :attr:`path` should be of type :class:`torch.Tensor`,
-    whilst :attr:`basepoint` should be of type `Union[bool, torch.Tensor]`. Both of them are treated as in
-    :func:`signatory.logsignature`.
     """
 
     def __init__(self, depth, stream=False, inverse=False, mode="words", **kwargs):
@@ -194,6 +190,16 @@ class LogSignature(nn.Module):
 
     def forward(self, path, basepoint=False):
         # type: (torch.Tensor, Union[bool, torch.Tensor]) -> torch.Tensor
+        """The forward operation.
+
+        Arguments:
+            path (torch.Tensor): As :func:`signatory.logsignature`.
+
+            basepoint (bool or torch.Tensor, optional): As :func:`signatory.logsignature`.
+
+        Returns:
+            As :func:`signatory.logsignature`.
+        """
 
         lyndon_info = self.lyndon_info_cache(path.size(-1), self.depth, self.mode)
         # don't call logsignature itself because that (deliberately) doesn't expose a lyndon_info argument.
@@ -211,6 +217,10 @@ class LogSignature(nn.Module):
     def extra_repr(self):
         return ('depth={depth}, stream={stream}, basepoint={basepoint}, mode{mode}'
                 .format(depth=self.depth, stream=self.stream, basepoint=str(self.basepoint)[:6], mode=self.mode))
+
+
+# Alias
+Logsignature = LogSignature
 
 
 # Computes the list of prime factors of x

@@ -1,5 +1,3 @@
-.. currentmodule:: examples-combine
-
 .. _examples-combine:
 
 Combining signatures

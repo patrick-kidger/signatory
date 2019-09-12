@@ -1,5 +1,3 @@
-.. currentmodule:: miscellaneous-faq
-
 .. _miscellaneous-faq:
 
 FAQ
@@ -14,7 +12,7 @@ Depends on your CPU and GPU, really. But to throw some numbers out there: on the
 
 * I get an ``ImportError`` when I try to install Signatory.
 
-You probably haven't installed PyTorch. Do that, then run ``pip`` to install Signatory.
+You probably haven't installed PyTorch. Do that, then run ``pip`` or ``pip3`` to install Signatory.
 
 * How do I backpropagate through the signature transform?
 

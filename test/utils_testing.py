@@ -201,7 +201,7 @@ class Config(object):
             raise RuntimeError("Calling logsignature when already called signature")
         self.signature_or_logsignature = False
 
-    def signature(self, store=True, path=None, stream=None, basepoint=None, inverse=None):
+    def signature(self, store=True, path=None, stream=None, basepoint=None, inverse=None, initial=None):
         """Calls signatory.signature"""
         self._using_signature()
         if path is None:
@@ -213,9 +213,11 @@ class Config(object):
         if inverse is None:
             inverse = self.inverse
         if random.choice([True, False]):
-            signatory_out = signatory.signature(path, self.depth, stream=stream, basepoint=basepoint, inverse=inverse)
+            signatory_out = signatory.signature(path, self.depth, stream=stream, basepoint=basepoint, inverse=inverse,
+                                                initial=initial)
         else:
-            signatory_out = signatory.Signature(self.depth, stream=stream, inverse=inverse)(path, basepoint=basepoint)
+            signatory_out = signatory.Signature(self.depth, stream=stream, inverse=inverse)(path, basepoint=basepoint,
+                                                                                            initial=initial)
         if store:
             self.signatory_out = signatory_out
         return signatory_out
@@ -370,7 +372,7 @@ class Config(object):
         maxdiff = torch.max(torch.abs(diff))
         return co.OrderedDict([('maxdiff', maxdiff), ('diff', diff)])
 
-    def diff_fail(self, **kwargs):
+    def diff_fail(self, extras=None, **kwargs):
         """Wraps diff and fail together."""
 
         if len(kwargs) != 2:
@@ -380,6 +382,8 @@ class Config(object):
         out_dict = self.diff(arg1_val, arg2_val)
         out_dict[arg1_name] = arg1_val
         out_dict[arg2_name] = arg2_val
+        if extras is not None:
+            out_dict.update(extras)
         return self.fail(**out_dict)
 
 

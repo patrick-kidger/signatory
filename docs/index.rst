@@ -1,50 +1,31 @@
-.. include:: /fragments/title.rst
+.. genreadme off
+
+.. _index:
+
+.. genreadme on
+
+*********
+Signatory
+*********
+Differentiable computations of the signature and logsignature transforms, on both CPU and GPU.
+
+.. genreadme off
 
 .. include:: /fragments/hosted.rst
 
-Consult the sidebar on the left hand side of this page for documentation.
-
 .. toctree::
-    :caption: Usage
-    :hidden:
+    :caption: Documentation
 
     /pages/usage/introduction
     /pages/usage/installation
-
-.. toctree::
-    :caption: Reference
-    :hidden:
-
     /pages/reference/libraryapi
-    /pages/reference/signatures
-    /pages/reference/logsignatures
-    /pages/reference/path
-    /pages/reference/utilities
+    /pages/examples/examples
 
 .. toctree::
-    :caption: Examples
-    :hidden:
+    :caption: Extras
 
-    /pages/examples/simple
-    /pages/examples/online
-    /pages/examples/combine
-    /pages/examples/intervals
-    /pages/examples/neuralnetworks
-
-.. toctree::
-    :caption: Miscellaneous
-    :hidden:
-
-    /pages/miscellaneous/sourcecode
-    /pages/miscellaneous/faq
     /pages/miscellaneous/citation
+    /pages/miscellaneous/faq
+    /pages/understanding/advice
+    /pages/miscellaneous/sourcecode
     /pages/miscellaneous/acknowledgements
-    
-.. toctree::
-    :caption: Advice on using signatures
-    :hidden:
-
-    /pages/understanding/whataresignatures
-    /pages/understanding/neuralnetworks
-    /pages/understanding/kernels
-    /pages/understanding/sigversuslogsig

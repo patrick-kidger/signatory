@@ -1,5 +1,3 @@
-.. currentmodule:: usage-installation
-
 .. _usage-installation2:
 
 Installation

@@ -1,1 +1,0 @@
-Efficient computations of the signature transform for PyTorch, on both CPU and GPU, including backpropagation.

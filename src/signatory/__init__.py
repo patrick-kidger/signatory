@@ -19,6 +19,7 @@ import torch  # must be imported before anything from signatory
 from .augment import Augment
 from .logsignature_module import (logsignature,
                                   LogSignature,
+                                  Logsignature,  # alias for LogSignature
                                   logsignature_channels)
 from .path import Path
 from .signature_module import (signature,
@@ -31,6 +32,6 @@ from .utility import (lyndon_words,
                       all_words)
 
 
-__version__ = "1.1.1"
+__version__ = "1.1.2"
 
 del torch

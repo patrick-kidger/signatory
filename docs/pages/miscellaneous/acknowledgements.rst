@@ -1,5 +1,3 @@
-.. currentmodule:: miscellaneous-acknowledgements
-
 .. _miscellaneous-acknowledgements:
 
 Acknowledgements

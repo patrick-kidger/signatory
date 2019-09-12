@@ -18,6 +18,7 @@ of some tests."""
 
 import collections as co
 import esig.tosig
+import gc
 import iisignature
 import itertools as it
 import functools as ft
@@ -30,7 +31,7 @@ import timeit
 import torch
 
 try:
-    # Being run via commands.py
+    # Being run via command.py
     from . import compatibility as compat
 except ImportError:
     # Being run via tests
@@ -100,7 +101,7 @@ class esig_logsignature_forward(BenchmarkBase):
             # and also spams stdout complaining
             return [math.inf]
 
-        return super(esig_signature_backward, self).time()
+        return super(esig_logsignature_forward, self).time()
 
 
 class esig_signature_backward(BenchmarkBase):
@@ -287,15 +288,21 @@ all_fns.update(logsignature_forward_fns_wrapper)
 all_fns.update(logsignature_backward_fns_wrapper)
 
 
-def run_test(fn_dict, size, depth, repeat, number, print_name, test_esig, **kwargs):
+def run_test(fn_dict, size, depth, repeat, number, print_name, test_esig, measure):
     """Runs a particular function across multiple different libraries and records their times."""
     library_results = co.OrderedDict()
     for library_name, library_fn in fn_dict.items():
         if (not test_esig) and (library_name == esig_str):
             continue
         print(print_name, library_name)
-        library_results[library_name] = min(library_fn(size=size, depth=depth, repeat=repeat, number=number,
-                                                       **kwargs).time())
+        test = library_fn(size=size, depth=depth, repeat=repeat, number=number)
+        if measure == 'time':
+            library_results[library_name] = min(test.time())
+        elif measure == 'memory':
+            gc.collect()
+            library_results[library_name] = test.memory()
+        else:
+            raise ValueError("I don't know how to measure '{}'".format(measure))
 
     iisignature_results = library_results[iisignature_str]
     signatory_results = library_results[signatory_cpu_str]
@@ -394,13 +401,13 @@ class BenchmarkRunner(object):
             if size[0] != batch_size or size[1] != stream_size:
                 raise RuntimeError("Cannot output as graph with multiple batch or stream sizes.")
 
-    def run(self):
+    def run(self, measure):
         results = namedarray(len(self.fns), len(self.sizes), len(self.depths))
         for fn_name, fns in self.fns.items():
             for size in self.sizes:
                 for depth in self.depths:
                     result = run_test(fns, size, depth, self.repeat, self.number,
-                                      self._table_format_index(fn_name, size, depth), self.test_esig)
+                                      self._table_format_index(fn_name, size, depth), self.test_esig, measure)
                     results[fn_name, size, depth] = result
         self._results = results
 

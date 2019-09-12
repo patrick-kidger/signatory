@@ -21,10 +21,6 @@ from torch import autograd
 from . import _impl
 
 
-# Requirement: must be such that
-# interpret_basepoint(basepoint, path)[1] == interpret_basepoint(interpret_basepoint(basepoint, path)[1], path)
-# i.e. in some sense it is a projection.
-# This is because sometimes we may we wish to pass an interpreted basepoint in as the 'basepoint' argument.
 def interpret_basepoint(basepoint, path):
     if basepoint is True:
         basepoint_value = torch.zeros((path.shape[0], path.shape[2]), dtype=path.dtype, device=path.device)

@@ -1,14 +1,21 @@
-.. currentmodule:: reference-signatures
-
 .. _reference-signatures:
 
 Signatures
 ##########
-At the heart of the package is the :func:`signatory.signature` function:
+
+.. currentmodule:: signatory
+
+At the heart of the package is the :func:`signatory.signature` function.
+
+.. note::
+
+    It comes with quite a lot of optional arguments, but most of them won't need to be used for most use cases. See :ref:`examples-simple` for a straightforward look at how to use it.
 
 .. autofunction:: signatory.signature
 
 .. autoclass:: signatory.Signature
+
+    .. automethod:: signatory.Signature.forward
 
 .. autofunction:: signatory.signature_channels
 

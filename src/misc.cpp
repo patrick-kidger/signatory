@@ -38,8 +38,8 @@ namespace signatory {
             return depth;
         }
         else {
-            // In theory it'd be slightly quicker to calculate this via the geometric formula, but that involves a
-            // division which gives inaccurate results for large numbers.
+            // In theory it'd probably be slightly quicker to calculate this via the geometric formula, but that
+            // involves a division which gives inaccurate results for large numbers.
             int64_t output_channels = input_channels;
             int64_t mul_limit = std::numeric_limits<int64_t>::max() / input_channels;
             int64_t add_limit = std::numeric_limits<int64_t>::max() - input_channels;
@@ -82,8 +82,7 @@ namespace signatory {
         };
 
         BackwardsInfo::BackwardsInfo(SigSpec&& sigspec_, const std::vector<torch::Tensor>& signature_by_term_,
-                                     torch::Tensor signature_, torch::Tensor path_increments_, bool initial_,
-                                     torch::Tensor initial_value_) :
+                                     torch::Tensor signature_, torch::Tensor path_increments_, bool initial_) :
             // Call to detach works around PyTorch bug 25340, which is a won't-fix. Basically, it makes sure that
             // backwards_info doesn't have references to any other tensors, and therefore in particular doesn't have
             // references to the tensor that is the output of the signature function: because this output tensor has a
@@ -94,8 +93,7 @@ namespace signatory {
             sigspec{sigspec_},
             signature{signature_.detach()},
             path_increments{path_increments_.detach()},
-            initial{initial_},
-            initial_value{initial_value_.detach()}
+            initial{initial_}
             {
                 signature_by_term.reserve(signature_by_term_.size());
                 for (const auto& elem : signature_by_term_) {
@@ -135,8 +133,14 @@ namespace signatory {
 
         void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value,
                        bool initial, torch::Tensor initial_value) {
-            // This function is called before we even transpose anything (as we don't yet know that we can do a
-            // transpose). As a result path should be of size (batch, stream, channel) at this point
+            if (path.ndimension() == 2) {
+                // Friendlier help message for a common mess-up.
+                throw std::invalid_argument("Argument 'path' must be a 3-dimensional tensor, with dimensions "
+                                            "corresponding to (batch, stream, channel) respectively. If you just want "
+                                            "the signature or logsignature of a single path then wrap it in a single "
+                                            "batch dimension by replacing e.g. signature(path, depth) with "
+                                            "signature(path.unsqueeze(0), depth).squeeze(0).");
+            }
             if (path.ndimension() != 3) {
                 throw std::invalid_argument("Argument 'path' must be a 3-dimensional tensor, with dimensions "
                                             "corresponding to (batch, stream, channel) respectively.");
@@ -162,7 +166,7 @@ namespace signatory {
                                                 "size.");
                 }
             }
-            if (intial) {
+            if (initial) {
                 if (initial_value.ndimension() != 2) {
                     throw std::invalid_argument("Argument 'initial' must be a 2-dimensional tensor, corresponding to "
                                                 "(batch, signature_channels) respectively.");
@@ -176,8 +180,6 @@ namespace signatory {
         }
 
         void checkargs_backward(torch::Tensor grad_out, const SigSpec& sigspec, int64_t num_channels) {
-            // This function is called before we even transpose anything (as we don't yet know that we can do a
-            // transpose). As a result grad_out should be of size (batch, stream, channel) at this point
             if (num_channels == -1) {
                 num_channels = sigspec.output_channels;
             }

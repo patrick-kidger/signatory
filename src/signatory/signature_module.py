@@ -83,40 +83,26 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
     The input :attr:`path` is expected to be a three-dimensional tensor, with dimensions :math:`(N, L, C)`, where
     :math:`N` is the batch size, :math:`L` is the length of the input sequence, and :math:`C` denotes the number of
     channels. Thus each batch element is interpreted as a stream of data :math:`(x_1, \ldots, x_L)`, where each
-    :math:`x_i \in \mathbb{R}^C`. (This is the same as :class:`torch.nn.Conv1d`, for example.)
+    :math:`x_i \in \mathbb{R}^C`.
 
-    If :attr:`basepoint` is True then an additional point :math:`x_0 = 0 \in \mathbb{R}^C` is prepended to the path.
-    (Alternatively it can be a :class:`torch.Tensor` of shape :math:`(N, C)` specifying the point to prepend.)
+    Each path is then lifted to a piecewise linear path :math:`X \colon [0, 1] \to \mathbb{R}^C` and the signature
+    transform of :attr:`path` to depth :attr:`depth`, is computed, defined by
 
-    Each path is then lifted to a piecewise linear path :math:`X \colon [0, 1] \to \mathbb{R}^C`, and the signature
-    transform of this path is then computed, giving a tensor of shape
+    .. math::
+        \exp(x_2 - x_1) \otimes \exp(x_3 - x_2) \otimes \cdots \otimes \exp(x_L - x_{L - 1}),
+
+    which gives a tensor of shape
 
     .. math::
         (N, C + C^2 + \cdots + C^\text{depth}).
 
-    In mathematical notation, the piecewise linear path we select is the one generated from the differences, so the
-    signature is defined as
-
-    .. math::
-        \exp(x_2 - x_1) \otimes \exp(x_3 - x_2) \otimes \cdots \otimes \exp(x_L - x_{L - 1}).
+    If :attr:`basepoint` is True then an additional point :math:`x_0 = 0 \in \mathbb{R}^C` is prepended to the path
+    before the signature transform is applied. Alternatively it can be a :class:`torch.Tensor` of shape :math:`(N, C)`
+    specifying the point to prepend.
 
     If :attr:`stream` is True then  the signatures of all paths :math:`(x_1, \ldots, x_j)`, for :math:`j=2, \ldots, L`,
     are computed. (Or :math:`(x_0, \ldots, x_j)`, for :math:`j=1, \ldots, L` if :attr:`basepoint` is provided. In
     neither case is the signature of the path of a single element computed, as that isn't defined.)
-
-    Examples:
-        If :attr:`stream` is False then the returned tensor will have shape
-
-        .. math::
-            (N, C + C^2 + \cdots + C^d).
-
-        If :attr:`basepoint` is True and :attr:`stream` is True then the returned tensor will
-        have shape
-
-        .. math::
-            (N, L, C + C^2 + \cdots + C^d),
-
-        as the stream dimension is now preserved. See also the 'Returns' section below.
 
     Arguments:
         path (:class:`torch.Tensor`): The batch of input paths to apply the signature transform to.
@@ -142,25 +128,15 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
             signature is computed - both represent essentially the same information as each other.
 
         initial (None or :class:`torch.Tensor`, optional): Defaults to None. If it is a :class:`torch.Tensor` then it
-            must be of size :math:`(N, C + C^2 + ... + C^depth)`, and it will be premultiplied to the signature, so that
-            in fact
+            must be of size :math:`(N, C + C^2 + ... + C^\text{depth})`, and it will be premultiplied to the signature,
+            so that in fact
 
             .. math::
                 \text{initial} \otimes \exp(x_2 - x_1) \otimes \exp(x_3 - x_2) \otimes \cdots \otimes \exp(x_L - x_{L - 1})
 
-            is computed. (Or
-
-            .. math::
-                \exp(x_{L - 1} - x_L) \otimes \cdots \otimes \exp(x_2 - x_3) \otimes \exp(x_1 - x_2) \otimes \text{initial}
-
-            if :attr:`inverse=True`.) If this argument is None then this extra multiplication is not done, and the
-            signature is calculated as previously described.
-
-    .. note::
-
-        Using the argument :attr:`basepoint` as a :class:`torch.Tensor`, or using the arguments :attr:`inverse` or
-        :attr:`initial`, are for reasonably advanced use cases. For most purposes these arguments wil not be need to be
-        used. Have a look at the examples in the documentation for some use cases.
+            is computed. (Or the appropriate modification of this if :attr:`inverse=True` or if :attr:`basepoint` is
+            passed.) If this argument is None then this extra multiplication is not done, and the signature is
+            calculated as previously described.
 
     Returns:
         A :class:`torch.Tensor`. Given an input :class:`torch.Tensor` of shape :math:`(N, L, C)`, and input arguments
@@ -200,10 +176,6 @@ class Signature(nn.Module):
         stream (bool, optional): as :func:`signatory.signature`.
 
         inverse (bool, optional): as :func:`signatory.signature`.
-
-    Called with two arguments :attr:`path` and :attr:`basepoint`. :attr:`path` should be of type :class:`torch.Tensor`,
-    whilst :attr:`basepoint` should be of type `Union[bool, torch.Tensor]`. Both of them are treated as in
-    :func:`signatory.logsignature`.
     """
 
     def __init__(self, depth, stream=False, inverse=False, **kwargs):
@@ -213,9 +185,22 @@ class Signature(nn.Module):
         self.stream = stream
         self.inverse = inverse
 
-    def forward(self, path, basepoint=False):
-        # type: (torch.Tensor, Union[bool, torch.Tensor]) -> torch.Tensor
-        return signature(path, self.depth, self.stream, basepoint, self.inverse)
+    def forward(self, path, basepoint=False, initial=None):
+        # type: (torch.Tensor, Union[bool, torch.Tensor], Union[None, torch.Tensor]) -> torch.Tensor
+        """The forward operation.
+
+        Arguments:
+            path (torch.Tensor): As :func:`signatory.signature`.
+
+            basepoint (bool or torch.Tensor, optional): As :func:`signatory.signature`.
+
+            initial (None or torch.Tensor, optional): As :func:`signatory.signature`.
+
+        Returns:
+            As :func:`signatory.signature`.
+        """
+        return signature(path, self.depth, stream=self.stream, basepoint=basepoint, inverse=self.inverse,
+                         initial=initial)
 
     def extra_repr(self):
         return 'depth={depth}, stream={stream}, basepoint={basepoint}'.format(depth=self.depth, stream=self.stream,
@@ -274,32 +259,51 @@ def extract_signature_term(sig_tensor, channels, depth):
     return sig_tensor.narrow(dim=-1, start=start, length=channels ** depth)
 
 
-def signature_combine(sig_tensor1, sig_tensor2, input_channels, depth):
-    # type: (torch.Tensor, torch.Tensor, int, int) -> torch.Tensor
+def signature_combine(sig_tensor1, sig_tensor2, input_channels, depth, inverse=False):
+    # type: (torch.Tensor, torch.Tensor, int, int, bool) -> torch.Tensor
     r"""Combines two signatures into a single signature.
 
     This is done by computing a single tensor product:
 
     .. math::
 
-        \text{sig\_tensor1} \otimes \text{sig\_tensor2}
+        \text{sig_tensor1} \otimes \text{sig_tensor2}
 
     Usage is most clear by example. See :ref:`examples-combine`.
 
     Arguments:
-        sig_tensor1 (torch.Tensor): The signature of a path.
+        sig_tensor1 (torch.Tensor): The signature of a path, of dimensions :attr:`(batch, signature_channels)`.
 
-        sig_tensor2 (torch.Tensor): The signature of a second path.
+        sig_tensor2 (torch.Tensor): The signature of a second path, of dimensions :attr:`(batch, signature_channels)`.
+            When the signature of the second path was created, it must have been called with :attr:`basepoint` set to
+            the final value of the path that created :attr:`sig_tensor1`. (See :ref:`examples-combine`.)
 
         input_channels (int): The number of channels in the two paths that were used to compute :attr:`sig_tensor1` and
-            :attr:`sig_tensor2`.
+            :attr:`sig_tensor2`. This must be the same for both :attr:`sig_tensor1` and :attr:`sig_tensor2`.
 
-        depth (int): The depth that :attr:`sig_tensor1` and :attr:`sig_tensor2` have been calculated to.
+        depth (int): The depth that :attr:`sig_tensor1` and :attr:`sig_tensor2` have been calculated to. This must be
+            the same for both :attr:`sig_tensor1` and :attr:`sig_tensor2`.
+
+        inverse (bool, optional): Defaults to False. Whether :attr:`sig_tensor1` and :attr:`sig_tensor2` were created
+            with :attr:`inverse=True`. This must be the same for both :attr:`sig_tensor1` and :attr:`sig_tensor2`.
 
     Returns:
         Let :attr:`path1` be the path whose signature is :attr:`sig_tensor1`. Let :attr:`path2` be the path whose
         signature is :attr:`sig_tensor2`. Then this function returns the signature of :attr:`path1` and :attr:`path2`
         concatenated with each other. (The interpretation is usually that :attr:`path2` represents an extension of
         :attr:`path1`.)
+
+    .. danger::
+
+        There are two subtle bugs which can occur when using this function incautiously. First of all, make sure
+        that :attr:`sig_tensor2` is created with an appropriate :attr:`basepoint`. Secondly, ensure that :attr:`inverse`
+        is set to whatever value of :attr:`inverse` was used to create :attr:`sig_tensor1` and :attr:`sig_tensor2`.
+
+        If this is not done then the return value of this function will be essentially meaningless numbers.
+
+        Neither of these errors can be caught programmatically by this function; it is up to the software developer to
+        get it right!
     """
-    return backend.TensorAlgebraMult(sig_tensor1, sig_tensor2, input_channels, depth)
+    if inverse:
+        sig_tensor1, sig_tensor2 = sig_tensor2, sig_tensor1
+    return backend.TensorAlgebraMult.apply(sig_tensor1, sig_tensor2, input_channels, depth)

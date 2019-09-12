@@ -20,6 +20,7 @@ extensions = ['sphinx.ext.napoleon', 'sphinx.ext.autodoc', 'py2annotate', 'sphin
 
 napoleon_use_admonition_for_examples = True
 autodoc_mock_imports = ['{}._impl'.format(metadata.project)]
+autodoc_member_order = 'bysource'
 intersphinx_mapping = {'torch': ('https://pytorch.org/docs/stable/', None)}
 
 master_doc = 'index'

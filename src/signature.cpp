@@ -24,10 +24,11 @@
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
 
-// TODO: add handling of (... x stream x channel) format
-// TODO: try doing the word->brackets by manually computing the inverse and then using torch.sparse.mm?
-// TODO: add testing for all_words
+// TODO: Change LogSignature to Logsignature everywhere
+// TODO: add logsignature, logsignature_channels, update to Path. Path.signature should accept stream argument.
+// TODO: add example on reparameterisation invariance
 // TODO: add sparse computations
+// TODO: try doing the word->brackets by manually computing the inverse and then using torch.sparse.mm?
 // TODO: signature_jacobian, logsignature_jacobian
 // TODO: switch to pytest over unittest; rationalise some tests when we do
 // TODO: check for interrupts + release GIL?
@@ -39,6 +40,13 @@ namespace signatory {
         torch::Tensor compute_path_increments(torch::Tensor path, torch::Tensor basepoint_value,
                                               const misc::SigSpec& sigspec) {
             int64_t num_increments {sigspec.input_stream_size - 1};
+            // The difference between these cases: basepoint/no basepoint + inverse/no inverse are basically just
+            // niceties.
+            // Essentially all that's going on is that if basepoint is passed then the basepoint is concatenated on to
+            // the path.
+            // All that's going on if inverse is passed is just to multiply everything by -1.
+            // We break it up into special cases like this because doing either of the above operations naively involves
+            // unnecessary extra operations.
             if (sigspec.basepoint) {
                 if (sigspec.inverse) {
                     torch::Tensor path_increments = torch::empty_like(path);
@@ -131,6 +139,7 @@ namespace signatory {
         // that in any case one cannot autograd through this function)
         path = path.detach();
         basepoint_value = basepoint_value.detach();
+        initial_value = initial_value.detach();
         misc::checkargs(path, depth, basepoint, basepoint_value, initial, initial_value);
 
         if (!path.is_floating_point()) {
@@ -176,13 +185,14 @@ namespace signatory {
                                                                      /*start=*/0,
                                                                      /*len=*/1).squeeze(stream_dim),
                                               signature_by_term_at_stream,
-                                              sigspec)
+                                              sigspec);
         }
         else {
             ta_ops::restricted_exp(path_increments.narrow(/*dim=*/stream_dim,
                                                           /*start=*/0,
                                                           /*len=*/1).squeeze(stream_dim),
-                                   signature_by_term_at_stream, sigspec);
+                                   signature_by_term_at_stream,
+                                   sigspec);
         }
 
         for (int64_t stream_index = 1; stream_index < sigspec.output_stream_size; ++stream_index) {
@@ -219,7 +229,6 @@ namespace signatory {
         torch::Tensor signature = backwards_info->signature;
         torch::Tensor path_increments = backwards_info->path_increments;
         bool initial = backwards_info->initial;
-        torch::Tensor initial_value = backwards_info->initial_value;
 
         misc::checkargs_backward(grad_signature, sigspec);
 
@@ -314,9 +323,16 @@ namespace signatory {
                                                               /*start=*/0,
                                                               /*len=*/1).squeeze(stream_dim);
         torch::Tensor next = path_increments.narrow(/*dim=*/stream_dim,
-                                                  /*start=*/0,
-                                                  /*len=*/1).squeeze(stream_dim);
+                                                    /*start=*/0,
+                                                    /*len=*/1).squeeze(stream_dim);
         if (initial) {
+            if (sigspec.stream) {
+                // We're using memory we own if stream==false, but we're using memory we don't own if stream==true. So
+                // we have to clone here before we modify it.
+                for (auto& elem : signature_by_term_at_stream) {
+                    elem = elem.clone();
+                }
+            }
             // Recover initial_value in signature_by_term_at_stream
             ta_ops::mult_fused_restricted_exp(-next, signature_by_term_at_stream, sigspec);
             // grad_signature_by_term_at_stream is using the same memory as grad_signature_at_stream, which represents

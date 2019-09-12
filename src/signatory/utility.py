@@ -90,10 +90,10 @@ def all_words(channels, depth):
     return list(generator())
 
 
+# This is deliberately an undocumented function as it's pretty esoteric
 def lyndon_words_to_basis_transform(channels, depth):
     # type: (int, int) -> List[Tuple[int, int, int]]
     """Computes the collection of transforms needed to go from a basis of the free Lie algebra in terms of Lyndon words
     to a basis of the free Lie algebra in terms of the Lyndon basis."""
-    # TODO: think about documenting this? It's a bit of an obscure function
 
     return _impl.lyndon_words_to_basis_transform(channels, depth)
