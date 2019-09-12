@@ -132,20 +132,22 @@ namespace signatory {
                          torch::Tensor basepoint_value, bool inverse, LogSignatureMode mode,
                          py::object lyndon_info_capsule)
     {
+        // unpack sigspec
+        misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<misc::BackwardsInfo>(backwards_info_capsule);
+        const misc::SigSpec& sigspec = backwards_info->sigspec;
+
         if (depth == 1) {
-            return signature_forward(path, depth, stream, basepoint, basepoint_value, inverse);
+            return signature_forward(path, depth, stream, basepoint, basepoint_value, inverse, false,
+                                     torch::empty({0}, sigspec.opts));
         }  // this isn't just a fast return path: we also can't index the reciprocals tensor if depth == 1, so we'd need
            // faffier code below - and it's already quite faffy enough
 
         // first call the regular signature
         torch::Tensor signature;
         py::object backwards_info_capsule;
-        std::tie(signature, backwards_info_capsule) = signature_forward(path, depth, stream, basepoint,
-                                                                        basepoint_value, inverse);
-
-        // unpack sigspec
-        misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<misc::BackwardsInfo>(backwards_info_capsule);
-        const misc::SigSpec& sigspec = backwards_info->sigspec;
+        std::tie(signature, backwards_info_capsule) = signature_forward(path, depth, stream, basepoint, basepoint_value,
+                                                                        inverse, false,
+                                                                        torch::empty({0}, sigspec.opts));
 
         std::vector<torch::Tensor> signature_by_term_at_stream;
 
@@ -317,6 +319,6 @@ namespace signatory {
             ta_ops::log_backward(grad_logsignature_by_term, grad_signature_by_term, signature_by_term, sigspec);
         }
 
-        return signature_backward(grad_signature, backwards_info_capsule, false);
+        return signature_backward(grad_signature, backwards_info_capsule);
     }
 }  // namespace signatory

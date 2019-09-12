@@ -29,7 +29,7 @@ url = "https://github.com/patrick-kidger/signatory"
 license = "Apache-2.0"
 python_requires = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, <4"
 keywords = "signature"
-classifiers = ["Development Status :: 3 - Alpha",
+classifiers = ["Development Status :: 4 - Beta",
                "Intended Audience :: Developers",
                "Intended Audience :: Financial and Insurance Industry",
                "Intended Audience :: Science/Research",

@@ -32,17 +32,52 @@ if False:
 
 class _SignatureFunction(autograd.Function):
     @staticmethod
-    def forward(ctx, path, depth, stream, basepoint, inverse):
-        return backend.forward(ctx, path, depth, stream, basepoint, inverse, _impl.signature_forward)
+    def forward(ctx, path, depth, stream, basepoint, inverse, initial):
+        ctx.basepoint = basepoint
+
+        basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
+        if isinstance(initial, torch.Tensor):
+            initial_value = initial
+            initial = True
+        else:
+            initial_value = torch.Tensor()
+            initial = False
+        ctx.initial = initial
+
+        path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
+        result, backwards_info = _impl.signature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
+                                                         initial, initial_value)
+        if ctx.requires_grad:
+            ctx.backwards_info = backwards_info
+            ctx.save_for_backward(result)
+
+        # would like to transpose here but we can't because of PyTorch bug 24413, so instead we have to transpose at
+        # every call site instead.
+        return result
 
     @staticmethod
     @autograd_function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
     def backward(ctx, grad_result):
-        return backend.backward(ctx, grad_result, _impl.signature_backward)
+        # Because in the forward pass we transpose at every call site, our grad_result comes to us here
+        # already-transposed. so we don't need to do it here.
+
+        # Just to check that the result of the forward pass hasn't been modified in-place. (Which would make the result
+        # of the backwards calculation be incorrect!) The reason we don't actually use the tensor is because another
+        # handle to it is already saved in ctx.backwards_info, which we do use.
+        _ = ctx.saved_tensors
+
+        grad_path, grad_basepoint, grad_initial = _impl.signature_backward(grad_result, ctx.backwards_info)
+        grad_path = grad_path.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
+        if not isinstance(ctx.basepoint, torch.Tensor):
+            grad_basepoint = None
+        if not ctx.initial:
+            grad_initial = None
+
+        return grad_path, None, None, grad_basepoint, None, grad_initial
 
 
-def signature(path, depth, stream=False, basepoint=False, inverse=False):
-    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], bool) -> torch.Tensor
+def signature(path, depth, stream=False, basepoint=False, inverse=False, initial=None):
+    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], bool, Union[None, torch.Tensor]) -> torch.Tensor
     r"""Applies the signature transform to a stream of data.
 
     The input :attr:`path` is expected to be a three-dimensional tensor, with dimensions :math:`(N, L, C)`, where
@@ -106,6 +141,27 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False):
             From a machine learning perspective it does not particularly matter whether the signature or the inverse
             signature is computed - both represent essentially the same information as each other.
 
+        initial (None or :class:`torch.Tensor`, optional): Defaults to None. If it is a :class:`torch.Tensor` then it
+            must be of size :math:`(N, C + C^2 + ... + C^depth)`, and it will be premultiplied to the signature, so that
+            in fact
+
+            .. math::
+                \text{initial} \otimes \exp(x_2 - x_1) \otimes \exp(x_3 - x_2) \otimes \cdots \otimes \exp(x_L - x_{L - 1})
+
+            is computed. (Or
+
+            .. math::
+                \exp(x_{L - 1} - x_L) \otimes \cdots \otimes \exp(x_2 - x_3) \otimes \exp(x_1 - x_2) \otimes \text{initial}
+
+            if :attr:`inverse=True`.) If this argument is None then this extra multiplication is not done, and the
+            signature is calculated as previously described.
+
+    .. note::
+
+        Using the argument :attr:`basepoint` as a :class:`torch.Tensor`, or using the arguments :attr:`inverse` or
+        :attr:`initial`, are for reasonably advanced use cases. For most purposes these arguments wil not be need to be
+        used. Have a look at the examples in the documentation for some use cases.
+
     Returns:
         A :class:`torch.Tensor`. Given an input :class:`torch.Tensor` of shape :math:`(N, L, C)`, and input arguments
         :attr:`depth`, :attr:`basepoint`, :attr:`stream`, then the return value is, in pseudocode:
@@ -125,7 +181,7 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False):
 
     """
     # noinspection PyUnresolvedReferences
-    result = _SignatureFunction.apply(path, depth, stream, basepoint, inverse)
+    result = _SignatureFunction.apply(path, depth, stream, basepoint, inverse, initial)
 
     # We have to do the transpose outside of autograd.Function.apply to avoid a PyTorch bug.
     # https://github.com/pytorch/pytorch/issues/24413

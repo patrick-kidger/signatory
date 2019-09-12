@@ -1,0 +1,28 @@
+.. currentmodule:: examples-online
+
+
+Online computation of signatures
+--------------------------------
+Suppose we have the signature of a stream of data :math:`x_1, \ldots, x_{1000}`. Subsequently some more data arrives, say :math:`x_{1001}, \ldots, x_{1007}`. It is possible to calculate the signature of the whole stream of data :math:`x_1, \ldots, x_{1007}` with just this information. It is not necessary to compute the signature of the whole path from the beginning!
+
+In code, this problem can be solved like this:
+
+.. code-block:: python
+
+    import torch
+    import signatory
+
+    # Generate a path X
+    # Recall that the order of dimensions is (batch, stream, channel)
+    X = torch.rand(1, 1000, 5)
+    # Calculate its signature to depth 3
+    sig_X = signatory.signature(X, 3)
+
+    # Generate some more data for the path
+    Y = torch.rand(1, 7, 5)
+    # Calculate the signature of the overall path
+    sig_XY = signatory.signature(X_new, 3, basepoint=X[:, -1, :], initial=sig_X)
+
+As can be seen, two pieces of information need to be provided: the final value of :attr:`X` along the stream dimension, and the signature of :attr:`X`.
+
+In particular note that we only needed the last value of :attr:`X`. If memory efficiency is a concern, then we could have discarded the other 999 terms of :attr:`X` without an issue!

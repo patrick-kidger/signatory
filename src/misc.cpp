@@ -82,7 +82,8 @@ namespace signatory {
         };
 
         BackwardsInfo::BackwardsInfo(SigSpec&& sigspec_, const std::vector<torch::Tensor>& signature_by_term_,
-                                     torch::Tensor signature_, torch::Tensor path_increments_) :
+                                     torch::Tensor signature_, torch::Tensor path_increments_, bool initial_,
+                                     torch::Tensor initial_value_) :
             // Call to detach works around PyTorch bug 25340, which is a won't-fix. Basically, it makes sure that
             // backwards_info doesn't have references to any other tensors, and therefore in particular doesn't have
             // references to the tensor that is the output of the signature function: because this output tensor has a
@@ -92,7 +93,9 @@ namespace signatory {
             // Thus not doing this gives a massive memory leak.
             sigspec{sigspec_},
             signature{signature_.detach()},
-            path_increments{path_increments_.detach()}
+            path_increments{path_increments_.detach()},
+            initial{initial_},
+            initial_value{initial_value_.detach()}
             {
                 signature_by_term.reserve(signature_by_term_.size());
                 for (const auto& elem : signature_by_term_) {
@@ -130,7 +133,8 @@ namespace signatory {
             }
         }
 
-        void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value) {
+        void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value,
+                       bool initial, torch::Tensor initial_value) {
             // This function is called before we even transpose anything (as we don't yet know that we can do a
             // transpose). As a result path should be of size (batch, stream, channel) at this point
             if (path.ndimension() != 3) {
@@ -156,6 +160,17 @@ namespace signatory {
                     basepoint_value.size(batch_dim) != path.size(batch_dim)) {
                     throw std::invalid_argument("Arguments 'basepoint' and 'path' must have dimensions of the same "
                                                 "size.");
+                }
+            }
+            if (intial) {
+                if (initial_value.ndimension() != 2) {
+                    throw std::invalid_argument("Argument 'initial' must be a 2-dimensional tensor, corresponding to "
+                                                "(batch, signature_channels) respectively.");
+                }
+                if (initial_value.size(channel_dim) != signature_channels(path.size(channel_dim), depth) ||
+                    initial_value.size(batch_dim) != path.size(batch_dim)) {
+                    throw std::invalid_argument("Argument 'initial' must have correctly sized batch and channel "
+                                                "dimensions.");
                 }
             }
         }

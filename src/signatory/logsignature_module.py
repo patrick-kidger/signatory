@@ -52,13 +52,38 @@ class _LogSignatureFunction(autograd.Function):
         # LogSignature).
 
         mode = _mode_convert(mode)
-        return backend.forward(ctx, path, depth, stream, basepoint, inverse, _impl.logsignature_forward,
-                               (mode, lyndon_info))
+        ctx.basepoint = basepoint
+
+        basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
+
+        path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
+        result, backwards_info = _impl.logsignature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
+                                                            mode, lyndon_info)
+        if ctx.requires_grad:
+            ctx.backwards_info = backwards_info
+            ctx.save_for_backward(result)
+
+        # would like to transpose here but we can't because of PyTorch bug 24413, so instead we have to transpose at
+        # every call site instead.
+        return result
 
     @staticmethod
     @autograd_function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
     def backward(ctx, grad_result):
-        return backend.backward(ctx, grad_result, _impl.logsignature_backward) + (None, None)
+        # Because in the forward pass we transpose at every call site, our grad_result comes to us here
+        # already-transposed. so we don't need to do it here.
+
+        # Just to check that the result of the forward pass hasn't been modified in-place. (Which would make the result
+        # of the backwards calculation be incorrect!) The reason we don't actually use the tensor is because another
+        # handle to it is already saved in ctx.backwards_info, which we do use.
+        _ = ctx.saved_tensors
+
+        grad_path, grad_basepoint = _impl.logsignature_backward(grad_result, ctx.backwards_info)
+        grad_path = grad_path.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
+        if not isinstance(ctx.basepoint, torch.Tensor):
+            grad_basepoint = None
+
+        return grad_path, None, None, grad_basepoint, None, None, None
 
 
 def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode="words"):

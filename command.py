@@ -227,8 +227,8 @@ def build_and_test(pythonv, signatoryv, device_str, directory):
                  "pip install iisignature",
                  "python {} test -f{}".format(os.path.join(here, "command.py"), device_str),
                  "conda deactivate",
-                 "conda env remove -p /signatory-{pythonv}".format(directory=directory,
-                                                                   pythonv=pythonv),
+                 "conda env remove -p {directory}/signatory-{pythonv}".format(directory=directory,
+                                                                              pythonv=pythonv),
                  "conda clean -a -y",
                  stdout=False)
 

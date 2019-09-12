@@ -24,16 +24,13 @@
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
 
+// TODO: add handling of (... x stream x channel) format
+// TODO: try doing the word->brackets by manually computing the inverse and then using torch.sparse.mm?
 // TODO: add testing for all_words
 // TODO: add sparse computations
-// TODO: try doing the word->brackets by manually computing the inverse and then using torch.sparse.mm?
+// TODO: signature_jacobian, logsignature_jacobian
 // TODO: switch to pytest over unittest; rationalise some tests when we do
 // TODO: check for interrupts + release GIL?
-// TODO: add handling of (... x stream x channel) format
-// TODO: signature_jacobian, logsignature_jacobian
-// TODO: tensorflow?
-// TODO: support torchscript? https://pytorch.org/tutorials/advanced/torch_script_custom_ops.html
-// TODO: concatenating onto an already existing signature. A class that takes data and spits out signatures?
 
 
 namespace signatory {
@@ -128,13 +125,13 @@ namespace signatory {
 
     std::tuple<torch::Tensor, py::object>
     signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
-                      bool inverse)
+                      bool inverse, bool initial, torch::Tensor initial_value)
     {
         // No sense keeping track of gradients when we have a dedicated backwards function (and in-place operations mean
         // that in any case one cannot autograd through this function)
         path = path.detach();
         basepoint_value = basepoint_value.detach();
-        misc::checkargs(path, depth, basepoint, basepoint_value);
+        misc::checkargs(path, depth, basepoint, basepoint_value, initial, initial_value);
 
         if (!path.is_floating_point()) {
             path = path.to(torch::kFloat32);
@@ -151,6 +148,7 @@ namespace signatory {
         // We allocate memory for certain things upfront.
         // We want to construct things in-place wherever possible. Signatures get large; this saves a lot of time.
 
+        torch::Tensor first_term;
         torch::Tensor signature;
         std::vector<torch::Tensor> signature_by_term;
         std::vector<torch::Tensor> signature_by_term_at_stream;
@@ -160,20 +158,32 @@ namespace signatory {
                                       sigspec.batch_size,
                                       sigspec.output_channels},
                                      sigspec.opts);
-            torch::Tensor first_term = signature.narrow(/*dim=*/stream_dim,
-                                                        /*start=*/0,
-                                                        /*len=*/1).squeeze(stream_dim);
+            first_term = signature.narrow(/*dim=*/stream_dim,
+                                          /*start=*/0,
+                                          /*len=*/1).squeeze(stream_dim);
             misc::slice_by_term(signature, signature_by_term, sigspec);
-            misc::slice_by_term(first_term, signature_by_term_at_stream, sigspec);
         }
         else {
             signature = torch::empty({sigspec.batch_size, sigspec.output_channels}, sigspec.opts);
-            misc::slice_by_term(signature, signature_by_term_at_stream, sigspec);
+            first_term = signature;
         }
+        misc::slice_by_term(first_term, signature_by_term_at_stream, sigspec);
 
         // compute the first term
-        ta_ops::restricted_exp(path_increments.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/1).squeeze(stream_dim),
-                               signature_by_term_at_stream, sigspec);
+        if (initial) {
+            first_term.copy_(initial_value);
+            ta_ops::mult_fused_restricted_exp(path_increments.narrow(/*dim=*/stream_dim,
+                                                                     /*start=*/0,
+                                                                     /*len=*/1).squeeze(stream_dim),
+                                              signature_by_term_at_stream,
+                                              sigspec)
+        }
+        else {
+            ta_ops::restricted_exp(path_increments.narrow(/*dim=*/stream_dim,
+                                                          /*start=*/0,
+                                                          /*len=*/1).squeeze(stream_dim),
+                                   signature_by_term_at_stream, sigspec);
+        }
 
         for (int64_t stream_index = 1; stream_index < sigspec.output_stream_size; ++stream_index) {
             if (stream) {
@@ -193,13 +203,14 @@ namespace signatory {
         py::object backwards_info_capsule = misc::wrap_capsule<misc::BackwardsInfo>(std::move(sigspec),
                                                                                     signature_by_term,
                                                                                     signature,
-                                                                                    path_increments);
+                                                                                    path_increments,
+                                                                                    initial);
 
         return {signature, backwards_info_capsule};
     }
 
-    std::tuple<torch::Tensor, torch::Tensor>
-    signature_backward(torch::Tensor grad_signature, py::object backwards_info_capsule, bool clone) {
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+    signature_backward(torch::Tensor grad_signature, py::object backwards_info_capsule) {
         misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<misc::BackwardsInfo>(backwards_info_capsule);
 
         // Unpacked backwards_info
@@ -207,6 +218,8 @@ namespace signatory {
         const std::vector<torch::Tensor>& signature_by_term = backwards_info->signature_by_term;
         torch::Tensor signature = backwards_info->signature;
         torch::Tensor path_increments = backwards_info->path_increments;
+        bool initial = backwards_info->initial;
+        torch::Tensor initial_value = backwards_info->initial_value;
 
         misc::checkargs_backward(grad_signature, sigspec);
 
@@ -237,13 +250,9 @@ namespace signatory {
         else {
             grad_signature_at_stream = grad_signature;
         }
+        // make sure not to leak changes
+        grad_signature_at_stream = grad_signature_at_stream.clone();
 
-        if (clone) {
-            // Normally we want to clone so as not to leak changes.
-            // This is provided as an option specifically for logsignature_backward: we control the input to
-            // signature_backward in this case, so then we know that we don't need to clone.
-            grad_signature_at_stream = grad_signature_at_stream.clone();
-        }
         misc::slice_by_term(grad_signature_at_stream, grad_signature_by_term_at_stream, sigspec);
 
         if (sigspec.stream) {
@@ -301,14 +310,24 @@ namespace signatory {
             }
         }
 
-        torch::Tensor grad_in = grad_path_increments.narrow(/*dim=*/stream_dim,
-                                                            /*start=*/0,
-                                                            /*len=*/1).squeeze(stream_dim);
-        torch::Tensor in = path_increments.narrow(/*dim=*/stream_dim,
+        torch::Tensor grad_next = grad_path_increments.narrow(/*dim=*/stream_dim,
+                                                              /*start=*/0,
+                                                              /*len=*/1).squeeze(stream_dim);
+        torch::Tensor next = path_increments.narrow(/*dim=*/stream_dim,
                                                   /*start=*/0,
                                                   /*len=*/1).squeeze(stream_dim);
-        ta_ops::restricted_exp_backward(grad_in, grad_signature_by_term_at_stream, in, signature_by_term_at_stream,
-                                        sigspec);
+        if (initial) {
+            // Recover initial_value in signature_by_term_at_stream
+            ta_ops::mult_fused_restricted_exp(-next, signature_by_term_at_stream, sigspec);
+            // grad_signature_by_term_at_stream is using the same memory as grad_signature_at_stream, which represents
+            // the gradient through initial_value.
+            ta_ops::mult_fused_restricted_exp_backward(grad_next, grad_signature_by_term_at_stream, next,
+                                                       signature_by_term_at_stream, sigspec);
+        }
+        else {
+            ta_ops::restricted_exp_backward(grad_next, grad_signature_by_term_at_stream, next,
+                                            signature_by_term_at_stream, sigspec);
+        }
 
 
         // Find the gradient on the path from the gradient on the path increments.
@@ -316,6 +335,6 @@ namespace signatory {
         torch::Tensor grad_basepoint_value;
         std::tie(grad_path, grad_basepoint_value) = detail::compute_path_increments_backward(grad_path_increments,
                                                                                              sigspec);
-        return {grad_path, grad_basepoint_value};
+        return {grad_path, grad_basepoint_value, grad_signature_at_stream};
     }
 }  // namespace signatory
