@@ -1,7 +1,9 @@
 .. currentmodule:: usage-installation
 
+.. _usage-installation:
+
 Installation
-------------
+############
 Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7.
 
 Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.2.0, but should work with all recent versions.

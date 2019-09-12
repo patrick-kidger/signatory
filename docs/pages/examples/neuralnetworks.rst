@@ -1,7 +1,10 @@
 .. currentmodule:: examples-neuralnetworks
 
+.. _examples-neuralnetworks:
+
 Using signatures in neural networks
------------------------------------
+###################################
+
 In principle a simple augment-signature-linear model is enough to achieve universal approximation:
 
 .. literalinclude:: /../test/example1.py

@@ -24,7 +24,8 @@ from .path import Path
 from .signature_module import (signature,
                                Signature,
                                signature_channels,
-                               extract_signature_term)
+                               extract_signature_term,
+                               signature_combine)
 from .utility import (lyndon_words,
                       lyndon_brackets,
                       all_words)

@@ -1,7 +1,9 @@
 .. currentmodule:: reference-signatures
 
+.. _reference-signatures:
+
 Signatures
-----------
+##########
 At the heart of the package is the :func:`signatory.signature` function:
 
 .. autofunction:: signatory.signature
@@ -11,3 +13,5 @@ At the heart of the package is the :func:`signatory.signature` function:
 .. autofunction:: signatory.signature_channels
 
 .. autofunction:: signatory.extract_signature_term
+
+.. autofunction:: signatory.signature_combine

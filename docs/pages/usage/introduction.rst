@@ -1,7 +1,9 @@
 .. currentmodule:: usage-introduction
 
+.. _usage-introduction:
+
 Introduction
-------------
+############
 This is the documentation for the Signatory package, which provides facilities for calculating the signature and logsignature transforms of streams of data.
 
 If you want to know more about the mathematics of the signature transform and how to use it then see :ref:`understanding-whataresignatures` for a very brief introduction. Further links to papers discussing the subject in more detail can also be found there.

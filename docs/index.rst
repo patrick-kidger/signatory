@@ -15,6 +15,7 @@ Consult the sidebar on the left hand side of this page for documentation.
     :caption: Reference
     :hidden:
 
+    /pages/reference/libraryapi
     /pages/reference/signatures
     /pages/reference/logsignatures
     /pages/reference/path
@@ -26,7 +27,8 @@ Consult the sidebar on the left hand side of this page for documentation.
 
     /pages/examples/simple
     /pages/examples/online
-    /pages/exampels/intervals
+    /pages/examples/combine
+    /pages/examples/intervals
     /pages/examples/neuralnetworks
 
 .. toctree::

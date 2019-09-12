@@ -1,7 +1,10 @@
 .. currentmodule:: examples-intervals
 
+.. _examples-intervals:
+
 Signatures on intervals
------------------------
+#######################
+
 The basic :func:`signatory.signature` function computes the signature of a whole stream of data. Sometimes we have a whole stream of data, and then want to compute the signature of just the data sitting in some subinterval.
 
 Naively, we could just slice it:
@@ -51,3 +54,11 @@ In fact, the :class:`signatory.Path` class supports adding data to it as well:
     path_class.update(path2)
     # path_class is now considering a path of length 1200
     sig3 = path_class.signature(900, 1150)
+
+.. note::
+
+    To be able to compute signatures over intervals like this, it is clear that :class:`signatory.Path` must hold information about the whole stream of data in memory.
+
+    If only the signature of the whole path is of interest then the main :func:`signatory.signature` function will work fine. If the signature of a path for which data continues to arrive (analogous to the use of :meth:`signatory.Path.update` above), then see :ref:`examples-online`, which demonstrates how to efficiently use the :func:`signatory.signature` function in this way.
+
+    If the signature on disjoint (but touching) intervals is required, and the signature on the union of these intervals is desired, then see :ref:`examples-combine` for how to compute the signature on each of these intervals, and how to efficiently combine them to find the signature on larger intervals. This then avoids the overhead of the :class:`signatory.Path` class.

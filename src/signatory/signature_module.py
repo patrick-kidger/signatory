@@ -272,3 +272,34 @@ def extract_signature_term(sig_tensor, channels, depth):
     else:
         start = signature_channels(channels, depth - 1)
     return sig_tensor.narrow(dim=-1, start=start, length=channels ** depth)
+
+
+def signature_combine(sig_tensor1, sig_tensor2, input_channels, depth):
+    # type: (torch.Tensor, torch.Tensor, int, int) -> torch.Tensor
+    r"""Combines two signatures into a single signature.
+
+    This is done by computing a single tensor product:
+
+    .. math::
+
+        \text{sig\_tensor1} \otimes \text{sig\_tensor2}
+
+    Usage is most clear by example. See :ref:`examples-combine`.
+
+    Arguments:
+        sig_tensor1 (torch.Tensor): The signature of a path.
+
+        sig_tensor2 (torch.Tensor): The signature of a second path.
+
+        input_channels (int): The number of channels in the two paths that were used to compute :attr:`sig_tensor1` and
+            :attr:`sig_tensor2`.
+
+        depth (int): The depth that :attr:`sig_tensor1` and :attr:`sig_tensor2` have been calculated to.
+
+    Returns:
+        Let :attr:`path1` be the path whose signature is :attr:`sig_tensor1`. Let :attr:`path2` be the path whose
+        signature is :attr:`sig_tensor2`. Then this function returns the signature of :attr:`path1` and :attr:`path2`
+        concatenated with each other. (The interpretation is usually that :attr:`path2` represents an extension of
+        :attr:`path1`.)
+    """
+    return backend.TensorAlgebraMult(sig_tensor1, sig_tensor2, input_channels, depth)

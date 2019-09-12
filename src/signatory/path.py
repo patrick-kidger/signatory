@@ -16,30 +16,13 @@
 
 import bisect
 import torch
-from torch import autograd
 
 from . import backend
 from . import signature_module as smodule
-from . import _impl
 
 # noinspection PyUnreachableCode
 if False:
-    from typing import List, Union
-
-
-class _TensorAlgebraMult(autograd.Function):
-    @staticmethod
-    def forward(ctx, arg1, arg2, input_channels, depth):
-        ctx.save_for_backward(arg1, arg2)
-        ctx.input_channels = input_channels
-        ctx.depth = depth
-        return _impl.tensor_algebra_mult_forward(arg1, arg2, input_channels, depth)
-
-    @staticmethod
-    def backward(ctx, grad):
-        arg1, arg2 = ctx.saved_tensors
-        grad_arg1, grad_arg2 = _impl.tensor_algebra_mult_backward(grad, arg1, arg2, ctx.input_channels, ctx.depth)
-        return grad_arg1, grad_arg2, None, None
+    from typing import Any, List, Union
 
 
 class Path(object):
@@ -170,7 +153,7 @@ class Path(object):
         rev = self._inverse_signature[index_start][:, adjusted_start, :]
         sig = self._signature[index_end][:, adjusted_end, :]
 
-        return _TensorAlgebraMult.apply(rev, sig, self._channels, self.depth)
+        return backend.TensorAlgebraMult.apply(rev, sig, self._channels, self.depth)
 
     @property
     def path(self):
@@ -202,7 +185,7 @@ class Path(object):
     @property
     def shape(self):
         # type: () -> torch.Size
-        """The shape of the input path. As :meth:`torch.Tensor.shape`."""
+        """The shape of the input path. As :attr:`torch.Tensor.shape`."""
         return torch.Size(self._shape)
 
     def signature_size(self, index=None):
@@ -223,7 +206,7 @@ class Path(object):
     @property
     def signature_shape(self):
         # type: () -> torch.Size
-        """The shape of the signature of the path. As :meth:`torch.Tensor.shape`."""
+        """The shape of the signature of the path. As :attr:`torch.Tensor.shape`."""
         return torch.Size(self._signature_shape)
 
     # Method not property for consistency with signatory.signature_channels

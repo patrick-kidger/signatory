@@ -16,6 +16,9 @@
 
 
 import torch
+from torch import autograd
+
+from . import _impl
 
 
 # Requirement: must be such that
@@ -31,3 +34,18 @@ def interpret_basepoint(basepoint, path):
     else:
         basepoint_value = torch.Tensor()
     return basepoint, basepoint_value
+
+
+class TensorAlgebraMult(autograd.Function):
+    @staticmethod
+    def forward(ctx, arg1, arg2, input_channels, depth):
+        ctx.save_for_backward(arg1, arg2)
+        ctx.input_channels = input_channels
+        ctx.depth = depth
+        return _impl.tensor_algebra_mult_forward(arg1, arg2, input_channels, depth)
+
+    @staticmethod
+    def backward(ctx, grad):
+        arg1, arg2 = ctx.saved_tensors
+        grad_arg1, grad_arg2 = _impl.tensor_algebra_mult_backward(grad, arg1, arg2, ctx.input_channels, ctx.depth)
+        return grad_arg1, grad_arg2, None, None

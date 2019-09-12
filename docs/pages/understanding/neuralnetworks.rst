@@ -1,7 +1,9 @@
 .. currentmodule:: understanding-neuralnetworks
 
+.. _understanding-neuralnetworks:
+
 Neural networks
----------------
+###############
 The universal nonlinearity property requires the whole, infinite, signature: this doesn't fit in your computer's memory. The solution is actually incredible simple: truncate the signature to some finite collection of statistics, and then embed it within a nonlinear model, like a neural network. The signature transform now acts as a pooling function, doing a provably good job of extracting information.
 
 Have a look at `this <https://arxiv.org/abs/1905.08494>`__ for a more in-depth look at integrating it into neural neural networks.

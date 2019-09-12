@@ -1,7 +1,9 @@
 .. currentmodule:: reference-utilities
 
+.. _reference-utilities:
+
 Utilities
----------
+#########
 
 The following miscellaneous operations are provided as a convenience.
 

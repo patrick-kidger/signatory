@@ -15,7 +15,8 @@ author = metadata.author
 release = metadata.version
 
 # must have installed py2annotate in order generate docs
-extensions = ['sphinx.ext.napoleon', 'sphinx.ext.autodoc', 'py2annotate', 'sphinx.ext.intersphinx']
+extensions = ['sphinx.ext.napoleon', 'sphinx.ext.autodoc', 'py2annotate', 'sphinx.ext.intersphinx',
+              'sphinx.ext.autosummary']
 
 napoleon_use_admonition_for_examples = True
 autodoc_mock_imports = ['{}._impl'.format(metadata.project)]
@@ -26,7 +27,6 @@ master_doc = 'index'
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 
-
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 
@@ -34,3 +34,7 @@ templates_path = ['_templates']
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+
+
+def setup(app):
+    app.add_stylesheet("theme_overrides.css")

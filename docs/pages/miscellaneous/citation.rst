@@ -1,7 +1,9 @@
 .. currentmodule:: miscellaneous-citation
 
+.. _miscellaneous-citation:
+
 Citation
---------
+########
 If you found this library useful in your research, please consider citing
 
 .. code-block:: bibtex
