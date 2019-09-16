@@ -1,8 +1,4 @@
-.. genreadme off
-
 .. _index:
-
-.. genreadme on
 
 *********
 Signatory
