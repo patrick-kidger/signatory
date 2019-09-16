@@ -228,7 +228,7 @@ def signature_channels(channels, depth):
     return _impl.signature_channels(channels, depth)
 
 
-def extract_signature_term(sig_tensor, channels, depth):
+def extract_signature_term(sigtensor, channels, depth):
     # type: (torch.Tensor, int, int) -> torch.Tensor
     r"""Extracts a particular term from a signature.
 
@@ -237,11 +237,10 @@ def extract_signature_term(sig_tensor, channels, depth):
     term of that, returning a tensor with just :math:`C^\text{depth}` channels.
 
     Arguments:
-        sig_tensor (:class:`torch.Tensor`): The signature to extract the term from. Should be a result from the
+        sigtensor (:class:`torch.Tensor`): The signature to extract the term from. Should be a result from the
             :func:`signatory.signature` function.
 
-        channels (int): The number of input channels :math:`C`. (In principle this is determined by the size of
-            :attr:`sig_tensor`, but it is hard to compute this value from :attr:`sig_tensor`.)
+        channels (int): The number of input channels :math:`C`.
 
         depth (int): The depth of the term to be extracted from the signature.
 
@@ -256,10 +255,10 @@ def extract_signature_term(sig_tensor, channels, depth):
         start = 0
     else:
         start = signature_channels(channels, depth - 1)
-    return sig_tensor.narrow(dim=-1, start=start, length=channels ** depth)
+    return sigtensor.narrow(dim=-1, start=start, length=channels ** depth)
 
 
-def signature_combine(sig_tensor1, sig_tensor2, input_channels, depth, inverse=False):
+def signature_combine(sigtensor1, sigtensor2, input_channels, depth, inverse=False):
     # type: (torch.Tensor, torch.Tensor, int, int, bool) -> torch.Tensor
     r"""Combines two signatures into a single signature.
 
@@ -267,37 +266,37 @@ def signature_combine(sig_tensor1, sig_tensor2, input_channels, depth, inverse=F
 
     .. math::
 
-        \text{sig_tensor1} \otimes \text{sig_tensor2}
+        \text{sigtensor1} \otimes \text{sigtensor2}
 
     Usage is most clear by example. See :ref:`examples-combine`.
 
     Arguments:
-        sig_tensor1 (torch.Tensor): The signature of a path, of dimensions :attr:`(batch, signature_channels)`.
+        sigtensor1 (torch.Tensor): The signature of a path, of dimensions :attr:`(batch, signature_channels)`.
 
-        sig_tensor2 (torch.Tensor): The signature of a second path, of dimensions :attr:`(batch, signature_channels)`.
+        sigtensor2 (torch.Tensor): The signature of a second path, of dimensions :attr:`(batch, signature_channels)`.
             When the signature of the second path was created, it must have been called with :attr:`basepoint` set to
-            the final value of the path that created :attr:`sig_tensor1`. (See :ref:`examples-combine`.)
+            the final value of the path that created :attr:`sigtensor1`. (See :ref:`examples-combine`.)
 
-        input_channels (int): The number of channels in the two paths that were used to compute :attr:`sig_tensor1` and
-            :attr:`sig_tensor2`. This must be the same for both :attr:`sig_tensor1` and :attr:`sig_tensor2`.
+        input_channels (int): The number of channels in the two paths that were used to compute :attr:`sigtensor1` and
+            :attr:`sigtensor2`. This must be the same for both :attr:`sigtensor1` and :attr:`sigtensor2`.
 
-        depth (int): The depth that :attr:`sig_tensor1` and :attr:`sig_tensor2` have been calculated to. This must be
-            the same for both :attr:`sig_tensor1` and :attr:`sig_tensor2`.
+        depth (int): The depth that :attr:`sigtensor1` and :attr:`sigtensor2` have been calculated to. This must be
+            the same for both :attr:`sigtensor1` and :attr:`sigtensor2`.
 
-        inverse (bool, optional): Defaults to False. Whether :attr:`sig_tensor1` and :attr:`sig_tensor2` were created
-            with :attr:`inverse=True`. This must be the same for both :attr:`sig_tensor1` and :attr:`sig_tensor2`.
+        inverse (bool, optional): Defaults to False. Whether :attr:`sigtensor1` and :attr:`sigtensor2` were created
+            with :attr:`inverse=True`. This must be the same for both :attr:`sigtensor1` and :attr:`sigtensor2`.
 
     Returns:
-        Let :attr:`path1` be the path whose signature is :attr:`sig_tensor1`. Let :attr:`path2` be the path whose
-        signature is :attr:`sig_tensor2`. Then this function returns the signature of :attr:`path1` and :attr:`path2`
+        Let :attr:`path1` be the path whose signature is :attr:`sigtensor1`. Let :attr:`path2` be the path whose
+        signature is :attr:`sigtensor2`. Then this function returns the signature of :attr:`path1` and :attr:`path2`
         concatenated with each other. (The interpretation is usually that :attr:`path2` represents an extension of
         :attr:`path1`.)
 
     .. danger::
 
         There are two subtle bugs which can occur when using this function incautiously. First of all, make sure
-        that :attr:`sig_tensor2` is created with an appropriate :attr:`basepoint`. Secondly, ensure that :attr:`inverse`
-        is set to whatever value of :attr:`inverse` was used to create :attr:`sig_tensor1` and :attr:`sig_tensor2`.
+        that :attr:`sigtensor2` is created with an appropriate :attr:`basepoint`. Secondly, ensure that :attr:`inverse`
+        is set to whatever value of :attr:`inverse` was used to create :attr:`sigtensor1` and :attr:`sigtensor2`.
 
         If this is not done then the return value of this function will be essentially meaningless numbers.
 
@@ -305,5 +304,5 @@ def signature_combine(sig_tensor1, sig_tensor2, input_channels, depth, inverse=F
         get it right!
     """
     if inverse:
-        sig_tensor1, sig_tensor2 = sig_tensor2, sig_tensor1
-    return backend.TensorAlgebraMult.apply(sig_tensor1, sig_tensor2, input_channels, depth)
+        sigtensor1, sigtensor2 = sigtensor2, sigtensor1
+    return backend.TensorAlgebraMult.apply(sigtensor1, sigtensor2, input_channels, depth)
