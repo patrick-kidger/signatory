@@ -27,6 +27,7 @@ master_doc = 'index'
 
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
+html_style = 'theme_overrides.css'
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -35,7 +36,3 @@ templates_path = ['_templates']
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
-
-
-def setup(app):
-    app.add_css_file("theme_overrides.css")
