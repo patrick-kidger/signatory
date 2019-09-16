@@ -90,7 +90,7 @@ namespace signatory {
         // Retains information needed for the backwards pass.
         struct BackwardsInfo{
             BackwardsInfo(SigSpec&& sigspec_, const std::vector<torch::Tensor>& stream_vector_,
-                          torch::Tensor signature_, torch::Tensor path_increments_);
+                          torch::Tensor signature_, torch::Tensor path_increments_, bool initial_);
 
             void set_logsignature_data(const std::vector<torch::Tensor>& signature_vector_,
                                        py::object lyndon_info_capsule_,
@@ -101,6 +101,7 @@ namespace signatory {
             std::vector<torch::Tensor> signature_by_term;
             torch::Tensor signature;
             torch::Tensor path_increments;
+            bool initial;
 
             py::object lyndon_info_capsule;
             LogSignatureMode mode;
@@ -114,7 +115,8 @@ namespace signatory {
 
         // Checks the arguments for the forwards pass in the signature function (kept here for consistency with the
         // other checkarg functions).
-        void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value);
+        void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value,
+                       bool initial, torch::Tensor initial_value);
 
         // Checks the arguments for the backwards pass in the signature and logsignature function. Only grad_out is
         // checked to make sure it is as expected. The objects we get from the PyCapsule-wrapped BackwardsInfo object

@@ -16,15 +16,11 @@
 
 
 import torch
+from torch import autograd
 
-# noinspection PyUnresolvedReferences
 from . import _impl
 
 
-# Requirement: must be such that
-# interpret_basepoint(basepoint, path)[1] == interpret_basepoint(interpret_basepoint(basepoint, path)[1], path)
-# i.e. in some sense it is a projection.
-# This is because sometimes we may we wish to pass an interpreted basepoint in as the 'basepoint' argument.
 def interpret_basepoint(basepoint, path):
     if basepoint is True:
         basepoint_value = torch.zeros((path.shape[0], path.shape[2]), dtype=path.dtype, device=path.device)
@@ -36,34 +32,16 @@ def interpret_basepoint(basepoint, path):
     return basepoint, basepoint_value
 
 
-def forward(ctx, path, depth, stream, basepoint, inverse, fn_forward, extra_args=()):
-    ctx.basepoint = basepoint
+class TensorAlgebraMult(autograd.Function):
+    @staticmethod
+    def forward(ctx, arg1, arg2, input_channels, depth):
+        ctx.save_for_backward(arg1, arg2)
+        ctx.input_channels = input_channels
+        ctx.depth = depth
+        return _impl.tensor_algebra_mult_forward(arg1, arg2, input_channels, depth)
 
-    basepoint, basepoint_value = interpret_basepoint(basepoint, path)
-
-    path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
-    result, backwards_info = fn_forward(path, depth, stream, basepoint, basepoint_value, inverse, *extra_args)
-    if ctx.requires_grad:
-        ctx.backwards_info = backwards_info
-        ctx.save_for_backward(result)
-
-    # would like to transpose here but we can't because of PyTorch bug 24413, so instead we have to transpose at every
-    # call site instead.
-    return result
-
-
-def backward(ctx, grad_result, fn_backward):
-    # Because in the forward pass we transpose at every call site, our grad_result comes to us here already-transposed.
-    # so we don't need to do it here.
-
-    # Just to check that the result of the forward pass hasn't been modified in-place. (Which would make the result
-    # of the backwards calculation be incorrect!) The reason we don't actually use the tensor is because another
-    # handle to it is already saved in ctx.backwards_info, which we do use.
-    _ = ctx.saved_tensors
-
-    grad_path, grad_basepoint_value = fn_backward(grad_result, ctx.backwards_info)
-    if not isinstance(ctx.basepoint, torch.Tensor):
-        grad_basepoint_value = None
-    grad_path = grad_path.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
-
-    return grad_path, None, None, grad_basepoint_value, None
+    @staticmethod
+    def backward(ctx, grad):
+        arg1, arg2 = ctx.saved_tensors
+        grad_arg1, grad_arg2 = _impl.tensor_algebra_mult_backward(grad, arg1, arg2, ctx.input_channels, ctx.depth)
+        return grad_arg1, grad_arg2, None, None

@@ -73,6 +73,31 @@ class TestSignatureAccuracy(utils.EnhancedTestCase):
             if not inverse_sig.allclose(true_inverse_sig):
                 self.fail(c.diff_fail(inverse_sig=inverse_sig, true_inverse_sig=true_inverse_sig))
 
+    def test_initial(self):
+        for c in utils.ConfigIter(requires_grad=True):
+            path_initial = torch.rand_like(c.path, requires_grad=True)
+            sig_initial = c.signature(store=False, path=path_initial)
+            if c.stream:
+                old_sig_initial = sig_initial
+                sig_initial = sig_initial[:, -1, :]
+            sig = c.signature(basepoint=path_initial[:, -1, :], initial=sig_initial)
+            if c.stream:
+                sig = torch.cat([old_sig_initial, sig], dim=1)
+            true_sig = c.signature(store=False, path=torch.cat([path_initial, c.path], dim=1))
+            if not sig.allclose(true_sig):
+                self.fail(c.diff_fail(true_sig=true_sig, sig=sig))
+            grad = torch.rand_like(sig)
+            sig.backward(grad)
+            path_grad = c.path.grad.clone()
+            path_initial_grad = path_initial.grad.clone()
+            c.path.grad.zero_()
+            path_initial.grad.zero_()
+            true_sig.backward(grad)
+            if not path_grad.allclose(c.path.grad):
+                self.fail(c.diff_fail(path_grad=path_grad, true_path_grad=c.path.grad))
+            if not path_initial_grad.allclose(path_initial.grad):
+                self.fail(c.diff_fail(path_initial_grad=path_initial_grad, true_path_initial_grad=path_initial.grad))
+
 
 class TestLogSignatureAccuracy(utils.EnhancedTestCase):
     def test_forward(self):

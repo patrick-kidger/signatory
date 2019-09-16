@@ -1,7 +1,9 @@
-.. currentmodule:: reference-utilities
+.. _reference-utilities:
 
 Utilities
----------
+#########
+
+.. currentmodule:: signatory
 
 The following miscellaneous operations are provided as a convenience.
 
@@ -11,6 +13,8 @@ This :class:`torch.nn.Module` is essentially unrelated to signatures, but is pro
 
 .. autoclass:: signatory.Augment
 
+    .. automethod:: signatory.Augment.forward
+
 ----
 
 Signatures may be thought of as a sum of coefficients of words. This gives the words in the order that they correspond to the values returned by :func:`signatory.signature`.
@@ -19,7 +23,7 @@ Signatures may be thought of as a sum of coefficients of words. This gives the w
 
 ----
 
-Computing logsignatures involves operations in the free Lie algebra, which may be understood in terms of Lyndon words or the Lyndon basis. In particular Logsignatures may be thought of as a sum of coefficients of Lyndon words. These compute the words, and their standard bracketing, in the order that they correspond to the values returned by :func:`signatory.logsignature`.
+Computing logsignatures involves operations in the free Lie algebra, which may be understood in terms of Lyndon words or the Lyndon basis. In particular logsignatures may be thought of as a sum of coefficients of Lyndon words. These next two functions compute these words, and their standard bracketing, in the order that they correspond to the values returned by :func:`signatory.logsignature`.
 
 .. autofunction:: signatory.lyndon_words
 

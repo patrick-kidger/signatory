@@ -4,3 +4,7 @@
 
 class Tensor:
     pass
+
+
+class Size:
+    pass

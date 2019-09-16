@@ -32,7 +32,7 @@ class Augment(nn.Module):
     The input path is expected to be a three-dimensional tensor, with dimensions :math:`(N, L, C)`, where :math:`N` is
     the batch size, :math:`L` is the length of the input sequence, and :math:`C` denotes the number of channels. Thus
     each batch element is interpreted as a stream of data :math:`(x_1, \ldots, x_L)`, where each
-    :math:`x_i \in \mathbb{R}^C`. (This is the same as :class:`torch.nn.Conv1d`, for example.)
+    :math:`x_i \in \mathbb{R}^C`.
 
     Then this stream may be 'augmented' via some function
 
@@ -166,6 +166,14 @@ class Augment(nn.Module):
 
     def forward(self, x):
         # type: (torch.Tensor) -> torch.Tensor
+        """The forward operation.
+
+        Arguments:
+            x (torch.Tensor): The path to augment.
+
+        Returns:
+            The augmented path.
+        """
         if len(x.shape) != 3:
             raise RuntimeError('Argument x should have three dimensions, (batch, stream, channel). Given shape'
                                '{shape} dimensions with {x}.'.format(shape=x.shape, x=x))

@@ -38,8 +38,8 @@ namespace signatory {
             return depth;
         }
         else {
-            // In theory it'd be slightly quicker to calculate this via the geometric formula, but that involves a
-            // division which gives inaccurate results for large numbers.
+            // In theory it'd probably be slightly quicker to calculate this via the geometric formula, but that
+            // involves a division which gives inaccurate results for large numbers.
             int64_t output_channels = input_channels;
             int64_t mul_limit = std::numeric_limits<int64_t>::max() / input_channels;
             int64_t add_limit = std::numeric_limits<int64_t>::max() - input_channels;
@@ -70,7 +70,6 @@ namespace signatory {
             batch_size{path.size(batch_dim)},
             output_stream_size{path.size(stream_dim) - (basepoint ? 0 : 1)},
             output_channels{signature_channels(path.size(channel_dim), depth)},
-            n_output_dims{stream ? 3 : 2},
             reciprocals{torch::ones({depth - 1}, opts)},
             stream{stream},
             basepoint{basepoint},
@@ -82,7 +81,7 @@ namespace signatory {
         };
 
         BackwardsInfo::BackwardsInfo(SigSpec&& sigspec_, const std::vector<torch::Tensor>& signature_by_term_,
-                                     torch::Tensor signature_, torch::Tensor path_increments_) :
+                                     torch::Tensor signature_, torch::Tensor path_increments_, bool initial_) :
             // Call to detach works around PyTorch bug 25340, which is a won't-fix. Basically, it makes sure that
             // backwards_info doesn't have references to any other tensors, and therefore in particular doesn't have
             // references to the tensor that is the output of the signature function: because this output tensor has a
@@ -92,7 +91,8 @@ namespace signatory {
             // Thus not doing this gives a massive memory leak.
             sigspec{sigspec_},
             signature{signature_.detach()},
-            path_increments{path_increments_.detach()}
+            path_increments{path_increments_.detach()},
+            initial{initial_}
             {
                 signature_by_term.reserve(signature_by_term_.size());
                 for (const auto& elem : signature_by_term_) {
@@ -130,9 +130,16 @@ namespace signatory {
             }
         }
 
-        void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value) {
-            // This function is called before we even transpose anything (as we don't yet know that we can do a
-            // transpose). As a result path should be of size (batch, stream, channel) at this point
+        void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value,
+                       bool initial, torch::Tensor initial_value) {
+            if (path.ndimension() == 2) {
+                // Friendlier help message for a common mess-up.
+                throw std::invalid_argument("Argument 'path' must be a 3-dimensional tensor, with dimensions "
+                                            "corresponding to (batch, stream, channel) respectively. If you just want "
+                                            "the signature or logsignature of a single path then wrap it in a single "
+                                            "batch dimension by replacing e.g. signature(path, depth) with "
+                                            "signature(path.unsqueeze(0), depth).squeeze(0).");
+            }
             if (path.ndimension() != 3) {
                 throw std::invalid_argument("Argument 'path' must be a 3-dimensional tensor, with dimensions "
                                             "corresponding to (batch, stream, channel) respectively.");
@@ -158,11 +165,20 @@ namespace signatory {
                                                 "size.");
                 }
             }
+            if (initial) {
+                if (initial_value.ndimension() != 2) {
+                    throw std::invalid_argument("Argument 'initial' must be a 2-dimensional tensor, corresponding to "
+                                                "(batch, signature_channels) respectively.");
+                }
+                if (initial_value.size(channel_dim) != signature_channels(path.size(channel_dim), depth) ||
+                    initial_value.size(batch_dim) != path.size(batch_dim)) {
+                    throw std::invalid_argument("Argument 'initial' must have correctly sized batch and channel "
+                                                "dimensions.");
+                }
+            }
         }
 
         void checkargs_backward(torch::Tensor grad_out, const SigSpec& sigspec, int64_t num_channels) {
-            // This function is called before we even transpose anything (as we don't yet know that we can do a
-            // transpose). As a result grad_out should be of size (batch, stream, channel) at this point
             if (num_channels == -1) {
                 num_channels = sigspec.output_channels;
             }

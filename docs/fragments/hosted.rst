@@ -1,1 +1,1 @@
-Hosted on `GitHub <https://github.com/patrick-kidger/signatory>`__.
+The Signatory project is hosted on `GitHub <https://github.com/patrick-kidger/signatory>`__.

@@ -39,6 +39,7 @@ Then run
 import argparse
 import io
 import os
+import re
 import shlex
 import subprocess
 import webbrowser
@@ -87,12 +88,17 @@ def main():
                                        "combinations and prints the results as a table to stdout. 'depth' and "
                                        "'channels' are more thorough benchmarks (and will taking correspondingly "
                                        "longer to run!) testing multiple depths or multiple channels respectively.")
-    benchmark_parser.add_argument('-o', '--output', choices=('table', 'graph'), default='table',
+    benchmark_parser.add_argument('-o', '--output', choices=('table', 'graph', 'none'), default='table',
                                   help="How to format the output. 'table' formats as a table, 'graph' formats as a "
-                                       "graph.")
+                                       "graph. 'none' prints no output at all (perhaps if you're retrieving the results"
+                                       "programmatically by importing command.py instead).")
     benchmark_parser.add_argument('-f', '--fns', choices=('sigf', 'sigb', 'logsigf', 'logsigb', 'all'), default='all',
                                   help="Which functions to run: signature forwards, signature backwards, logsignature "
                                        "forwards, logsignature backwards, or all of them.")
+    benchmark_parser.add_argument('-m', '--measure', choices=('time', 'memory'), default='time',
+                                  help="Whether to measure speed or memory usage.")
+    benchmark_parser.add_argument('-r', '--transpose', action='store_true',
+                                  help="Whether to pass in transposed tensors (corresponding to batch-last input).")
 
     prepublish_parser.add_argument('-l', '--loc', default='/tmp', dest='directory',
                                    help="Where to place the conda environments used for testing.")
@@ -165,24 +171,27 @@ def benchmark(args):
     with torch.cuda.device(args.device):
         print('Using device {}'.format(args.device))
         if args.type == 'typical':
-            runner = bench.BenchmarkRunner.typical(test_esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.typical(transpose=args.transpose, test_esig=args.esig, fns=args.fns)
         elif args.type == 'depths':
-            runner = bench.BenchmarkRunner.depths(test_esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.depths(transpose=args.transpose, test_esig=args.esig, fns=args.fns)
         elif args.type == 'channels':
-            runner = bench.BenchmarkRunner.channels(test_esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.channels(transpose=args.transpose, test_esig=args.esig, fns=args.fns)
         elif args.type == 'small':
-            runner = bench.BenchmarkRunner.small(test_esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.small(transpose=args.transpose, test_esig=args.esig, fns=args.fns)
         else:
             raise RuntimeError
         if args.output == 'graph':
             runner.check_graph()
-        runner.run()
+        runner.run(args.measure)
         if args.output == 'graph':
             runner.graph()
         elif args.output == 'table':
             runner.table()
+        elif args.output == 'none':
+            pass
         else:
             raise RuntimeError
+    return runner
 
     
 def docs(args=()):
@@ -227,8 +236,8 @@ def build_and_test(pythonv, signatoryv, device_str, directory):
                  "pip install iisignature",
                  "python {} test -f{}".format(os.path.join(here, "command.py"), device_str),
                  "conda deactivate",
-                 "conda env remove -p /signatory-{pythonv}".format(directory=directory,
-                                                                   pythonv=pythonv),
+                 "conda env remove -p {directory}/signatory-{pythonv}".format(directory=directory,
+                                                                              pythonv=pythonv),
                  "conda clean -a -y",
                  stdout=False)
 
@@ -236,8 +245,10 @@ def build_and_test(pythonv, signatoryv, device_str, directory):
 def genreadme(args=()):
     """The readme is generated automatically from the documentation"""
     outs = []
-    startstr = ".. currentmodule::"
     includestr = '.. include::'
+    on = '.. genreadme on'
+    off = '.. genreadme off'
+    reference = re.compile(r'^\.\. [\w-]+:$')
 
     def parse_file(filename):
         out_data = []
@@ -245,17 +256,19 @@ def genreadme(args=()):
             data = f.readlines()
             skipping = False
             for line in data:
-                if startstr in line:
-                    skipping = True
-                    continue
-                if skipping and line.strip() == '':
-                    continue
-                else:
+                stripline = line.strip()
+                if stripline == on:
                     skipping = False
-                lstripline = line.lstrip()
-                if lstripline.startswith(includestr):
+                    continue
+                if stripline == off:
+                    skipping = True
+                if skipping:
+                    continue
+                if reference.match(stripline):
+                    continue
+                if stripline.startswith(includestr):
                     # [1:] to remove the leading / at the start; otherwise ends up being parsed as root
-                    subfilename = lstripline[len(includestr):].strip()[1:]
+                    subfilename = stripline[len(includestr):].strip()[1:]
                     out_line = parse_file(os.path.join(here, 'docs', subfilename))
                 else:
                     out_line = line
@@ -269,7 +282,7 @@ def genreadme(args=()):
             filename = os.path.join(here, filename)
             outs.append(parse_file(filename))
 
-    read_from_files([os.path.join(here, 'docs', 'fragments', 'title.rst'),
+    read_from_files([os.path.join(here, 'docs', 'index.rst'),
                      os.path.join(here, 'docs', 'pages', 'understanding', 'whataresignatures.rst'),
                      os.path.join('docs', 'pages', 'usage', 'installation.rst')])
 
@@ -278,7 +291,7 @@ def genreadme(args=()):
                 "The documentation is available `here <https://signatory.readthedocs.io>`__.")
 
     read_from_files([os.path.join(here, 'docs', 'pages', 'miscellaneous', 'faq.rst'),
-                     os.path.join(here, 'docs' , 'pages', 'miscellaneous' , 'citation.rst'),
+                     os.path.join(here, 'docs', 'pages', 'miscellaneous', 'citation.rst'),
                      os.path.join(here, 'docs', 'pages', 'miscellaneous', 'acknowledgements.rst')])
 
     with io.open(os.path.join(here, 'README.rst'), 'w', encoding='utf-8') as f:

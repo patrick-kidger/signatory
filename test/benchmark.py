@@ -18,6 +18,7 @@ of some tests."""
 
 import collections as co
 import esig.tosig
+import gc
 import iisignature
 import itertools as it
 import functools as ft
@@ -30,7 +31,7 @@ import timeit
 import torch
 
 try:
-    # Being run via commands.py
+    # Being run via command.py
     from . import compatibility as compat
 except ImportError:
     # Being run via tests
@@ -48,10 +49,12 @@ def prepare(channels, depth):
 
 
 class BenchmarkBase(object):
-    def __init__(self, depth, repeat, number):
+    def __init__(self, depth, repeat, number, transpose=False):
         self.depth = depth
         self.repeat = repeat
         self.number = number
+        if transpose:
+            self.path.transpose_(0, 1)
 
     def stmt(self):
         raise NotImplementedError
@@ -100,7 +103,7 @@ class esig_logsignature_forward(BenchmarkBase):
             # and also spams stdout complaining
             return [math.inf]
 
-        return super(esig_signature_backward, self).time()
+        return super(esig_logsignature_forward, self).time()
 
 
 class esig_signature_backward(BenchmarkBase):
@@ -287,15 +290,21 @@ all_fns.update(logsignature_forward_fns_wrapper)
 all_fns.update(logsignature_backward_fns_wrapper)
 
 
-def run_test(fn_dict, size, depth, repeat, number, print_name, test_esig, **kwargs):
+def run_test(fn_dict, size, depth, repeat, number, transpose, print_name, test_esig, measure):
     """Runs a particular function across multiple different libraries and records their times."""
     library_results = co.OrderedDict()
     for library_name, library_fn in fn_dict.items():
         if (not test_esig) and (library_name == esig_str):
             continue
         print(print_name, library_name)
-        library_results[library_name] = min(library_fn(size=size, depth=depth, repeat=repeat, number=number,
-                                                       **kwargs).time())
+        test = library_fn(size=size, depth=depth, repeat=repeat, number=number, transpose=transpose)
+        if measure == 'time':
+            library_results[library_name] = min(test.time())
+        elif measure == 'memory':
+            gc.collect()
+            library_results[library_name] = test.memory()
+        else:
+            raise ValueError("I don't know how to measure '{}'".format(measure))
 
     iisignature_results = library_results[iisignature_str]
     signatory_results = library_results[signatory_cpu_str]
@@ -357,14 +366,15 @@ class namedarray(object):
 class BenchmarkRunner(object):
     """Runs all functions across all libraries and records their times for multiple sizes and depths."""
 
-    def __init__(self, sizes, depths, repeat=50, number=1, test_esig=True, fns='all'):
+    def __init__(self, sizes, depths, repeat=50, number=1, transpose=False, test_esig=True, fns='all'):
         self.sizes = sizes
         self.depths = depths
         self.repeat = repeat
         self.number = number
+        self.transpose = transpose
         self.test_esig = test_esig
-        print("Called with sizes {}, depths {}, repeat {}, number {} and esig {}".format(sizes, depths, repeat, number,
-                                                                                         test_esig))
+        print("Called with sizes {}, depths {}, repeat {}, number {}, transpose {} and esig {}"
+              .format(sizes, depths, repeat, number, transpose, test_esig))
         if fns == 'all':
             self.fns = all_fns
         elif fns == 'sigf':
@@ -394,13 +404,13 @@ class BenchmarkRunner(object):
             if size[0] != batch_size or size[1] != stream_size:
                 raise RuntimeError("Cannot output as graph with multiple batch or stream sizes.")
 
-    def run(self):
+    def run(self, measure):
         results = namedarray(len(self.fns), len(self.sizes), len(self.depths))
         for fn_name, fns in self.fns.items():
             for size in self.sizes:
                 for depth in self.depths:
-                    result = run_test(fns, size, depth, self.repeat, self.number,
-                                      self._table_format_index(fn_name, size, depth), self.test_esig)
+                    result = run_test(fns, size, depth, self.repeat, self.number, self.transpose,
+                                      self._table_format_index(fn_name, size, depth), self.test_esig, measure)
                     results[fn_name, size, depth] = result
         self._results = results
 
@@ -431,20 +441,21 @@ class BenchmarkRunner(object):
     @classmethod
     def depths(cls, **kwargs):
         """Tests depths for a fixed number of channels."""
-        new_kwargs = dict(sizes=((32, 128, 4),), depths=(2, 3, 4, 5, 6, 7, 8, 9))
+        new_kwargs = dict(sizes=((32, 128, 4),), depths=(5, 6, 7, 8, 9))
         new_kwargs.update(kwargs)
         return cls(**new_kwargs)
 
     @classmethod
     def small(cls, **kwargs):
-        """Tests on very small data. This doesn't given meaningful results - the millisecond overhead of PyTorch/NumPy
-        ends up giving a greater noise than there is signal - but it serves to test the speed-testing framework.
+        """Tests on very small data. This doesn't given meaningful results - the millisecond overhead of
+        PyTorch/NumPy/etc. ends up giving a greater noise than there is signal - but it serves to test the speed-testing
+        framework.
         """
         new_kwargs = dict(sizes=((1, 2, 2),), depths=(2, 3, 4, 5))
         new_kwargs.update(kwargs)
         return cls(**new_kwargs)
 
-    def graph(self):
+    def graph(self, log=True):
         """Formats the result as a graph."""
         self.check_graph()
 
@@ -475,7 +486,8 @@ class BenchmarkRunner(object):
             ax.set_xlabel("Number of channels")
         elif len(self.depths) > 1:
             ax.set_xlabel("Depth")
-            ax.set_yscale('log')
+            if log:
+                ax.set_yscale('log')
         else:
             raise RuntimeError
         start, end = ax.get_xlim()

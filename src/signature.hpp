@@ -22,11 +22,11 @@ namespace signatory {
     // See signatory.signature for documentation
     std::tuple<torch::Tensor, py::object>
     signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
-                      bool inverse);
+                      bool inverse, bool initial, torch::Tensor initial_value);
 
     // See signatory.signature for documentation
-    std::tuple<torch::Tensor, torch::Tensor>
-    signature_backward(torch::Tensor grad_signature, py::object backwards_info_capsule, bool clone=true);
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+    signature_backward(torch::Tensor grad_signature, py::object backwards_info_capsule);
 }  // namespace signatory
 
 #endif //SIGNATORY_SIGNATURE_HPP

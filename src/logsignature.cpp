@@ -94,12 +94,12 @@ namespace signatory {
             for (s_size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index){
                 for (auto& lyndon_word: lyndon_words[depth_index]) {
                     grad_expanded.narrow(/*dim=*/channel_dim,
-                            /*start=*/lyndon_word.tensor_algebra_index,
-                            /*length=*/1).copy_(
-                            grad_compressed.narrow(/*dim=*/channel_dim,
-                                    /*start=*/lyndon_word.compressed_index,
-                                    /*length=*/1),
-                            /*non_blocking=*/true);
+                                         /*start=*/lyndon_word.tensor_algebra_index,
+                                         /*length=*/1).copy_(
+                                                    grad_compressed.narrow(/*dim=*/channel_dim,
+                                                                           /*start=*/lyndon_word.compressed_index,
+                                                                           /*length=*/1),
+                                                             /*non_blocking=*/true);
                 }
             }
             return grad_expanded;
@@ -133,16 +133,16 @@ namespace signatory {
                          py::object lyndon_info_capsule)
     {
         if (depth == 1) {
-            return signature_forward(path, depth, stream, basepoint, basepoint_value, inverse);
+            return signature_forward(path, depth, stream, basepoint, basepoint_value, inverse, false,
+                                     torch::empty({0}));
         }  // this isn't just a fast return path: we also can't index the reciprocals tensor if depth == 1, so we'd need
            // faffier code below - and it's already quite faffy enough
 
         // first call the regular signature
         torch::Tensor signature;
         py::object backwards_info_capsule;
-        std::tie(signature, backwards_info_capsule) = signature_forward(path, depth, stream, basepoint,
-                                                                        basepoint_value, inverse);
-
+        std::tie(signature, backwards_info_capsule) = signature_forward(path, depth, stream, basepoint, basepoint_value,
+                                                                        inverse, false, torch::empty({0}));
         // unpack sigspec
         misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<misc::BackwardsInfo>(backwards_info_capsule);
         const misc::SigSpec& sigspec = backwards_info->sigspec;
@@ -227,7 +227,13 @@ namespace signatory {
         misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<misc::BackwardsInfo>(backwards_info_capsule);
         const misc::SigSpec& sigspec = backwards_info->sigspec;
         if (sigspec.depth == 1) {
-            return signature_backward(grad_logsignature, backwards_info_capsule);
+            // logsignatures don't support initial values yet
+            torch::Tensor grad_path;
+            torch::Tensor grad_basepoint;
+            torch::Tensor grad_initial;
+            std::tie(grad_path, grad_basepoint, grad_initial) = signature_backward(grad_logsignature,
+                                                                                   backwards_info_capsule);
+            return {grad_path, grad_basepoint};
         }
 
         // Unpack everything else from backwards_info
@@ -317,6 +323,11 @@ namespace signatory {
             ta_ops::log_backward(grad_logsignature_by_term, grad_signature_by_term, signature_by_term, sigspec);
         }
 
-        return signature_backward(grad_signature, backwards_info_capsule, false);
+        // logsignatures don't support initial values yet
+        torch::Tensor grad_path;
+        torch::Tensor grad_basepoint;
+        torch::Tensor grad_initial;
+        std::tie(grad_path, grad_basepoint, grad_initial) = signature_backward(grad_signature, backwards_info_capsule);
+        return {grad_path, grad_basepoint};
     }
 }  // namespace signatory

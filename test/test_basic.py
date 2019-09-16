@@ -159,3 +159,30 @@ class TestLogSignatureArguments(utils.EnhancedTestCase):
                     self.fail(c.fail())
                 correct_shape = self.correct_shape(c.size, c.depth, c.stream, c.basepoint, c.signatory_mode)
                 self.assertEqual(signatory_out.shape, correct_shape, c.fail())
+
+
+class TestSignatureCombine(utils.EnhancedTestCase):
+    def test_signature_combine(self):
+        for c in utils.ConfigIter(requires_grad=True, stream=False):
+            path2 = torch.rand_like(c.path, requires_grad=True)
+            sig = c.signature()
+            sig2 = c.signature(store=False, path=path2, basepoint=c.path[:, -1, :])
+            sig_combined = signatory.signature_combine(sig, sig2, c.C, c.depth, inverse=c.inverse)
+
+            path_combined = torch.cat([c.path, path2], dim=1)
+            sig_combined2 = c.signature(store=False, path=path_combined)
+            if not sig_combined.allclose(sig_combined2):
+                self.fail(c.diff_fail(sig_combined=sig_combined, sig_combined2=sig_combined2))
+
+            grad = torch.rand_like(sig_combined)
+            sig_combined.backward(grad)
+            path_grad = c.path.grad.clone()
+            path_grad2 = path2.grad.clone()
+            c.path.grad.zero_()
+            path2.grad.zero_()
+            sig_combined2.backward(grad)
+            if not path_grad.allclose(c.path.grad):
+                self.fail(c.diff_fail(path_grad=path_grad, true_path_grad=c.path.grad))
+            if not path_grad2.allclose(path2.grad):
+                self.fail(c.diff_fail(path_grad2=path_grad, true_path2_grad=path2.grad))
+

@@ -1,3 +1,11 @@
+1.1.2
+-----
+Added signature_combine
+Added the new optional argument 'initial' to signature and Signature.
+Expanded the functionality of Path, in particular to allow updating it, and to be able give the signature of the whole
+path cleanly.
+Updated documentation with more examples, a clearer layout, and a few custom pieces of CSS to aid clarity.
+
 1.1.1
 -----
 Speed improvements to signature and logsignature both forwards and backwards.

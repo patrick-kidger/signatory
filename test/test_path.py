@@ -15,6 +15,7 @@
 """Tests the Path class."""
 
 
+import random
 import signatory
 import torch
 from torch import autograd
@@ -23,21 +24,28 @@ import utils_testing as utils
 
 
 class TestPath(utils.EnhancedTestCase):
-    def test_path(self):
+    def test_basic(self):
         for c in utils.ConfigIter(inverse=False, stream=False, N=(1, 2), depth=(1, 2, 4)):
             path_obj = signatory.Path(c.path, c.depth, basepoint=c.basepoint)
-            for start in range(-2 * c.path.size(1), 2 * c.path.size(1)):
-                for end in range(-2 * c.path.size(1), 2 * c.path.size(1)):
-                    if c.basepoint is True:
-                        basepointed_path = torch.cat([torch.zeros(c.N, 1, c.C, dtype=torch.double, device=c.device),
-                                                      c.path], dim=1)
-                    elif c.basepoint is False:
-                        basepointed_path = c.path
-                    else:  # isinstance(self.basepoint, torch.Tensor) == True
-                        basepointed_path = torch.cat([c.basepoint.unsqueeze(1), c.path], dim=1)
 
+            if c.basepoint is True:
+                new_path = [torch.zeros(c.N, 1, c.C, dtype=torch.double, device=c.device), c.path]
+            elif c.basepoint is False:
+                new_path = [c.path]
+            else:  # isinstance(self.basepoint, torch.Tensor) == True
+                new_path = [c.basepoint.unsqueeze(1), c.path]
+            for _ in range(random.choice([0, 0, 1, 2, 3])):
+                length = random.choice([1, 2, 3])
+                extra_path = torch.rand(c.N, length, c.C, device=c.device, dtype=torch.double)
+                path_obj.update(extra_path)
+                new_path.append(extra_path)
+
+            basepointed_path = torch.cat(new_path, dim=1)
+
+            for start in range(-2 * path_obj.size(1), 2 * path_obj.size(1)):
+                for end in range(-2 * path_obj.size(1), 2 * path_obj.size(1)):
                     try:
-                        a_path = path_obj.signature(start, end)
+                        sig = path_obj.signature(start, end)
                     except ValueError:
                         try:
                             c.signature(store=False, path=basepointed_path[:, start:end, :], basepoint=False)
@@ -45,13 +53,21 @@ class TestPath(utils.EnhancedTestCase):
                             continue
                         else:
                             self.fail(c.fail(start=start, end=end))
-                    true_path = c.signature(store=False, path=basepointed_path[:, start:end, :], basepoint=False)
-                    if not true_path.allclose(a_path):
+                    try:
+                        true_sig = c.signature(store=False, path=basepointed_path[:, start:end, :], basepoint=False)
+                    except ValueError:
+                        # path_obj.signature did not throw an error when this did, which is consistent, and thus
+                        # error-worthy.
                         self.fail(c.fail(start=start, end=end))
+                    if not true_sig.allclose(sig):
+                        self.fail(c.diff_fail({'start': start, 'end': end}, sig=sig, true_sig=true_sig))
 
     def test_gradient(self):
-        def gradchecked(path, depth, basepoint, start, end):
-            return signatory.Path(path, depth, basepoint=basepoint).signature(start, end)
+        def gradchecked(path, depth, basepoint, update, start, end):
+            path_obj = signatory.Path(path, depth, basepoint=basepoint)
+            if update is not None:
+                path_obj.update(update)
+            return path_obj.signature(start, end)
 
         for c in utils.ConfigIter(inverse=False,
                                   stream=False,
@@ -62,4 +78,9 @@ class TestPath(utils.EnhancedTestCase):
                 length += 1
             for start in range(0, length + 1):
                 for end in range(start + 2, length + 1):
-                    autograd.gradcheck(gradchecked, (c.path, c.depth, c.basepoint, start, end))
+                    if random.choice([True, False]):
+                        update = torch.rand(c.N, random.choice([1, 2, 3]), c.C, dtype=torch.double, device=c.device,
+                                            requires_grad=True)
+                    else:
+                        update = None
+                    autograd.gradcheck(gradchecked, (c.path, c.depth, c.basepoint, update, start, end))

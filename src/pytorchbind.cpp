@@ -13,7 +13,6 @@
  * limitations under the License.
  * ========================================================================= */
  // Provides the bindings into PyTorch
- // The code is reasonably careful to have as much as possible written in C++, for the sake of any future C++ interface
 
 
 #include <torch/extension.h>  // to get the pybind11 stuff
@@ -40,8 +39,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("signature_forward",
           &signatory::signature_forward);
     m.def("signature_backward",
-          &signatory::signature_backward,
-          py::arg("grad_out"), py::arg("backwards_info_capsule"), py::arg("clone")=true);
+          &signatory::signature_backward);
     m.def("signature_channels",
           &signatory::signature_channels);
     m.def("lyndon_words",

@@ -1,7 +1,9 @@
-.. currentmodule:: reference-path
+.. _reference-path:
 
 Path
-----
+####
+
+.. currentmodule:: signatory
 
 .. autoclass:: signatory.Path
     :members:

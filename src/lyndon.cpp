@@ -129,7 +129,8 @@ namespace signatory {
 
             std::vector<std::map<std::multiset<int64_t>, std::vector<LyndonWord*>>> lyndon_anagrams;
             //                   \--------------------/  \----------------------/
-            //                Letters in a Lyndon word    All Lyndon words of a particular anagram class, ordered lexicographically
+            //                Letters in a Lyndon word    All Lyndon words of a particular anagram class, ordered
+            //                                                                lexicographically
             //          \--------------------------------------------------------/
             //                  All anagram classes of the same depth
             lyndon_anagrams.reserve(this->lyndonspec.depth);
@@ -276,8 +277,8 @@ namespace signatory {
         void LyndonWords::finalise() {
             // Used to set indices for a collection of Lyndon words. In some sense this behaviour really belongs in the
             // constructors of each individual LyndonWord (as without this function call they aren't really completely
-            // initialised) but it's a boatload more efficient to do this after all the Lyndon words are generated, rather
-            // than applying this to them one-by-one.
+            // initialised) but it's a boatload more efficient to do this after all the Lyndon words are generated,
+            // rather than applying this to them one-by-one.
             int64_t tensor_algebra_offset = 0;
             int64_t num_words = lyndonspec.input_channels;
             s_size_type compressed_offset = 0;
@@ -296,8 +297,8 @@ namespace signatory {
 
             // Figure out the total amount of Lyndon words
             if (lyndonspec.input_channels == 1) {
-                // In this case there only exists a singe Lyndon word '0', at (*this)[0].back(). There are now
-                // higher-depth words, i.e. (*this)[1], (*this)[2], ... etc. are all size-0 vectors.
+                // In this case there only exists a singe Lyndon word '0', at (*this)[0].back(). There are no
+                // higher-depth words: (*this)[1], (*this)[2], ... etc. are all size-0 vectors.
                 amount = 1;
             }
             else {
