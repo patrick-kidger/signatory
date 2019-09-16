@@ -44,6 +44,10 @@ def prepare(channels, depth):
     return iisignature.prepare(channels, depth)
 
 
+class EsigError(Exception):
+    pass
+
+
 # All of the following functions wrap the analogous functions from each package, to provide a consistent interface for
 # testing against each other.
 
@@ -68,25 +72,32 @@ class BenchmarkBase(object):
             raise ValueError("I don't know how to measure '{}'".format(measure))
 
     def time(self):
-        self.stmt()  # warm up
+        try:
+            self.stmt()  # warm up
+        except EsigError:
+            return [math.inf]
         return timeit.Timer(stmt=self.stmt).repeat(repeat=self.repeat, number=self.number)
 
     def memory(self):
+        try:
+            # load things that need loading; this may use extra memory
+            self.stmt()
+        except EsigError:
+            return [math.inf]
+
         gc.collect()
         if hasattr(self, 'gpu') and self.gpu:
             torch.cuda.reset_max_memory_allocated()
             self.stmt()
             return [torch.cuda.max_memory_allocated()]
         else:
-            background_usage = mem.memory_usage((lambda: None, (), {}))
+            background_usage = mem.memory_usage((lambda: None, (), {}), interval=0.000001)
             # max because memory_used is a list of the memory used over 0.1s increments
             # megabytes -> bytes
             background_usage = max(background_usage) * 10 ** 6
             # we don't do any repeats because we expect memory usage to be pretty independent of system state, unlike
             # speed
-            memory_used = mem.memory_usage((self.stmt, (), {}))
-            if hasattr(self, 'esig_failed') and self.esig_failed:
-                return [math.inf]
+            memory_used = mem.memory_usage((self.stmt, (), {}), interval=0.000001)
             memory_used = max(memory_used) * 10 ** 6
             return [memory_used - background_usage]
 
@@ -97,18 +108,11 @@ class esig_signature_forward(BenchmarkBase):
         super(esig_signature_forward, self).__init__(**kwargs)
 
     def stmt(self):
+        if not len(esig.tosig.stream2logsig(self.path[0], self.depth)):
+            raise EsigError
+
         for batch_elem in self.path:
             esig.tosig.stream2sig(batch_elem, self.depth)
-
-    def time(self):
-        if not len(esig.tosig.stream2sig(self.path[0], self.depth)):
-            self.esig_failed = True
-            # esig doesn't support larger depths and just returns an empty array
-            #
-            # and also spams stdout complaining
-            return [math.inf]
-
-        return super(esig_signature_forward, self).time()
 
 
 class esig_logsignature_forward(BenchmarkBase):
@@ -117,18 +121,11 @@ class esig_logsignature_forward(BenchmarkBase):
         super(esig_logsignature_forward, self).__init__(**kwargs)
 
     def stmt(self):
+        if not len(esig.tosig.stream2logsig(self.path[0], self.depth)):
+            raise EsigError
+
         for batch_elem in self.path:
             esig.tosig.stream2logsig(batch_elem, self.depth)
-
-    def time(self):
-        if not len(esig.tosig.stream2logsig(self.path[0], self.depth)):
-            self.esig_failed = True
-            # esig doesn't support larger depths and just returns an empty array
-            #
-            # and also spams stdout complaining
-            return [math.inf]
-
-        return super(esig_logsignature_forward, self).time()
 
 
 class esig_signature_backward(BenchmarkBase):
@@ -136,12 +133,8 @@ class esig_signature_backward(BenchmarkBase):
         super(esig_signature_backward, self).__init__(**kwargs)
 
     def stmt(self):
-        pass
-
-    def time(self):
-        self.esig_failed = True
         # esig doesn't provide this operation.
-        return [math.inf]
+        raise EsigError
 
 
 class esig_logsignature_backward(BenchmarkBase):
@@ -149,12 +142,8 @@ class esig_logsignature_backward(BenchmarkBase):
         super(esig_logsignature_backward, self).__init__(**kwargs)
 
     def stmt(self):
-        pass
-
-    def time(self):
-        self.esig_failed = True
         # esig doesn't provide this operation.
-        return [math.inf]
+        raise EsigError
 
 
 class iisignature_signature_forward(BenchmarkBase):
@@ -333,9 +322,14 @@ def run_test(fn_dict, size, depth, repeat, number, transpose, print_name, test_e
     other_best = iisignature_results
     if test_esig:
         other_best = min(library_results[esig_str], other_best)
-    library_results[speedup_cpu_str] = other_best / signatory_results
-    library_results[speedup_gpu_str] = other_best / signatory_gpu_results
-
+    try:
+        library_results[speedup_cpu_str] = other_best / signatory_results
+    except ZeroDivisionError:
+        library_results[speedup_cpu_str] = math.inf
+    try:
+        library_results[speedup_gpu_str] = other_best / signatory_gpu_results
+    except ZeroDivisionError:
+        library_results[speedup_gpu_str] = math.inf
     return library_results
 
 
@@ -394,8 +388,6 @@ class BenchmarkRunner(object):
         self.number = number
         self.transpose = transpose
         self.test_esig = test_esig
-        print("Called with sizes {}, depths {}, repeat {}, number {}, transpose {} and esig {}"
-              .format(sizes, depths, repeat, number, transpose, test_esig))
         if fns == 'all':
             self.fns = all_fns
         elif fns == 'sigf':
@@ -455,7 +447,7 @@ class BenchmarkRunner(object):
     @classmethod
     def channels(cls, **kwargs):
         """Tests a number of channels for a fixed depth."""
-        new_kwargs = dict(sizes=((32, 128, 4), (32, 128, 5), (32, 128, 6), (32, 128, 7), (32, 128, 8)), depths=(7,))
+        new_kwargs = dict(sizes=((32, 128, 2), (32, 128, 3), (32, 128, 4), (32, 128, 5), (32, 128, 6), (32, 128, 7)), depths=(7,))
         new_kwargs.update(kwargs)
         return cls(**new_kwargs)
 
@@ -519,10 +511,11 @@ class BenchmarkRunner(object):
         """Formats the results into a table."""
 
         def val_to_str(val):
+            if val == math.inf:
+                return '-'
             if isinstance(val, float):
                 return '{:.3}'.format(val)
-            else:
-                return str(val)
+            return str(val)
 
         operation_str = 'Operation'
         padding = 1

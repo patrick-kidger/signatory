@@ -15,7 +15,9 @@
 """setup.py - hopefully you know what this does without me telling you..."""
 
 
+import os
 import setuptools
+import subprocess
 import sys
 try:
     import torch.utils.cpp_extension as cpp
@@ -34,8 +36,6 @@ if not (sys.platform.startswith('darwin') or sys.platform.startswith('linux')):
 
     class subprocess_proxy(object):
         def __init__(self):
-            import os
-            import subprocess
             try:
                 # Python 2
                 self.stringtype = basestring
@@ -43,38 +43,47 @@ if not (sys.platform.startswith('darwin') or sys.platform.startswith('linux')):
                 # Python 3
                 self.stringtype = str
 
-    def modify_args(self, args):
-        try:
-            vcvars_location = os.environ['SIGNATORY_VCVARS']
-        except KeyError:
+        def modify_args(self, args):
+            try:
+                vcvars_location = os.environ['SIGNATORY_VCVARS']
+            except KeyError:
+                return args
+            if vcvars_location[0] != '"':
+                vcvars_location = '"' + vcvars_location
+            if vcvars_location[-1] != '"':
+                vcvars_location = vcvars_location + '"'
+            if isinstance(args, tuple):
+                args = list(args)
+            if isinstance(args, self.stringtype):
+                args = 'echo off && {} && echo on &&'.format(vcvars_location) + args
+            elif isinstance(args, list):
+                args = ['echo off', vcvars_location, 'echo on'] + args
+            else:
+                raise ValueError("args must be a string or list.")
             return args
-        if vcvars_location[0] != '"':
-            vcvars_location = '"' + vcvars_location
-        if vcvars_location[-1] != '"':
-            vcvars_location = vcvars_location + '"'
-        if isinstance(args, self.stringtype):
-            args = '{} && '.format(vcvars_location) + args
-        elif isinstance(args, (tuple, list)):
-            args.insert(0, vcvars_location)
-        else:
-            raise ValueError("args must be a string or list.")
-        return args
 
-    def check_output(self, args, **kwargs):
-        args = self.modify_args(args)
-        return subprocess.check_output(args, **kwargs)
+        @staticmethod
+        def modify_kwargs(kwargs):
+            kwargs['shell'] = True
+            return kwargs
 
-    def run(self, args, **kwargs):
-        args = self.modify_args(args)
-        return subprocess.run(args, **kwargs)
+        def check_output(self, args, **kwargs):
+            args = self.modify_args(args)
+            kwargs = self.modify_kwargs(kwargs)
+            return subprocess.check_output(args, **kwargs)
 
-    def __getattr__(self, item):
-        if item == 'run':
-            return self.run
-        elif item == 'check_output':
-            return self.check_output
-        else:
-            return getattr(subprocess, item)
+        def run(self, args, **kwargs):
+            args = self.modify_args(args)
+            kwargs = self.modify_kwargs(kwargs)
+            return subprocess.run(args, **kwargs)
+
+        def __getattr__(self, item):
+            if item == 'run':
+                return self.run
+            elif item == 'check_output':
+                return self.check_output
+            else:
+                return getattr(subprocess, item)
 
     cpp.subprocess = subprocess_proxy()
 
