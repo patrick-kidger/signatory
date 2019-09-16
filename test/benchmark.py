@@ -59,13 +59,36 @@ class BenchmarkBase(object):
     def stmt(self):
         raise NotImplementedError
 
+    def action(self, measure):
+        if measure == 'time':
+            return self.time()
+        elif measure == 'memory':
+            return self.memory()
+        else:
+            raise ValueError("I don't know how to measure '{}'".format(measure))
+
     def time(self):
         self.stmt()  # warm up
         return timeit.Timer(stmt=self.stmt).repeat(repeat=self.repeat, number=self.number)
 
-    @mem.profile
     def memory(self):
-        self.stmt()
+        gc.collect()
+        if hasattr(self, 'gpu') and self.gpu:
+            torch.cuda.reset_max_memory_allocated()
+            self.stmt()
+            return [torch.cuda.max_memory_allocated()]
+        else:
+            background_usage = mem.memory_usage((lambda: None, (), {}))
+            # max because memory_used is a list of the memory used over 0.1s increments
+            # megabytes -> bytes
+            background_usage = max(background_usage) * 10 ** 6
+            # we don't do any repeats because we expect memory usage to be pretty independent of system state, unlike
+            # speed
+            memory_used = mem.memory_usage((self.stmt, (), {}))
+            if hasattr(self, 'esig_failed') and self.esig_failed:
+                return [math.inf]
+            memory_used = max(memory_used) * 10 ** 6
+            return [memory_used - background_usage]
 
 
 class esig_signature_forward(BenchmarkBase):
@@ -79,6 +102,7 @@ class esig_signature_forward(BenchmarkBase):
 
     def time(self):
         if not len(esig.tosig.stream2sig(self.path[0], self.depth)):
+            self.esig_failed = True
             # esig doesn't support larger depths and just returns an empty array
             #
             # and also spams stdout complaining
@@ -98,6 +122,7 @@ class esig_logsignature_forward(BenchmarkBase):
 
     def time(self):
         if not len(esig.tosig.stream2logsig(self.path[0], self.depth)):
+            self.esig_failed = True
             # esig doesn't support larger depths and just returns an empty array
             #
             # and also spams stdout complaining
@@ -114,6 +139,7 @@ class esig_signature_backward(BenchmarkBase):
         pass
 
     def time(self):
+        self.esig_failed = True
         # esig doesn't provide this operation.
         return [math.inf]
 
@@ -126,6 +152,7 @@ class esig_logsignature_backward(BenchmarkBase):
         pass
 
     def time(self):
+        self.esig_failed = True
         # esig doesn't provide this operation.
         return [math.inf]
 
@@ -133,7 +160,7 @@ class esig_logsignature_backward(BenchmarkBase):
 class iisignature_signature_forward(BenchmarkBase):
     def __init__(self, size, stream=False, **kwargs):
         self.path = torch.rand(size, dtype=torch.float).numpy()
-        self.stream=stream
+        self.stream = stream
         super(iisignature_signature_forward, self).__init__(**kwargs)
 
     def stmt(self):
@@ -252,9 +279,9 @@ signatory_cpu_str = 'Signatory CPU'
 signatory_gpu_str = 'Signatory GPU'
 iisignature_str = 'iisignature'
 esig_str = 'esig'
-speedup_cpu_str = 'Speedup CPU'
-speedup_gpu_str = 'Speedup GPU'
-speedup_str = 'speedup'
+speedup_cpu_str = 'Ratio CPU'
+speedup_gpu_str = 'Ratio GPU'
+speedup_str = 'Ratio'
 
 
 signature_forward_fns = co.OrderedDict([(signatory_cpu_str, signatory_signature_forward),
@@ -298,13 +325,7 @@ def run_test(fn_dict, size, depth, repeat, number, transpose, print_name, test_e
             continue
         print(print_name, library_name)
         test = library_fn(size=size, depth=depth, repeat=repeat, number=number, transpose=transpose)
-        if measure == 'time':
-            library_results[library_name] = min(test.time())
-        elif measure == 'memory':
-            gc.collect()
-            library_results[library_name] = test.memory()
-        else:
-            raise ValueError("I don't know how to measure '{}'".format(measure))
+        library_results[library_name] = min(test.action(measure))
 
     iisignature_results = library_results[iisignature_str]
     signatory_results = library_results[signatory_cpu_str]
