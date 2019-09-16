@@ -38,4 +38,4 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 
 def setup(app):
-    app.add_stylesheet("theme_overrides.css")
+    app.add_css_file("theme_overrides.css")
