@@ -140,13 +140,13 @@ namespace signatory {
         path = path.detach();
         basepoint_value = basepoint_value.detach();
         initial_value = initial_value.detach();
+
         misc::checkargs(path, depth, basepoint, basepoint_value, initial, initial_value);
 
         if (!path.is_floating_point()) {
             path = path.to(torch::kFloat32);
         }
         if (basepoint) {
-            // basepoint_value has dimensions (batch, channel) so we don't need to switch anything
             basepoint_value = basepoint_value.to(path.dtype());
         }
 

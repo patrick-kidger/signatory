@@ -70,7 +70,6 @@ namespace signatory {
             batch_size{path.size(batch_dim)},
             output_stream_size{path.size(stream_dim) - (basepoint ? 0 : 1)},
             output_channels{signature_channels(path.size(channel_dim), depth)},
-            n_output_dims{stream ? 3 : 2},
             reciprocals{torch::ones({depth - 1}, opts)},
             stream{stream},
             basepoint{basepoint},

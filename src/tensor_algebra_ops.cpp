@@ -118,6 +118,8 @@ namespace signatory {
 
         void mult_fused_restricted_exp(torch::Tensor next, std::vector<torch::Tensor>& prev,
                                        const misc::SigSpec& sigspec) {
+            // We're going to need to know the new increment, divided by every depth up to the maximum depth
+            // We precompute them here as we're going to need them several times.
             torch::Tensor next_divided = next.unsqueeze(0) * sigspec.reciprocals.unsqueeze(1).unsqueeze(2);
 
             int64_t left_channel_dim;
@@ -132,9 +134,7 @@ namespace signatory {
             }
 
             for (s_size_type depth_index = sigspec.depth - 1; depth_index >= 1; --depth_index) {
-                torch::Tensor scratch = prev[0] + next_divided.narrow(/*dim=*/0,
-                                                                      /*start=*/depth_index - 1,
-                                                                      /*len=*/1).squeeze(0);
+                torch::Tensor scratch = prev[0] + next_divided[depth_index - 1].squeeze(0);
                 for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
                     auto old_scratch_size = scratch.size(channel_dim);
                     torch::Tensor prev_view;
@@ -149,9 +149,7 @@ namespace signatory {
                                                   sigspec.input_channels});
                     }
                     scratch = prev_view.addcmul(scratch.unsqueeze(left_channel_dim),
-                                                next_divided.narrow(/*dim=*/0,
-                                                                    /*start=*/k,
-                                                                    /*len=*/1).squeeze(0).unsqueeze(right_channel_dim));
+                                                next_divided[k].unsqueeze(right_channel_dim));
                     scratch = scratch.view({sigspec.batch_size, old_scratch_size * sigspec.input_channels});
                 }
                 torch::Tensor prev_view;
@@ -180,6 +178,8 @@ namespace signatory {
             // It's a backwards through quite a complicated operation, so there isn't much getting around the fact that
             // it's going to be a bit involved.
 
+            // First of all we recompute the forward pass and record all the intermediate tensors that were used and
+            // discarded
             std::vector<std::vector<torch::Tensor>> all_scratches;
             all_scratches.reserve(sigspec.depth - 1);
 
@@ -200,9 +200,7 @@ namespace signatory {
                 all_scratches.emplace_back();
                 std::vector<torch::Tensor>& scratches = all_scratches.back();
                 scratches.reserve(depth_index);
-                torch::Tensor scratch = prev[0] + next_divided.narrow(/*dim=*/0,
-                                                                      /*start=*/depth_index - 1,
-                                                                      /*len=*/1).squeeze(0);
+                torch::Tensor scratch = prev[0] + next_divided[depth_index - 1];
                 scratches.push_back(scratch);
                 for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
                     auto old_scratch_size = scratch.size(channel_dim);
@@ -218,9 +216,7 @@ namespace signatory {
                                                   sigspec.input_channels});
                     }
                     scratch = prev_view.addcmul(scratch.unsqueeze(left_channel_dim),
-                                                next_divided.narrow(/*dim=*/0,
-                                                                    /*start=*/k,
-                                                                    /*len=*/1).squeeze(0).unsqueeze(right_channel_dim));
+                                                next_divided[k].unsqueeze(right_channel_dim));
                     scratch = scratch.view({sigspec.batch_size, old_scratch_size * sigspec.input_channels});
                     scratches.push_back(scratch);
                 }
@@ -276,12 +272,8 @@ namespace signatory {
                     torch::Tensor grad_scratch = grad_scratches[j];
                     torch::Tensor grad_old_scratch = grad_scratches[j - 1];
                     torch::Tensor old_scratch = scratches[j - 1];
-                    torch::Tensor next_divided_narrow = next_divided.narrow(/*dim=*/0,
-                                                                            /*start=*/k,
-                                                                            /*len=*/1).squeeze(0);
-                    torch::Tensor grad_next_divided_narrow = grad_next_divided.narrow(/*dim=*/0,
-                                                                                      /*start=*/k,
-                                                                                      /*len=*/1).squeeze(0);
+                    torch::Tensor next_divided_narrow = next_divided[k];
+                    torch::Tensor grad_next_divided_narrow = grad_next_divided[k];
 
                     grad_prev[j] += grad_scratch;
 
@@ -309,9 +301,7 @@ namespace signatory {
                                                                                      grad_scratch_view);
                     }
                 }
-                torch::Tensor grad_next_divided_narrow = grad_next_divided.narrow(/*dim=*/0,
-                                                                                  /*start=*/depth_index - 1,
-                                                                                  /*len=*/1).squeeze(0);
+                torch::Tensor grad_next_divided_narrow = grad_next_divided[depth_index - 1];
                 grad_next_divided_narrow += grad_scratches[0];
                 grad_prev[0] += grad_scratches[0];
             }
@@ -427,9 +417,9 @@ namespace signatory {
     torch::Tensor tensor_algebra_mult_forward(torch::Tensor arg1_inp, torch::Tensor arg2_inp, int64_t input_channels,
                                               s_size_type depth) {
         int64_t num_signature_channels = signature_channels(input_channels, depth);
-        if (arg1_inp.ndimension() != 2 || arg2_inp.ndimension()) {
+        if (arg1_inp.ndimension() != 2 || arg2_inp.ndimension() != 2) {
             throw std::invalid_argument("sig_tensor1 and sig_tensor2 should both be 2-dimensional, corresponding to"
-                                        "(batch, signature_channels).")
+                                        "(batch, signature_channels).");
         }
         if (arg1_inp.size(batch_dim) != arg2_inp.size(batch_dim)) {
             throw std::invalid_argument("sig_tensor1 and sig_tensor2 do not have the same number of batch elements.");
@@ -463,7 +453,7 @@ namespace signatory {
     tensor_algebra_mult_backward(torch::Tensor grad, torch::Tensor arg1_inp, torch::Tensor arg2_inp,
                                  int64_t input_channels, s_size_type depth) {
         if (grad.size(batch_dim) != arg1_inp.size(batch_dim) || grad.size(channel_dim) != arg1_inp.size(channel_dim)) {
-            throw std::invalid_argument("grad is of the wrong size.")
+            throw std::invalid_argument("grad is of the wrong size.");
         }
         torch::Tensor grad_arg1_inp = grad.clone();
         torch::Tensor grad_arg2_inp = torch::zeros_like(arg2_inp);

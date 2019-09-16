@@ -97,6 +97,8 @@ def main():
                                        "forwards, logsignature backwards, or all of them.")
     benchmark_parser.add_argument('-m', '--measure', choices=('time', 'memory'), default='time',
                                   help="Whether to measure speed or memory usage.")
+    benchmark_parser.add_argument('-r', '--transpose', action='store_true',
+                                  help="Whether to pass in transposed tensors (corresponding to batch-last input).")
 
     prepublish_parser.add_argument('-l', '--loc', default='/tmp', dest='directory',
                                    help="Where to place the conda environments used for testing.")
@@ -169,13 +171,13 @@ def benchmark(args):
     with torch.cuda.device(args.device):
         print('Using device {}'.format(args.device))
         if args.type == 'typical':
-            runner = bench.BenchmarkRunner.typical(test_esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.typical(transpose=args.transpose, test_esig=args.esig, fns=args.fns)
         elif args.type == 'depths':
-            runner = bench.BenchmarkRunner.depths(test_esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.depths(transpose=args.transpose, test_esig=args.esig, fns=args.fns)
         elif args.type == 'channels':
-            runner = bench.BenchmarkRunner.channels(test_esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.channels(transpose=args.transpose, test_esig=args.esig, fns=args.fns)
         elif args.type == 'small':
-            runner = bench.BenchmarkRunner.small(test_esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.small(transpose=args.transpose, test_esig=args.esig, fns=args.fns)
         else:
             raise RuntimeError
         if args.output == 'graph':

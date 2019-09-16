@@ -94,12 +94,12 @@ namespace signatory {
             for (s_size_type depth_index = 0; depth_index < sigspec.depth; ++depth_index){
                 for (auto& lyndon_word: lyndon_words[depth_index]) {
                     grad_expanded.narrow(/*dim=*/channel_dim,
-                            /*start=*/lyndon_word.tensor_algebra_index,
-                            /*length=*/1).copy_(
-                            grad_compressed.narrow(/*dim=*/channel_dim,
-                                    /*start=*/lyndon_word.compressed_index,
-                                    /*length=*/1),
-                            /*non_blocking=*/true);
+                                         /*start=*/lyndon_word.tensor_algebra_index,
+                                         /*length=*/1).copy_(
+                                                    grad_compressed.narrow(/*dim=*/channel_dim,
+                                                                           /*start=*/lyndon_word.compressed_index,
+                                                                           /*length=*/1),
+                                                             /*non_blocking=*/true);
                 }
             }
             return grad_expanded;
