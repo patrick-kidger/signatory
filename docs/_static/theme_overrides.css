@@ -1,0 +1,27 @@
+/* !important is used to make it work on readthedocs */
+
+/* By default, notes and examples use the same colour as the definitions of functions and classes etc. This isn't really
+a great idea for clarity, so we switch them to a different colour.
+ */
+.admonition.note {
+    background: #dbfaf4 !important;
+}
+
+.admonition.note .admonition-title {
+    background: #1abc9c !important;
+}
+
+.admonition.admonition-examples {
+    background: #dbfaf4 !important;
+}
+
+.admonition.admonition-examples .admonition-title {
+    background: #1abc9c !important;
+}
+
+
+@media screen and (min-width: 767px) {
+    .wy-table-responsive table.docutils td {
+        white-space: normal !important;
+    }
+}
