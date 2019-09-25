@@ -12,36 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
-"""Provides a set of commands for running tests, building from source, building documentation etc.
+"""Provides a set of commands for running tests, building documentation etc.
 
-This is essentially only useful for developers. End users are expected to install via pip.
-
-If you're an end user who's a super keen bean who wants to build from source and run tests themselves then you'll be
-interested in the commands defined by this file: first run either
-`python command.py install`
-or
-`python command.py develop`
-(the former will install it in the normal way. The second will create a 'build' directory adjacent to this file, put
-the compiled parts of the package in there, leave the Python parts of this package where they are, and then add links
-so that Python can see this package.)
-Then run
-`python command.py test`
+Find out more by running python command.py --help
 """
-
-
-#### THIS FILE IS NOT INCLUDED IN THE SDIST
-# Do not make building from the sdist depend on it 
-# Note that we make a distinction between sdist and source:
-# The supported way to get the source (including tests etc.) is via GitHub.
-# The sdist is treated as a quirk of PyPI.
 
 
 import argparse
 import io
 import os
 import re
-import shlex
-import subprocess
+try:
+    # Python 3
+    from shlex import quote as shlex_quote
+except ImportError:
+    # Python 2
+    from pipes import quote as shlex_quote
+import shutil
+try:
+    # Python 2 on POSIX
+    import subprocess32 as subprocess
+except ImportError:
+    # Python 3 on anything
+    import subprocess
+# (no support for Python 2 on Windows but that's fine because PyTorch doesn't support that anyway)
+
+import sys
 import webbrowser
 #### DO NOT IMPORT NON-(STANDARD LIBRARY) MODULES HERE
 # Instead, lazily import them inside the command.
@@ -57,22 +53,15 @@ def main():
     parser = argparse.ArgumentParser(description="Runs various commands for building and testing Signatory.")
     parser.add_argument('-v', '--version', action='version', version=metadata.version)
     subparsers = parser.add_subparsers(dest='command', help='Which command to run')
-    install_parser = subparsers.add_parser('install')
-    develop_parser = subparsers.add_parser('develop')
-    test_parser = subparsers.add_parser('test', parents=[deviceparser])
-    benchmark_parser = subparsers.add_parser('benchmark', parents=[deviceparser])
-    docs_parser = subparsers.add_parser('docs')
-    publish_parser = subparsers.add_parser('publish')
-    prepublish_parser = subparsers.add_parser('prepublish', parents=[deviceparser])
-    genreadme_parser = subparsers.add_parser('genreadme')
+    
+    test_parser = subparsers.add_parser('test', parents=[deviceparser], description="Run tests")
+    benchmark_parser = subparsers.add_parser('benchmark', parents=[deviceparser], description="Run speed benchmarks")
+    docs_parser = subparsers.add_parser('docs', description="Build documentation")
+    genreadme_parser = subparsers.add_parser('genreadme', description="Generate the README from the documentation.")
 
-    install_parser.set_defaults(cmd=install)
-    develop_parser.set_defaults(cmd=develop)
     test_parser.set_defaults(cmd=test)
     benchmark_parser.set_defaults(cmd=benchmark)
     docs_parser.set_defaults(cmd=docs)
-    publish_parser.set_defaults(cmd=publish)
-    prepublish_parser.set_defaults(cmd=prepublish)
     genreadme_parser.set_defaults(cmd=genreadme)
 
     test_parser.add_argument('-f', '--failfast', action='store_true', help='Stop tests on first failure.')
@@ -99,13 +88,13 @@ def main():
                                   help="Whether to measure speed or memory usage.")
     benchmark_parser.add_argument('-r', '--transpose', action='store_true',
                                   help="Whether to pass in transposed tensors (corresponding to batch-last input).")
-
-    prepublish_parser.add_argument('-l', '--loc', default='/tmp', dest='directory',
-                                   help="Where to place the conda environments used for testing.")
+                                  
+    docs_parser.add_argument('-o', '--open', action='store_true',
+                             help="Whether to open the documentation in a web browser as soon as it is built.")
 
     args = parser.parse_args()
 
-    # Have to do it this was for Python 2/3 compatability
+    # Have to do it this way for Python 2/3 compatability
     if hasattr(args, 'cmd'):
         args.cmd(args)
     else:
@@ -116,47 +105,40 @@ def main():
 here = os.path.realpath(os.path.dirname(__file__))
 
 
-def run_commands(*commands, **kwargs):
-    """Runs a collection of commands in a shell.
-
-    Note that it's not super robust - there aren't really reliable ways to do cross-platform shell scripting.
-    """
+def _run_commands(*commands, **kwargs):
+    """Runs a collection of commands in a shell. Should be platform-agnostic."""
 
     # For Python 2 compatability.
     stdout = kwargs.pop('stdout', True)
     if kwargs:
-        raise ValueError
+        raise ValueError("kwargs {} not understood".format(kwargs))
 
-    print_commands = ['echo {}'.format(shlex.quote("(running) " + command)) for command in commands]
+    print_commands = ['echo {}'.format(shlex_quote("(running) " + command)) for command in commands]
     all_commands = []
     for i in range(len(commands)):
         all_commands.append(print_commands[i])
         if stdout:
             all_commands.append(commands[i])
         else:
-            all_commands.append("{} > /dev/null".format(commands[i]))
-    # && should work on both Windows and Linux. Not sure about Macs. Still Unix, so probably works?
-    subprocess.run(' && '.join(all_commands), shell=True)
-
-
-def install(args=()):
-    """Install from source."""
-    run_commands("pip install {}".format(here))
-    
-    
-def develop(args=()):
-    """Install from source; will create a 'build' directory adjacent to this file, put the compiled parts of the
-    package in there, leave the Python parts of this package where they are, and then add links so that Python can see
-    this package."""
-    run_commands("python {} develop".format(os.path.join(here, "setup.py")))
+            if 'win' in sys.platform:
+                null = ' >nul'
+            else:
+                null = ' > /dev/null'
+            all_commands.append(commands[i] + null)
+    completed_process = subprocess.run(' && '.join(all_commands), shell=True)
+    return completed_process.returncode
     
     
 def test(args):
-    """Run all tests. Running all tests typically takes about an hour.
+    """Run all tests.
     The package 'iisignature' will need to be installed, to test against.
     It can be installed via `pip install iisignature`
     """
-    import iisignature  # fail fast here if necessary
+    try:
+        import iisignature  # fail fast here if necessary
+    except ImportError:
+        raise ImportError("The iisignature package is required for running tests. It can be installed via 'pip "
+                          "install iisignature'")
     import test.runner
     import torch
     with torch.cuda.device(args.device):
@@ -166,6 +148,17 @@ def test(args):
 
 def benchmark(args):
     """Run speed benchmarks."""
+    try:
+        import iisignature  # fail fast here if necessary
+    except ImportError:
+        raise ImportError("The iisignature package is required for running tests. It can be installed via 'pip "
+                          "install iisignature'")
+    try:
+        import esig  # fail fast here if necessary
+    except ImportError:
+        raise ImportError("The esig package is required for running tests. It can be installed via 'pip "
+                          "install esig'")
+                          
     import test.benchmark as bench
     import torch
     with torch.cuda.device(args.device):
@@ -199,56 +192,32 @@ def docs(args=()):
     The package 'py2annotate' will need to be installed. It can be installed via `pip install py2annotate`
     Note that the documentation is already available online at https://signatory.readthedocs.io
     """
-    import py2annotate  # fail fast here if necessary
-    run_commands("sphinx-build -M html {} {}".format(os.path.join(here, "docs"), os.path.join(here, "docs", "_build")))
-    webbrowser.open_new_tab('file:///{}'.format(os.path.join(here, 'docs', '_build', 'html', 'index.html')))
-    
-    
-def publish(args=()):
-    """Will need twine already installed"""
-    run_commands("twine upload {}".format(os.path.join(here, "dist", "*")))
-
-
-def prepublish(args):
-    """Runs tests on all supported configurations to check before publishing."""
-    # TODO: update to a proper system
-    import metadata
-    print("Prepublishing version {}".format(metadata.version))
-    run_commands("rm -rf {}".format(os.path.join(here, "dist")))
-    genreadme()
-    run_commands("python {} sdist".format(os.path.join(here, 'setup.py')))
-    device_str = ' -d {}'.format(args.device)
-    for pythonv in ['2.7', '3.5', '3.6', '3.7']:
-        build_and_test(pythonv, metadata.version, device_str, args.directory)
-
-
-def build_and_test(pythonv, signatoryv, device_str, directory):
-    # Kind of fragile but good enough for now
-    # Only works through bash due to the 'conda init bash', 'conda activate'
-    run_commands("conda clean -a -y",
-                 "conda create -p {directory}/signatory-{pythonv} -y python={pythonv}".format(directory=directory,
-                                                                                              pythonv=pythonv),
-                 ". ~/miniconda3/etc/profile.d/conda.sh",
-                 "conda activate {directory}/signatory-{pythonv}".format(directory=directory, pythonv=pythonv),
-                 "conda install -y pytorch=1.2.0 -c pytorch",
-                 "pip install --upgrade pip",
-                 "pip install {here}/dist/signatory-{signatoryv}.tar.gz".format(here=here, signatoryv=signatoryv),
-                 "pip install iisignature",
-                 "python {} test -f{}".format(os.path.join(here, "command.py"), device_str),
-                 "conda deactivate",
-                 "conda env remove -p {directory}/signatory-{pythonv}".format(directory=directory,
-                                                                              pythonv=pythonv),
-                 "conda clean -a -y",
-                 stdout=False)
+    try:
+        import py2annotate  # fail fast here if necessary
+    except ImportError:
+        raise ImportError("The py2annotate package is required for running tests. It can be installed via 'pip "
+                          "install py2annotate'")
+    try:
+        shutil.rmtree(os.path.join(here, "docs", "_build"))
+    except FileNotFoundError:
+        pass
+    _run_commands("sphinx-build -M html {} {}".format(os.path.join(here, "docs"), os.path.join(here, "docs", "_build")))
+    if args.open:
+        webbrowser.open_new_tab('file:///{}'.format(os.path.join(here, 'docs', '_build', 'html', 'index.html')))
 
     
 def genreadme(args=()):
-    """The readme is generated automatically from the documentation"""
+    """The readme is generated automatically from the documentation."""
+    
     outs = []
     includestr = '.. include::'
     on = '.. genreadme on'
     off = '.. genreadme off'
+    insert = '.. genreadme insert '  # space at end is important
     reference = re.compile(r'^\.\. [\w-]+:$')
+    
+    inserts = {'install_from_source': "Installation from source is also possible; please consult the `documentation "
+                                      "<https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__."}
 
     def parse_file(filename):
         out_data = []
@@ -259,22 +228,24 @@ def genreadme(args=()):
                 stripline = line.strip()
                 if stripline == on:
                     skipping = False
-                    continue
-                if stripline == off:
+                elif stripline == off:
                     skipping = True
-                if skipping:
-                    continue
-                if reference.match(stripline):
-                    continue
-                if stripline.startswith(includestr):
-                    # [1:] to remove the leading / at the start; otherwise ends up being parsed as root
-                    subfilename = stripline[len(includestr):].strip()[1:]
-                    out_line = parse_file(os.path.join(here, 'docs', subfilename))
+                elif skipping:
+                    pass
+                elif reference.match(stripline):
+                    pass
                 else:
-                    out_line = line
-                if ':ref:' in data:
-                    raise RuntimeError('refs not supported')
-                out_data.append(out_line)
+                    if stripline.startswith(insert):
+                        out_line = inserts[stripline[len(insert):]]
+                    elif stripline.startswith(includestr):
+                        # [1:] to remove the leading / at the start; otherwise ends up being parsed as root
+                        subfilename = stripline[len(includestr):].strip()[1:]
+                        out_line = parse_file(os.path.join(here, 'docs', subfilename))
+                    else:
+                        out_line = line
+                    if ':ref:' in out_line:
+                        raise RuntimeError('refs not supported')
+                    out_data.append(out_line)
         return ''.join(out_data)
 
     def read_from_files(filenames):
@@ -287,11 +258,10 @@ def genreadme(args=()):
                      os.path.join('docs', 'pages', 'usage', 'installation.rst')])
 
     outs.append("Documentation\n"
-                "-------------\n"
+                "#############\n"
                 "The documentation is available `here <https://signatory.readthedocs.io>`__.")
 
-    read_from_files([os.path.join(here, 'docs', 'pages', 'miscellaneous', 'faq.rst'),
-                     os.path.join(here, 'docs', 'pages', 'miscellaneous', 'citation.rst'),
+    read_from_files([os.path.join(here, 'docs', 'pages', 'miscellaneous', 'citation.rst'),
                      os.path.join(here, 'docs', 'pages', 'miscellaneous', 'acknowledgements.rst')])
 
     with io.open(os.path.join(here, 'README.rst'), 'w', encoding='utf-8') as f:
