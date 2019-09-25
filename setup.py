@@ -15,15 +15,11 @@
 """setup.py - hopefully you know what this does without me telling you..."""
 
 
-import os
 import setuptools
-import subprocess
-import sys
 try:
     import torch.utils.cpp_extension as cpp
 except ImportError:
     raise ImportError("PyTorch is not installed, and must be installed prior to installing Signatory.")
-import warnings
     
 import metadata
 

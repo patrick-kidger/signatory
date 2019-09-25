@@ -22,21 +22,8 @@ import argparse
 import io
 import os
 import re
-try:
-    # Python 3
-    from shlex import quote as shlex_quote
-except ImportError:
-    # Python 2
-    from pipes import quote as shlex_quote
 import shutil
-try:
-    # Python 2 on POSIX
-    import subprocess32 as subprocess
-except ImportError:
-    # Python 3 on anything
-    import subprocess
-# (no support for Python 2 on Windows but that's fine because PyTorch doesn't support that anyway)
-
+import subprocess
 import sys
 import webbrowser
 #### DO NOT IMPORT NON-(STANDARD LIBRARY) MODULES HERE
@@ -48,7 +35,10 @@ import metadata
 
 def main():
     deviceparser = argparse.ArgumentParser(add_help=False)
-    deviceparser.add_argument('-d', '--device', type=int, default=0, help="Which CUDA device to use. Defaults to 0")
+    deviceparser.add_argument('-d', '--device', type=int, default=-1,
+                              help="Which CUDA device to use, from a range of 0 upwards. May be set to -1 to not "
+                                   "try to change the default device e.g. if no CUDA device is available. Defaults to "
+                                   "-1.")
 
     parser = argparse.ArgumentParser(description="Runs various commands for building and testing Signatory.")
     parser.add_argument('-v', '--version', action='version', version=metadata.version)
@@ -70,8 +60,18 @@ def main():
     test_parser.add_argument('-t', '--notimes', action='store_false', dest='times',
                              help="Don't print the overall times of the tests that have been run.")
 
-    benchmark_parser.add_argument('-e', '--noesig', action='store_false', dest='esig',
+    benchmark_parser.add_argument('-e', '--noesig', action='store_false', dest='test_esig',
                                   help="Skip esig tests as esig is typically very slow.")
+    benchmark_parser.add_argument('-g', '--nogpu', action='store_false', dest='test_signatory_gpu',
+                                  help="Skip Signatory GPU tests, (perhaps if you don't have a GPU installed).")
+    benchmark_parser.add_argument('-a', '--ratio', action='store_false',
+                                  help="Skip computing and plotting the improvement ratio of Signatory over "
+                                       "iisignature or esig.")
+    benchmark_parser.add_argument('-m', '--measure', choices=('time', 'memory'), default='time',
+                                  help="Whether to measure speed or memory usage.")
+    benchmark_parser.add_argument('-f', '--fns', choices=('sigf', 'sigb', 'logsigf', 'logsigb', 'all'), default='all',
+                                  help="Which functions to run: signature forwards, signature backwards, logsignature "
+                                       "forwards, logsignature backwards, or all of them.")
     benchmark_parser.add_argument('-t', '--type', choices=('typical', 'depths', 'channels', 'small'), default='typical',
                                   help="What kind of benchmark to run. 'typical' tests on two typical size/depth "
                                        "combinations and prints the results as a table to stdout. 'depth' and "
@@ -80,23 +80,16 @@ def main():
     benchmark_parser.add_argument('-o', '--output', choices=('table', 'graph', 'none'), default='table',
                                   help="How to format the output. 'table' formats as a table, 'graph' formats as a "
                                        "graph. 'none' prints no output at all (perhaps if you're retrieving the results"
-                                       "programmatically by importing command.py instead).")
-    benchmark_parser.add_argument('-f', '--fns', choices=('sigf', 'sigb', 'logsigf', 'logsigb', 'all'), default='all',
-                                  help="Which functions to run: signature forwards, signature backwards, logsignature "
-                                       "forwards, logsignature backwards, or all of them.")
-    benchmark_parser.add_argument('-m', '--measure', choices=('time', 'memory'), default='time',
-                                  help="Whether to measure speed or memory usage.")
-    benchmark_parser.add_argument('-r', '--transpose', action='store_true',
-                                  help="Whether to pass in transposed tensors (corresponding to batch-last input).")
+                                       " programmatically by importing command.py instead).")
                                   
     docs_parser.add_argument('-o', '--open', action='store_true',
-                             help="Whether to open the documentation in a web browser as soon as it is built.")
+                             help="Open the documentation in a web browser as soon as it is built.")
 
     args = parser.parse_args()
 
     # Have to do it this way for Python 2/3 compatability
     if hasattr(args, 'cmd'):
-        args.cmd(args)
+        return args.cmd(args)
     else:
         # No command was specified
         print("Please enter a command. Use -h to see available commands.")
@@ -105,30 +98,22 @@ def main():
 here = os.path.realpath(os.path.dirname(__file__))
 
 
-def _run_commands(*commands, **kwargs):
-    """Runs a collection of commands in a shell. Should be platform-agnostic."""
+def get_device():
+    import torch
+    try:
+        return 'CUDA device ' + str(torch.cuda.current_device())
+    except AssertionError:
+        return 'no CUDA device'
 
-    # For Python 2 compatability.
-    stdout = kwargs.pop('stdout', True)
-    if kwargs:
-        raise ValueError("kwargs {} not understood".format(kwargs))
 
-    print_commands = ['echo {}'.format(shlex_quote("(running) " + command)) for command in commands]
-    all_commands = []
-    for i in range(len(commands)):
-        all_commands.append(print_commands[i])
-        if stdout:
-            all_commands.append(commands[i])
-        else:
-            if 'win' in sys.platform:
-                null = ' >nul'
-            else:
-                null = ' > /dev/null'
-            all_commands.append(commands[i] + null)
-    completed_process = subprocess.run(' && '.join(all_commands), shell=True)
-    return completed_process.returncode
-    
-    
+class NullContext(object):
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
 def test(args):
     """Run all tests.
     The package 'iisignature' will need to be installed, to test against.
@@ -141,8 +126,8 @@ def test(args):
                           "install iisignature'")
     import test.runner
     import torch
-    with torch.cuda.device(args.device):
-        print('Using device {}'.format(args.device))
+    with torch.cuda.device(args.device) if args.device != -1 else NullContext():
+        print('Using ' + get_device())
         test.runner.main(failfast=args.failfast, times=args.times, names=args.names)
 
 
@@ -161,21 +146,37 @@ def benchmark(args):
                           
     import test.benchmark as bench
     import torch
-    with torch.cuda.device(args.device):
-        print('Using device {}'.format(args.device))
+    with torch.cuda.device(args.device) if args.device != -1 else NullContext():
+        print('Using ' + get_device())
         if args.type == 'typical':
-            runner = bench.BenchmarkRunner.typical(transpose=args.transpose, test_esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.typical(ratio=args.ratio,
+                                                   test_esig=args.test_esig,
+                                                   test_signatory_gpu=args.test_signatory_gpu,
+                                                   measure=args.measure,
+                                                   fns=args.fns)
         elif args.type == 'depths':
-            runner = bench.BenchmarkRunner.depths(transpose=args.transpose, test_esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.depths(ratio=args.ratio,
+                                                  test_esig=args.test_esig,
+                                                  test_signatory_gpu=args.test_signatory_gpu,
+                                                  measure=args.measure,
+                                                  fns=args.fns)
         elif args.type == 'channels':
-            runner = bench.BenchmarkRunner.channels(transpose=args.transpose, test_esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.channels(ratio=args.ratio,
+                                                    test_esig=args.test_esig,
+                                                    test_signatory_gpu=args.test_signatory_gpu,
+                                                    measure=args.measure,
+                                                    fns=args.fns)
         elif args.type == 'small':
-            runner = bench.BenchmarkRunner.small(transpose=args.transpose, test_esig=args.esig, fns=args.fns)
+            runner = bench.BenchmarkRunner.small(ratio=args.ratio,
+                                                 test_esig=args.test_esig,
+                                                 test_signatory_gpu=args.test_signatory_gpu,
+                                                 measure=args.measure,
+                                                 fns=args.fns)
         else:
             raise RuntimeError
         if args.output == 'graph':
             runner.check_graph()
-        runner.run(args.measure)
+        runner.run()
         if args.output == 'graph':
             runner.graph()
         elif args.output == 'table':
@@ -201,7 +202,7 @@ def docs(args=()):
         shutil.rmtree(os.path.join(here, "docs", "_build"))
     except FileNotFoundError:
         pass
-    _run_commands("sphinx-build -M html {} {}".format(os.path.join(here, "docs"), os.path.join(here, "docs", "_build")))
+    subprocess.Popen("sphinx-build -M html {} {}".format(os.path.join(here, "docs"), os.path.join(here, "docs", "_build"))).wait()
     if args.open:
         webbrowser.open_new_tab('file:///{}'.format(os.path.join(here, 'docs', '_build', 'html', 'index.html')))
 
@@ -266,7 +267,26 @@ def genreadme(args=()):
 
     with io.open(os.path.join(here, 'README.rst'), 'w', encoding='utf-8') as f:
         f.write('\n\n'.join(outs))
+
+
+def should_not_import(args=()):
+    """Tests that we _can't_ import Signatory. Doing this before we install it ensures that we're definitely testing
+    the version we install and not some other version we can accidentally see.
+    """
+
+    try:
+        import signatory
+    except ImportError as e:
+        if str(e) == 'No module named signatory':
+            return True
+        else:
+            return False
+    else:
+        return False
         
             
 if __name__ == '__main__':
-    main()
+    result = main()
+    if result is not None:
+        if not result:
+            sys.exit(1)

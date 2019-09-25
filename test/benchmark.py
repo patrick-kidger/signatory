@@ -53,12 +53,10 @@ class EsigError(Exception):
 
 
 class BenchmarkBase(object):
-    def __init__(self, depth, repeat, number, transpose=False):
+    def __init__(self, depth, repeat, number):
         self.depth = depth
         self.repeat = repeat
         self.number = number
-        if transpose:
-            self.path.transpose_(0, 1)
 
     def stmt(self):
         raise NotImplementedError
@@ -306,33 +304,6 @@ all_fns.update(logsignature_forward_fns_wrapper)
 all_fns.update(logsignature_backward_fns_wrapper)
 
 
-def run_test(fn_dict, size, depth, repeat, number, transpose, print_name, test_esig, measure):
-    """Runs a particular function across multiple different libraries and records their times."""
-    library_results = co.OrderedDict()
-    for library_name, library_fn in fn_dict.items():
-        if (not test_esig) and (library_name == esig_str):
-            continue
-        print(print_name, library_name)
-        test = library_fn(size=size, depth=depth, repeat=repeat, number=number, transpose=transpose)
-        library_results[library_name] = min(test.action(measure))
-
-    iisignature_results = library_results[iisignature_str]
-    signatory_results = library_results[signatory_cpu_str]
-    signatory_gpu_results = library_results[signatory_gpu_str]
-    other_best = iisignature_results
-    if test_esig:
-        other_best = min(library_results[esig_str], other_best)
-    try:
-        library_results[speedup_cpu_str] = other_best / signatory_results
-    except ZeroDivisionError:
-        library_results[speedup_cpu_str] = math.inf
-    try:
-        library_results[speedup_gpu_str] = other_best / signatory_gpu_results
-    except ZeroDivisionError:
-        library_results[speedup_gpu_str] = math.inf
-    return library_results
-
-
 class namedarray(object):
     """Just a minimal helper for our needs elsewhere in this file. There are definitely fancier solutions available."""
     def __init__(self, *size):
@@ -379,15 +350,17 @@ class namedarray(object):
 
 
 class BenchmarkRunner(object):
-    """Runs all functions across all libraries and records their times for multiple sizes and depths."""
+    """Runs all functions across all libraries and records their times or memory usage for multiple sizes and depths."""
 
-    def __init__(self, sizes, depths, repeat=50, number=1, transpose=False, test_esig=True, fns='all'):
+    def __init__(self, sizes, depths, ratio, test_esig, test_signatory_gpu, measure, fns):
         self.sizes = sizes
         self.depths = depths
-        self.repeat = repeat
-        self.number = number
-        self.transpose = transpose
+        self.repeat = 50
+        self.number = 1
+        self.ratio = ratio
         self.test_esig = test_esig
+        self.test_signatory_gpu = test_signatory_gpu
+        self.measure = measure
         if fns == 'all':
             self.fns = all_fns
         elif fns == 'sigf':
@@ -408,6 +381,8 @@ class BenchmarkRunner(object):
         return self._results
 
     def check_graph(self):
+        """Checks whether or not this benchmark is suitable for being plotted as a graph."""
+
         if len(self.sizes) > 1 and len(self.depths) > 1:
             raise RuntimeError("Cannot output as graph with multiple sizes and multiple depths.")
         if self.fns is all_fns:
@@ -417,15 +392,44 @@ class BenchmarkRunner(object):
             if size[0] != batch_size or size[1] != stream_size:
                 raise RuntimeError("Cannot output as graph with multiple batch or stream sizes.")
 
-    def run(self, measure):
+    def run(self):
+        """Runs the benchmarks."""
+
         results = namedarray(len(self.fns), len(self.sizes), len(self.depths))
-        for fn_name, fns in self.fns.items():
+        for fn_name, fn_dict in self.fns.items():
             for size in self.sizes:
                 for depth in self.depths:
-                    result = run_test(fns, size, depth, self.repeat, self.number, self.transpose,
-                                      self._table_format_index(fn_name, size, depth), self.test_esig, measure)
+                    result = self._run_test(fn_name, fn_dict, size, depth)
                     results[fn_name, size, depth] = result
         self._results = results
+
+    def _run_test(self, fn_name, fn_dict, size, depth):
+        """Runs a particular function across multiple different libraries and records their times."""
+
+        library_results = co.OrderedDict()
+        for library_name, library_fn in fn_dict.items():
+            if (not self.test_esig) and (library_name == esig_str):
+                continue
+            if (not self.test_signatory_gpu) and (library_name == signatory_gpu_str):
+                continue
+            print(self._table_format_index(fn_name, size, depth), library_name)
+            test = library_fn(size=size, depth=depth, repeat=self.repeat, number=self.number)
+            library_results[library_name] = min(test.action(self.measure))
+
+        if self.ratio:
+            other_best = library_results[iisignature_str]
+            if self.test_esig:
+                other_best = min(library_results[esig_str], other_best)
+            try:
+                library_results[speedup_cpu_str] = other_best / library_results[signatory_cpu_str]
+            except ZeroDivisionError:
+                library_results[speedup_cpu_str] = math.inf
+            if self.test_signatory_gpu:
+                try:
+                    library_results[speedup_gpu_str] = other_best / library_results[signatory_gpu_str]
+                except ZeroDivisionError:
+                    library_results[speedup_gpu_str] = math.inf
+        return library_results
 
     @staticmethod
     def _table_format_index(fn_name, size, depth):
@@ -440,21 +444,24 @@ class BenchmarkRunner(object):
     @classmethod
     def typical(cls, **kwargs):
         """Tests two typical use cases."""
-        new_kwargs = dict(sizes=((32, 128, 8),), depths=(5, 7))
+        new_kwargs = dict(sizes=((32, 128, 8),),
+                          depths=(5, 7))
         new_kwargs.update(kwargs)
         return cls(**new_kwargs)
 
     @classmethod
     def channels(cls, **kwargs):
         """Tests a number of channels for a fixed depth."""
-        new_kwargs = dict(sizes=((32, 128, 2), (32, 128, 3), (32, 128, 4), (32, 128, 5), (32, 128, 6), (32, 128, 7)), depths=(7,))
+        new_kwargs = dict(sizes=((32, 128, 2), (32, 128, 3), (32, 128, 4), (32, 128, 5), (32, 128, 6), (32, 128, 7)),
+                          depths=(7,))
         new_kwargs.update(kwargs)
         return cls(**new_kwargs)
 
     @classmethod
     def depths(cls, **kwargs):
         """Tests depths for a fixed number of channels."""
-        new_kwargs = dict(sizes=((32, 128, 4),), depths=(5, 6, 7, 8, 9))
+        new_kwargs = dict(sizes=((32, 128, 4),),
+                          depths=(5, 6, 7, 8, 9))
         new_kwargs.update(kwargs)
         return cls(**new_kwargs)
 
@@ -464,12 +471,14 @@ class BenchmarkRunner(object):
         PyTorch/NumPy/etc. ends up giving a greater noise than there is signal - but it serves to test the speed-testing
         framework.
         """
-        new_kwargs = dict(sizes=((1, 2, 2),), depths=(2, 3, 4, 5))
+        new_kwargs = dict(sizes=((1, 2, 2),),
+                          depths=(2, 3, 4, 5))
         new_kwargs.update(kwargs)
         return cls(**new_kwargs)
 
     def graph(self, log=True):
-        """Formats the result as a graph."""
+        """Plots the result as a graph."""
+
         self.check_graph()
 
         fig = plt.figure()
@@ -492,7 +501,7 @@ class BenchmarkRunner(object):
 
         for x_axis, y_axis, label in zip(x_axes, y_axes, labels):
             ax.plot(x_axis, y_axis, label=label)
-        ax.legend(loc='lower right')
+        ax.legend(loc='upper left')
         ax.set_title(list(self.fns.keys())[0])
         ax.set_ylabel("Time in seconds")
         if len(self.sizes) > 1:
