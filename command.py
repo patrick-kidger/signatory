@@ -277,10 +277,8 @@ def should_not_import(args=()):
     try:
         import signatory
     except ImportError as e:
-        if str(e) == 'No module named signatory':
-            return True
-        else:
-            return False
+        # Python 3 vs Python 2 difference
+        return str(e) in ('No module named signatory', "No module named 'signatory'")
     else:
         return False
         
