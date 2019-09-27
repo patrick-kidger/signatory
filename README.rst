@@ -29,29 +29,17 @@ Install via ``pip install signatory`` or ``pip3 install signatory`` as appropria
 
 Then just ``import signatory`` inside Python.
 
-Installation from source is also possible; please consult the documentation, and open an issue if you run into any problems.
+Installation from source is also possible; please consult the `documentation <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__.
+..
+    The FAQ link has to be a direct link, not a reference, so that it works on the GitHub README.
+    
+If you have any problems with installation then check the `FAQ <https://signatory.readthedocs.io/en/latest/pages/miscellaneous/faq.html>`__. If that doesn't help then feel free to `open an issue <https://github.com/patrick-kidger/signatory/issues>`__.
+
 
 
 Documentation
--------------
+#############
 The documentation is available `here <https://signatory.readthedocs.io>`__.
-
-
-FAQ
-###
-* What's the difference between Signatory and iisignature_?
-
-The essential difference (and the reason for Signatory's existence) is that iisignature is limited to the CPU, whilst Signatory is for both CPU and GPU. Signatory is also typically much faster even on the CPU, especially for larger computations. Other than that, iisignature is NumPy-based, whilst Signatory is for PyTorch. There are also a few differences in the provided functionality; each package provides some operations that the other doesn't.
-
-* I get an ``ImportError`` when I try to install Signatory.
-
-You probably haven't installed PyTorch. Do that, then run ``pip`` or ``pip3`` to install Signatory.
-
-* The installation via ``pip`` or ``pip3`` fails.
-
-This should be pretty uncommon as we provide for all major operating systems and versions of Python. Please let us know by `opening an issue <https://github.com/patrick-kidger/signatory/issues/new>`.
-
-.. _iisignature: https://github.com/bottler/iisignature
 
 
 Citation
