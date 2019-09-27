@@ -91,7 +91,7 @@ jobs:
         python command.py should_not_import
         retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
         SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-        retry python -m pip install --index-url https://test.pypi.org/simple/ signatory==$SIGNATORY_VERSION --no-binary test_github_actions
+        retry python -m pip install --index-url https://test.pypi.org/simple/ signatory==$SIGNATORY_VERSION --no-binary signatory
         python -m pip install iisignature
         python -c "import os
         import subprocess
@@ -118,7 +118,7 @@ jobs:
         python command.py should_not_import
         retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
         SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-        retry python -m pip install --index-url https://test.pypi.org/simple/ test_github_actions==$SIGNATORY_VERSION --only-binary test_github_actions
+        retry python -m pip install --index-url https://test.pypi.org/simple/ signatory==$SIGNATORY_VERSION --only-binary signatory
         git clone https://github.com/bottler/iisignature.git
         cd iisignature
         python setup.py install
