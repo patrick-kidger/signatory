@@ -247,7 +247,7 @@ r"""  python -m pip install iisignature &&
   import sys;
   print(sys.version);
   returncode_test = subprocess.Popen('python command.py test', shell=True).wait();
-  returncode_version = sys.version[:3] != os.environ['PYTHON_VERSION'];
+  returncode_version = sys.version[:5] != os.environ['PYTHON_VERSION'][:5];
   sys.exit(max(returncode_test, returncode_version))
   " &&""",
 
@@ -296,7 +296,7 @@ r"""  python -m pip install iisignature
   import sys
   print(sys.version)
   returncode_test = subprocess.Popen('python command.py test', shell=True).wait()
-  returncode_version = sys.version[:3] != os.environ['PYTHON_VERSION']
+  returncode_version = sys.version[:5] != os.environ['PYTHON_VERSION'][:5]
   sys.exit(max(returncode_test, returncode_version))
   " """,
 
@@ -350,7 +350,7 @@ test_mac = \
   import sys
   print(sys.version)
   returncode_test = subprocess.Popen('\\''python command.py test'\\'', shell=True).wait()
-  returncode_version = sys.version[:3] != os.environ['\\''PYTHON_VERSION'\\'']
+  returncode_version = sys.version[:5] != os.environ['\\''PYTHON_VERSION'\\''][:5]
   sys.exit(max(returncode_test, returncode_version))
   " """,
 
