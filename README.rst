@@ -19,38 +19,22 @@ Check out `this <https://arxiv.org/abs/1603.03788>`__ for a primer on the use of
 
 Installation
 ############
-Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7.
+Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7 and Linux, Mac, Windows.
 
 Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.2.0, but should work with all recent versions.
 
-Install via ``pip install signatory`` or ``pip3 install signatory`` as appropriate.
+Install via ``pip install signatory``. Then just ``import signatory`` inside Python.
 
-Only source distributions are available at the moment, so you will need to be able to compile C++. If you are on Linux then this should automatically happen when you run ``pip``. Other operating systems may vary.
+Installation from source is also possible; please consult the `documentation <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__.
+
+
+If you have any problems with installation then check the `FAQ <https://signatory.readthedocs.io/en/latest/pages/miscellaneous/faq.html>`__. If that doesn't help then feel free to `open an issue <https://github.com/patrick-kidger/signatory/issues>`__.
+
+
 
 Documentation
--------------
+#############
 The documentation is available `here <https://signatory.readthedocs.io>`__.
-
-
-FAQ
-###
-* What's the difference between Signatory and iisignature_?
-
-The essential difference (and the reason for Signatory's existence) is that iisignature is limited to the CPU, whilst Signatory is for both CPU and GPU. This allows Signatory to run *much* faster. (See the next question.) Other than that, iisignature is NumPy-based, whilst Signatory is for PyTorch. There are also a few differences in the provided functionality; each package provides a few operations that the other doesn't.
-
-* What's the difference in speed between Signatory and iisignature_?
-
-Depends on your CPU and GPU, really. But to throw some numbers out there: on the CPU, Signatory tends to be about twice as fast. With the GPU, it's roughly 65 times as fast.
-
-* I get an ``ImportError`` when I try to install Signatory.
-
-You probably haven't installed PyTorch. Do that, then run ``pip`` or ``pip3`` to install Signatory.
-
-* How do I backpropagate through the signature transform?
-
-Just call ``.backward()`` like you normally would in PyTorch!
-
-.. _iisignature: https://github.com/bottler/iisignature
 
 
 Citation

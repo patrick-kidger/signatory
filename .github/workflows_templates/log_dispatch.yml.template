@@ -1,0 +1,35 @@
+# Logs a dispatch (for testing dispatches)
+
+name: Log dispatch
+
+# Arguments:
+# trigger: log_dispatch
+
+<<on_rd>>
+
+jobs:
+  log_dispatch:
+    <<strategy>>
+    steps:
+    # Deliberately no 'if' statement: this will trigger on every repository_dispatch
+    - name: Log
+      env:
+        SIGNATORY_EVENT_NAME: ${{ github.event_name }}
+        SIGNATORY_ACTION: ${{ github.event.action }}
+        SIGNATORY_EVENT_NAME_CHECK: ${{ github.event_name == 'repository_dispatch' }}
+        SIGNATORY_TRIGGER_CHECK: ${{ <<action_trigger>> }}
+        SIGNATORY_OS_CHECK: ${{ <<action_os>> }}
+        SIGNATORY_PV_CHECK: ${{ <<action_pv>> }}
+        SIGNATORY_IF_CHECK: ${{ <<if_repository_dispatch>> }}
+      # Cross-platform way of printing out all these environment variables
+      run: >
+        python -c "import os;
+        print('Event name:', os.environ['SIGNATORY_EVENT_NAME']);
+        print('Action:', os.environ['SIGNATORY_ACTION']);
+        print('---------------');
+        print('Event name check:', os.environ['SIGNATORY_EVENT_NAME_CHECK']);
+        print('Trigger check:', os.environ['SIGNATORY_TRIGGER_CHECK']);
+        print('OS check:', os.environ['SIGNATORY_OS_CHECK']);
+        print('Python version check:', os.environ['SIGNATORY_PV_CHECK']);
+        print('Overall check:', os.environ['SIGNATORY_IF_CHECK']);
+        "

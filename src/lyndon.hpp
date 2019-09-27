@@ -89,8 +89,8 @@ namespace signatory {
                 LyndonWord* first_child;    // The first part of its standard bracketing
                 LyndonWord* second_child;   // The second part of its standard bracketing
 
-                friend class LyndonWords;
-                friend class LyndonWord;
+                friend struct LyndonWords;
+                friend struct LyndonWord;
             private:
                 // Information set once all Lyndon words are known. At present it is set and used exclusively in
                 // LyndonWords::to_lyndon_basis.
@@ -123,7 +123,7 @@ namespace signatory {
 
             std::unique_ptr<ExtraLyndonInformation> extra {nullptr};
 
-            friend class LyndonWords;
+            friend struct LyndonWords;
         private:
             bool is_lyndon_anagram (const std::vector<int64_t>& word) const;
             void init(const std::vector<int64_t>& word, bool extra_, LyndonWord* first_child,

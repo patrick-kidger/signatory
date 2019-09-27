@@ -1,0 +1,35 @@
+# Tests the currently deployed version
+
+name: Test deployed
+
+# Arguments:
+# event_name: -no-event-
+# event_cond: false  # only available via repository_dispatch
+# trigger: test_deployed
+
+<<on_rd>>
+
+jobs:
+  test_deployed:
+    <<strategy>>
+    steps:
+    - <<checkout_code>>
+      with:
+        ref: master
+        
+    - <<install_python>>
+
+    - <<setup_windows>>
+      <<install_remote_windows>>
+      <<test_windows>>
+      <<terminate_windows>>
+
+    - <<setup_linux>>
+      <<install_remote_linux>>
+      <<test_linux>>
+      <<terminate_linux>>
+
+    - <<setup_mac>>
+      <<install_remote_mac>>
+      <<test_mac>>
+      <<terminate_mac>>

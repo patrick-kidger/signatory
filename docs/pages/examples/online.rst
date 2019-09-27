@@ -29,7 +29,7 @@ In code, this problem can be solved like this:
 
 As can be seen, two pieces of information need to be provided: the final value of :attr:`X` along the stream dimension, and the signature of :attr:`X`.
 
-In particular note that we only needed the last value of :attr:`X`. If memory efficiency is a concern, then we could have discarded the other 999 terms of :attr:`X` without an issue!
+In particular note that we only needed the last value of :attr:`X`. If memory efficiency is a concern, then by using the first method we can discard the other 999 terms of :attr:`X` without an issue!
 
 .. note::
 

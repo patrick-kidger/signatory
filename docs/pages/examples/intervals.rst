@@ -57,6 +57,8 @@ In fact, the :class:`signatory.Path` class supports adding data to it as well:
 
     To be able to compute signatures over intervals like this, it is clear that :class:`signatory.Path` must hold information about the whole stream of data in memory.
 
-    If only the signature of the whole path is of interest then the main :func:`signatory.signature` function will work fine. If the signature of a path for which data continues to arrive (analogous to the use of :meth:`signatory.Path.update` above), then see :ref:`examples-online`, which demonstrates how to efficiently use the :func:`signatory.signature` function in this way.
+    If only the signature of the whole path is of interest then the main :func:`signatory.signature` function will work fine.
 
-    If the signature on disjoint (but touching) intervals is required, and the signature on the union of these intervals is desired, then see :ref:`examples-combine` for how to compute the signature on each of these intervals, and how to efficiently combine them to find the signature on larger intervals. This then avoids the overhead of the :class:`signatory.Path` class.
+    If the signature of a path for which data continues to arrive (analogous to the use of :meth:`signatory.Path.update` above) is of interest, then see :ref:`examples-online`, which demonstrates how to efficiently use the :func:`signatory.signature` function in this way.
+
+    If the signature on adjacent disjoint intervals is required, and the signature on the union of these intervals is desired, then see :ref:`examples-combine` for how to compute the signature on each of these intervals, and how to efficiently combine them to find the signature on larger intervals. This then avoids the overhead of the :class:`signatory.Path` class.

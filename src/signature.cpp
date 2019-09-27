@@ -88,7 +88,8 @@ namespace signatory {
                             grad_path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments));
                     grad_path.narrow(/*dim=*/stream_dim, /*start=*/-1, /*len=*/1).zero_();
                     grad_path -= grad_path_increments;
-                    return {grad_path, grad_path_increments.narrow(/*dim=*/stream_dim,
+                    return std::tuple<torch::Tensor, torch::Tensor>
+                           {grad_path, grad_path_increments.narrow(/*dim=*/stream_dim,
                                                                    /*start=*/0,
                                                                    /*len=*/1).squeeze(stream_dim)};
                 }
@@ -96,7 +97,8 @@ namespace signatory {
                     torch::Tensor grad_path = grad_path_increments.clone();
                     grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments)
                             -= grad_path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments);
-                    return {grad_path, -grad_path_increments.narrow(/*dim=*/stream_dim,
+                    return std::tuple<torch::Tensor, torch::Tensor>
+                           {grad_path, -grad_path_increments.narrow(/*dim=*/stream_dim,
                                                                     /*start=*/0,
                                                                     /*len=*/1).squeeze(stream_dim)};
                 }
@@ -112,7 +114,7 @@ namespace signatory {
                                      /*len=*/num_increments).copy_(grad_path_increments);
                     grad_path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -= grad_path_increments;
                     // no second return value in this case
-                    return {grad_path, torch::empty({0}, sigspec.opts)};
+                    return std::tuple<torch::Tensor, torch::Tensor> {grad_path, torch::empty({0}, sigspec.opts)};
 
                 }
                 else {
@@ -125,7 +127,7 @@ namespace signatory {
                                      /*len=*/num_increments).copy_(grad_path_increments);
                     grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments) -= grad_path_increments;
                     // no second return value in this case
-                    return {grad_path, torch::empty({0}, sigspec.opts)};
+                    return std::tuple<torch::Tensor, torch::Tensor> {grad_path, torch::empty({0}, sigspec.opts)};
                 }
             }
         }
@@ -216,7 +218,7 @@ namespace signatory {
                                                                                     path_increments,
                                                                                     initial);
 
-        return {signature, backwards_info_capsule};
+        return std::tuple<torch::Tensor, py::object> {signature, backwards_info_capsule};
     }
 
     std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
@@ -351,6 +353,7 @@ namespace signatory {
         torch::Tensor grad_basepoint_value;
         std::tie(grad_path, grad_basepoint_value) = detail::compute_path_increments_backward(grad_path_increments,
                                                                                              sigspec);
-        return {grad_path, grad_basepoint_value, grad_signature_at_stream};
+        return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+               {grad_path, grad_basepoint_value, grad_signature_at_stream};
     }
 }  // namespace signatory

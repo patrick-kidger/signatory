@@ -6,7 +6,7 @@ Hopefully we don't get too many of these! But if you think you've found a bug, t
 
 ### I've got a question
 
-First have a look at the documentation located [here](https://signatory.readthedocs.io). If that doesn't answer your question then it's acceptable to open an issue detailing your question.
+First have a look at the documentation located [here](https://signatory.readthedocs.io). If that doesn't answer your question then please open an issue detailing your question.
 
 ### Feature request
 

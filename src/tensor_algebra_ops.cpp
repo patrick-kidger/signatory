@@ -473,6 +473,6 @@ namespace signatory {
             grad_arg2[depth_index] += grad_tensor_at_depth;
             ta_ops::detail::multdiv_inner_backward(grad_tensor_at_depth, grad_arg1, grad_arg2, arg1, arg2, depth_index);
         }
-        return {grad_arg1_inp, grad_arg2_inp};
+        return std::pair<torch::Tensor, torch::Tensor> {grad_arg1_inp, grad_arg2_inp};
     }
 }  // namespace signatory
