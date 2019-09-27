@@ -114,6 +114,12 @@ windows = "windows-2016",
 linux = "ubuntu-16.04",
 mac = "macOS-10.14",
 
+# Versions of Python
+py27 = '2.7',
+py35 = '3.5.0',
+py36 = '3.6.0',
+py37 = '3.7.0',
+
 # Run on repository_dispatch and precisely one other event
 on = \
 """on:
@@ -131,11 +137,11 @@ strategy = \
 strategy:
   matrix:
     os: [<<windows>>, <<linux>>, <<mac>>]
-    python-version: [2.7, 3.5, 3.6, 3.7]
+    python-version: [<<py27>>, <<py35>>, <<py36>>, <<py37>>]
     exclude:
       # PyTorch doesn't support this combination
       - os: <<windows>>
-        python-version: 2.7
+        python-version: <<py27>>
   fail-fast: false""",
 
 # A single Linux strategy
@@ -144,7 +150,7 @@ strategy_single = \
 strategy:
   matrix:
     os: [<<linux>>]
-    python-version: [3.7]
+    python-version: [<<py37>>]
 """,
 
 # Tests whether a repository_dispatch-triggered action is triggered at all
@@ -161,10 +167,10 @@ _action_os_star = "contains(github.event.action, '-os *')",
 action_os = "(<<_action_os_windows>> || <<_action_os_linux>> || <<_action_os_mac>> || <<_action_os_star>>)", 
 
 # Tests whether a repository_dispatch-triggered action is triggered, depending on Python version
-_action_pv_27 = "(contains(github.event.action, '-pv 2.7') && matrix.python-version == 2.7)",
-_action_pv_35 = "(contains(github.event.action, '-pv 3.5') && matrix.python-version == 3.5)",
-_action_pv_36 = "(contains(github.event.action, '-pv 3.6') && matrix.python-version == 3.6)",
-_action_pv_37 = "(contains(github.event.action, '-pv 3.7') && matrix.python-version == 3.7)",
+_action_pv_27 = "(contains(github.event.action, '-pv <<py27>>') && matrix.python-version == <<py27>>)",
+_action_pv_35 = "(contains(github.event.action, '-pv <<py35>>') && matrix.python-version == <<py35>>)",
+_action_pv_36 = "(contains(github.event.action, '-pv <<py36>>') && matrix.python-version == <<py36>>)",
+_action_pv_37 = "(contains(github.event.action, '-pv <<py37>>') && matrix.python-version == <<py37>>)",
 _action_pv_star = "contains(github.event.action, '-pv *')",
 action_pv = "(<<_action_pv_27>> || <<_action_pv_35>> || <<_action_pv_36>> || <<_action_pv_37>> || <<_action_pv_star>>)",
 
