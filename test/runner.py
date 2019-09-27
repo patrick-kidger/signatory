@@ -33,7 +33,8 @@ def main(failfast=False, times=True, names=True):
 
     runner = unittest.TextTestRunner(failfast=failfast)
     try:
-        runner.run(suite)
+        result = runner.run(suite)
+        return result.wasSuccessful()
     finally:  # in case of KeyboardInterrupt on a long test
         if times:
             print('Time taken for each test, in seconds:')

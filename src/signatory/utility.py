@@ -18,6 +18,7 @@
 import itertools as it
 
 # noinspection PyUnresolvedReferences
+from . import compatibility as compat
 from . import _impl
 
 
@@ -44,7 +45,8 @@ def lyndon_words(channels, depth):
         then ordered lexicographically within each length class.
     """
 
-    return _impl.lyndon_words(channels, depth)
+    with compat.mac_exception_catcher:
+        return _impl.lyndon_words(channels, depth)
 
 
 def lyndon_brackets(channels, depth):
@@ -61,7 +63,8 @@ def lyndon_brackets(channels, depth):
         A list. Each element corresponds to a single Lyndon word with its standard bracketing. The words are ordered by
         length, and then ordered lexicographically within each length class."""
 
-    return _impl.lyndon_brackets(channels, depth)
+    with compat.mac_exception_catcher:
+        return _impl.lyndon_brackets(channels, depth)
 
 
 def all_words(channels, depth):
@@ -96,4 +99,5 @@ def lyndon_words_to_basis_transform(channels, depth):
     """Computes the collection of transforms needed to go from a basis of the free Lie algebra in terms of Lyndon words
     to a basis of the free Lie algebra in terms of the Lyndon basis."""
 
-    return _impl.lyndon_words_to_basis_transform(channels, depth)
+    with compat.mac_exception_catcher:
+        return _impl.lyndon_words_to_basis_transform(channels, depth)

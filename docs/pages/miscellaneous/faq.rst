@@ -3,6 +3,8 @@
 FAQ
 ###
 
+Please also consult the :ref:`miscellaneous-knownissues` page if you've got a problem.
+
 If you have a question and don't find an answer here then do please `open an issue <https://github.com/patrick-kidger/signatory/issues/new>`__.
 
 * What's the difference between Signatory and `iisignature <https://github.com/bottler/iisignature>`__?

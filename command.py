@@ -131,7 +131,7 @@ def test(args):
     import torch
     with torch.cuda.device(args.device) if args.device != -1 else NullContext():
         print('Using ' + get_device())
-        test.runner.main(failfast=args.failfast, times=args.times, names=args.names)
+        return test.runner.main(failfast=args.failfast, times=args.times, names=args.names)
 
 
 def benchmark(args):
@@ -288,6 +288,6 @@ def should_not_import(args=()):
             
 if __name__ == '__main__':
     result = main()
-    if result is not None:
-        if not result:
-            sys.exit(1)
+    # not 'if not result'
+    if result is False:
+        sys.exit(1)
