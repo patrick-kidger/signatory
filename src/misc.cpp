@@ -76,7 +76,9 @@ namespace signatory {
             inverse{inverse}
         {
             if (depth > 1) {
-                reciprocals /= torch::linspace(2, static_cast<torch::Scalar>(depth), depth - 1, opts);
+                                                  // Cast to torch::Scalar is ambiguous
+                reciprocals /= torch::linspace(2, static_cast<torch::Scalar>(static_cast<int64_t>(depth)),
+                                               depth - 1, opts);
             }  // and reciprocals will be empty - of size 0 - if depth == 1.
         };
 

@@ -218,7 +218,7 @@ namespace signatory {
                                               mode,
                                               logsignature.size(channel_dim));
 
-        return {logsignature, backwards_info_capsule};
+        return std::tuple<torch::Tensor, py::object> {logsignature, backwards_info_capsule};
     }
 
     std::tuple<torch::Tensor, torch::Tensor>
@@ -233,7 +233,7 @@ namespace signatory {
             torch::Tensor grad_initial;
             std::tie(grad_path, grad_basepoint, grad_initial) = signature_backward(grad_logsignature,
                                                                                    backwards_info_capsule);
-            return {grad_path, grad_basepoint};
+            return std::tuple<torch::Tensor, torch::Tensor> {grad_path, grad_basepoint};
         }
 
         // Unpack everything else from backwards_info
@@ -328,6 +328,6 @@ namespace signatory {
         torch::Tensor grad_basepoint;
         torch::Tensor grad_initial;
         std::tie(grad_path, grad_basepoint, grad_initial) = signature_backward(grad_signature, backwards_info_capsule);
-        return {grad_path, grad_basepoint};
+        return std::tuple<torch::Tensor, torch::Tensor> {grad_path, grad_basepoint};
     }
 }  // namespace signatory

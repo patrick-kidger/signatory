@@ -118,8 +118,7 @@ mac = "macOS-10.14",
 on = \
 """on:
   repository_dispatch:
-  <<event_name>>:
-""",
+  <<event_name>>:""",
 
 # Only run on repository_dispatch
 on_rd = "on: repository_dispatch",

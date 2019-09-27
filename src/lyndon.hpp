@@ -123,7 +123,7 @@ namespace signatory {
 
             std::unique_ptr<ExtraLyndonInformation> extra {nullptr};
 
-            friend class LyndonWords;
+            friend struct LyndonWords;
         private:
             bool is_lyndon_anagram (const std::vector<int64_t>& word) const;
             void init(const std::vector<int64_t>& word, bool extra_, LyndonWord* first_child,
