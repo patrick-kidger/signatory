@@ -115,10 +115,10 @@ linux = "ubuntu-16.04",
 mac = "macOS-10.14",
 
 # Versions of Python
-py27 = '2.7',
-py35 = '3.5.0',
-py36 = '3.6.0',
-py37 = '3.7.0',
+py27 = '\'2.7\'',
+py35 = '\'3.5.0\'',
+py36 = '\'3.6.0\'',
+py37 = '\'3.7.0\'',
 
 # Run on repository_dispatch and precisely one other event
 on = \
