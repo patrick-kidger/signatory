@@ -7,13 +7,13 @@
 # components of that workflow which use operating system <os> and
 # Python version <pv>.
 #
-# e.g. ./trigger.sh "-trigger test_deployed -os ubuntu-16.04 -pv 3.7"
-#
-# Wildcards (*) are accepted for <os> and <pv>
-#
-# e.g. ./trigger.sh "-trigger test_deployed -os ubuntu-16.04 -pv *"
+# e.g. ./trigger.sh "-trigger test_deployed -os ubuntu-16.04 -pv 3.7.0"
 #
 # Note the quotation marks.
+# Note also that <os> and <pv> must be exactly as specified in workflows_templates/from_template.py
+# Wildcards (*) are accepted for <os> and <pv>.
+#
+# e.g. ./trigger.sh "-trigger test_deployed -os ubuntu-16.04 -pv *"
 #
 # The value of <trigger> is typically the name of the file. but actually corresponds to the value of trigger argument
 # specified in the file.
