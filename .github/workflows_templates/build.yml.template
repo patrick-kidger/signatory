@@ -1,0 +1,91 @@
+# Builds and tests a pull request
+
+name: Build and test
+
+# Arguments:
+# event_name: pull_request
+# event_cond: true
+# trigger: -not-available-  # not available via repository_dispatch (there's no pull request to test!)
+
+
+<<on>>
+    branches:
+      - master
+    
+
+jobs:
+  check_version:
+    <<strategy_single>>
+    steps:
+    - <<checkout_code>>
+
+    - <<install_python>>
+
+    - name: Check version
+      <<if_>>
+      run: |
+        python -c "import itertools as it
+        import re
+        import subprocess
+        import sys
+        import metadata
+        version_msg = subprocess.run('pip install --index-url https://test.pypi.org/simple/ signatory==', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        print('Version msg: ', version_msg)
+        version_re = re.compile(rb'from versions: ([0-9\. ,]*)\)')
+        last_version = version_re.search(version_msg.stderr).group(1).split(b', ')[-1]
+        print('Last version: ', last_version)
+        print('This version: ', metadata.version)
+        last_version = [int(i) for i in last_version.split(b'.')]
+        this_version = [int(i) for i in metadata.version.split('.')]
+        last_version_ = [l for t, l in it.zip_longest(this_version, last_version, fillvalue=0)]
+        this_version_ = [t for t, l in it.zip_longest(this_version, last_version, fillvalue=0)]
+        sys.exit(tuple(this_version_) <= tuple(last_version_))
+        "
+  
+  
+  check_readme:
+    <<strategy_single>>
+    steps:
+    - <<checkout_code>>
+
+    - <<install_python>>
+
+    - name: Compare READMEs
+      <<if_>>
+      run: |
+        cp README.rst README.rst.old
+        python command.py genreadme
+        python -c "import io
+        import sys
+        readme = io.open('README.rst', 'r', encoding='utf-8')
+        readme_old = io.open('README.rst.old', 'r', encoding='utf-8')
+        sys.exit(readme.read() != readme_old.read())
+        "
+  
+
+  build:
+    <<strategy>>
+    needs: [check_version, check_readme]
+    steps:
+    - <<checkout_code>>
+      
+    - <<install_python>>
+
+    - <<setup_windows>>
+      <<build_windows>>
+      <<install_local_windows>>
+      <<test_windows>>
+      <<terminate_windows>>
+
+    - <<setup_linux>>
+      <<build_linux>>
+      <<install_local_linux>>
+      <<test_linux>>
+      <<terminate_linux>>
+
+    - <<setup_mac>>
+      <<build_mac>>
+      <<install_local_mac>>
+      <<test_mac>>
+      <<terminate_mac>>
+

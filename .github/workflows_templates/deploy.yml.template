@@ -1,0 +1,59 @@
+# Deploys and tests an accepted pull request
+
+name: Deploy and test
+
+# Arguments:
+# event_name: pull_request
+# event_cond: github.event.pull_request.merged
+# trigger: deploy
+
+<<on>>
+    branches:
+      - master
+    types: [closed]
+
+jobs:
+  # we need to do this first as all the linux versions install the same thing from PyPI
+  deploy_sdist:
+    <<strategy_single>>
+    steps:
+    - <<checkout_code>>
+      with:
+        ref: master
+
+    - <<install_python>>
+
+    - <<setup_linux>>
+      <<build_linux>>
+      <<upload_linux>>
+      <<terminate_linux>>
+ 
+  deploy:
+    <<strategy>>
+      fail-fast: false
+    needs: [deploy_sdist]
+    steps:
+    - <<checkout_code>>
+      with:
+        ref: master
+        
+    - <<install_python>>
+
+    - <<setup_windows>>
+      <<build_windows>>
+      <<upload_windows>>
+      <<install_remote_windows>>
+      <<test_windows>>
+      <<terminate_windows>>
+
+    - <<setup_linux>>
+      <<install_remote_linux>>
+      <<test_linux>>
+      <<terminate_linux>>
+
+    - <<setup_mac>>
+      <<build_mac>>
+      <<upload_mac>>
+      <<install_remote_mac>>
+      <<test_mac>>
+      <<terminate_mac>>
