@@ -48,11 +48,14 @@ def main():
     benchmark_parser = subparsers.add_parser('benchmark', parents=[deviceparser], description="Run speed benchmarks")
     docs_parser = subparsers.add_parser('docs', description="Build documentation")
     genreadme_parser = subparsers.add_parser('genreadme', description="Generate the README from the documentation.")
+    should_not_import_parser = subparsers.add_parser('should_not_import', description="Tests that Signatory _cannot_ "
+                                                                                      "be imported.")
 
     test_parser.set_defaults(cmd=test)
     benchmark_parser.set_defaults(cmd=benchmark)
     docs_parser.set_defaults(cmd=docs)
     genreadme_parser.set_defaults(cmd=genreadme)
+    should_not_import_parser.set_defaults(cmd=should_not_import)
 
     test_parser.add_argument('-f', '--failfast', action='store_true', help='Stop tests on first failure.')
     test_parser.add_argument('-n', '--nonames', action='store_false', dest='names',
