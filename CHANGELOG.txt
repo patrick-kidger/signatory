@@ -1,3 +1,8 @@
+1.1.3
+-----
+Tweaks to be able to compile on different platforms.
+Prebuilt wheels are now available via PyPI! (Making PyPI happy is the real reason this is a whole 'nother release.)
+
 1.1.2
 -----
 Added signature_combine
