@@ -240,7 +240,7 @@ def genreadme(args=()):
                     pass
                 else:
                     if stripline.startswith(insert):
-                        out_line = inserts[stripline[len(insert):]]
+                        out_line = inserts[stripline[len(insert):]] + '\n'
                     elif stripline.startswith(includestr):
                         # [1:] to remove the leading / at the start; otherwise ends up being parsed as root
                         subfilename = stripline[len(includestr):].strip()[1:]

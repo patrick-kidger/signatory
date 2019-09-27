@@ -13,12 +13,12 @@ The essential difference (and the reason for Signatory's existence) is that iisi
 
 * I get an ``ImportError`` when I try to install Signatory.
 
-You probably haven't installed PyTorch. Do that, then run ``pip`` or ``pip3`` to install Signatory. Signatory depends upon PyTorch to run the installation procedure, and unfortunately Python `doesn't provide <https://www.python.org/dev/peps/pep-0518/>`__ good ways to specify that automatically.
+You probably haven't installed PyTorch. Do that, then run ``pip`` to install Signatory. Signatory depends upon PyTorch to run the installation procedure, and unfortunately Python `doesn't provide <https://www.python.org/dev/peps/pep-0518/>`__ good ways to specify that automatically.
 
-* The installation via ``pip`` or ``pip3`` fails.
+* The installation via ``pip`` fails.
 
 This should be pretty uncommon as we provide for all major operating systems and versions of Python. If you're on Linux then it may be a compilation failure, see the next question. In any case, please let us know by `opening an issue <https://github.com/patrick-kidger/signatory/issues/new>`__.
 
 * I can't find prebuilt wheels (i.e. binaries) available for Linux.
 
-This is deliberate. We provide prebuilt wheels for Windows and Mac, and allow Linux users to compile their own. The reason for this is a technical one. Signatory is built on PyTorch, which actually implies that it must be compiled on CentOS 7 or later, which is not currently supported by the `manylinux <https://github.com/pypa/manylinux>`__ project. The only option open to us would be to do what PyTorch themselves do: build on CentOS 7, and then manually try to ensure compatability with earlier versions as well. Fortunately, compilation on Linux is straightforward, and should automatically occur when installing via ``pip`` or ``pip3``. It is unlikely that the installation will fail to 'just work' via ``pip`` or ``pip3``. If the installation does fail for you when doing this then do please `open an issue <https://github.com/patrick-kidger/signatory/issues/new>`__.
+This is deliberate. We provide prebuilt wheels for Windows and Mac, and allow Linux users to compile their own. The reason for this is a technical one. Signatory is built on PyTorch, which actually implies that it must be compiled on CentOS 7 or later, which is not currently supported by the `manylinux <https://github.com/pypa/manylinux>`__ project. The only option open to us would be to do what PyTorch themselves do: build on CentOS 7, and then manually try to ensure compatability with earlier versions as well. Fortunately, compilation on Linux is straightforward, and should automatically occur when installing via ``pip``. It is unlikely that the installation will fail to 'just work' via ``pip``. If the installation does fail for you when doing this then do please `open an issue <https://github.com/patrick-kidger/signatory/issues/new>`__.

@@ -19,20 +19,15 @@ Check out `this <https://arxiv.org/abs/1603.03788>`__ for a primer on the use of
 
 Installation
 ############
-Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7.
-
-Available for Linux, Mac, Windows.
+Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7 and Linux, Mac, Windows.
 
 Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.2.0, but should work with all recent versions.
 
-Install via ``pip install signatory`` or ``pip3 install signatory`` as appropriate.
-
-Then just ``import signatory`` inside Python.
+Install via ``pip install signatory``. Then just ``import signatory`` inside Python.
 
 Installation from source is also possible; please consult the `documentation <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__.
-..
-    The FAQ link has to be a direct link, not a reference, so that it works on the GitHub README.
-    
+
+
 If you have any problems with installation then check the `FAQ <https://signatory.readthedocs.io/en/latest/pages/miscellaneous/faq.html>`__. If that doesn't help then feel free to `open an issue <https://github.com/patrick-kidger/signatory/issues>`__.
 
 
