@@ -89,8 +89,8 @@ namespace signatory {
                 LyndonWord* first_child;    // The first part of its standard bracketing
                 LyndonWord* second_child;   // The second part of its standard bracketing
 
-                friend class LyndonWords;
-                friend class LyndonWord;
+                friend struct LyndonWords;
+                friend struct LyndonWord;
             private:
                 // Information set once all Lyndon words are known. At present it is set and used exclusively in
                 // LyndonWords::to_lyndon_basis.

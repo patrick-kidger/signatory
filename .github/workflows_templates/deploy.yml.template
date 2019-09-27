@@ -30,7 +30,6 @@ jobs:
  
   deploy:
     <<strategy>>
-      fail-fast: false
     needs: [deploy_sdist]
     steps:
     - <<checkout_code>>

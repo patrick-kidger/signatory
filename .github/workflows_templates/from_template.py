@@ -136,7 +136,8 @@ strategy:
     exclude:
       # PyTorch doesn't support this combination
       - os: <<windows>>
-        python-version: 2.7""",
+        python-version: 2.7
+  fail-fast: false""",
 
 # A single Linux strategy
 strategy_single = \

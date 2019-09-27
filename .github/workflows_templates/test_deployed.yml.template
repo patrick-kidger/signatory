@@ -12,7 +12,6 @@ name: Test deployed
 jobs:
   test_deployed:
     <<strategy>>
-      fail-fast: false
     steps:
     - <<checkout_code>>
       with:

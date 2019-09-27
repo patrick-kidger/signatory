@@ -10,7 +10,6 @@ name: Log dispatch
 jobs:
   log_dispatch:
     <<strategy>>
-      fail-fast: false
     steps:
     # Deliberately no 'if' statement: this will trigger on every repository_dispatch
     - name: Log

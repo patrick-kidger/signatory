@@ -106,6 +106,7 @@ jobs:
           # PyTorch doesn't support this combination
           - os: windows-2016
             python-version: 2.7
+      fail-fast: false
     needs: [check_version, check_readme]
     steps:
     - name: Checkout code
