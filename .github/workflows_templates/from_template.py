@@ -237,7 +237,7 @@ install_remote_windows = \
   import metadata;
   sleep = lambda t: time.sleep(t) or True;
   retry = lambda fn: fn() or (sleep(20) and fn()) or (sleep(40) and fn()) or (sleep(120) and fn()) or (sleep(240) and fn());
-  ret = retry(lambda: not subprocess.run('python -m pip install --index-url https://test.pypi.org/simple/ signatory=={} --only-binary signatory'.format(metadata.version)).returncode);
+  ret = retry(lambda: not subprocess.run('python -m pip install signatory=={} --only-binary signatory'.format(metadata.version)).returncode);
   sys.exit(not ret)
   " &&""",
 
@@ -288,7 +288,7 @@ install_local_linux = \
 install_remote_linux = \
 """  retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
   SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-  retry python -m pip install --index-url https://test.pypi.org/simple/ signatory==$SIGNATORY_VERSION --no-binary signatory""",
+  retry python -m pip install signatory==$SIGNATORY_VERSION --no-binary signatory""",
 
 # Runs tests on Linux
 test_linux = \
@@ -338,7 +338,7 @@ install_local_mac = \
 install_remote_mac = \
 """  retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
   SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-  retry python -m pip install --index-url https://test.pypi.org/simple/ signatory==$SIGNATORY_VERSION --only-binary signatory""",
+  retry python -m pip install signatory==$SIGNATORY_VERSION --only-binary signatory""",
 
 # Runs tests on Mac
 test_mac = \
@@ -365,12 +365,12 @@ terminate_mac = \
 # Uploads dist/* to PyPI for Windows
 upload_windows = \
 """  pip install twine &&
-  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} --repository-url https://test.pypi.org/legacy/ dist/* &&""",
+  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/* &&""",
 
 # Uploads dist/* to PyPI for Unix
 upload_unix = \
 """  pip install twine
-  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} --repository-url https://test.pypi.org/legacy/ dist/*""",
+  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/*""",
 )  # end of global_subs
 global_subs['upload_mac'] = global_subs['upload_linux'] = global_subs['upload_unix']
 
