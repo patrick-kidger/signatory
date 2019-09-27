@@ -193,14 +193,15 @@ checkout_code = \
 <<if_>>
 uses: actions/checkout@v1""",
 
-# A step to install Python
+# A step to install Python 3.7. NOTE THAT IT IS DELIBERATELY ONLY 3.7.
+# For other versions of Python then please use conda.
+# The reason for this is that the setup-python action does not support many of the possible patch versions of Python.
 install_python= \
 """name: Install Python
 <<if_>>
 uses: actions/setup-python@v1
 with:
-  python-version: ${{ matrix.python-version }}
-""",
+  python-version: '3.7'""",
 
 # Performs the necessary set-up for Windows.
 setup_windows = \

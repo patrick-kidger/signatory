@@ -38,8 +38,7 @@ jobs:
       if: ((github.event_name == '-no-event-' && (false)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger test_deployed ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7') && matrix.python-version == '2.7') || (contains(github.event.action, '-pv 3.5.0') && matrix.python-version == '3.5.0') || (contains(github.event.action, '-pv 3.6.0') && matrix.python-version == '3.6.0') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
       uses: actions/setup-python@v1
       with:
-        python-version: ${{ matrix.python-version }}
-      
+        python-version: '3.7'
 
     - name: Windows
       if: ((github.event_name == '-no-event-' && (false)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger test_deployed ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7') && matrix.python-version == '2.7') || (contains(github.event.action, '-pv 3.5.0') && matrix.python-version == '3.5.0') || (contains(github.event.action, '-pv 3.6.0') && matrix.python-version == '3.6.0') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *')))) && (matrix.os == 'windows-2016')
