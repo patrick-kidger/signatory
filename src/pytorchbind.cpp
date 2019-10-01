@@ -40,6 +40,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
           &signatory::signature_forward);
     m.def("signature_backward",
           &signatory::signature_backward);
+    m.def("signature_backward_custom",
+          &signatory::signature_backward_custom);
     m.def("signature_channels",
           &signatory::signature_channels);
     m.def("lyndon_words",

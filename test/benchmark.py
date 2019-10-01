@@ -17,249 +17,387 @@ of some tests."""
 
 
 import collections as co
-import esig.tosig
-import gc
-import iisignature
 import itertools as it
-import functools as ft
 import math
 import matplotlib.pyplot as plt
-import memory_profiler as mem
 import numpy as np
-import signatory
+import os
+import re
+import subprocess
 import timeit
+
+import esig.tosig
+import iisignature
+import signatory
 import torch
 
-try:
-    # Being run via command.py
-    from . import compatibility as compat
-except ImportError:
-    # Being run via tests
-    import compatibility as compat
-
-
-@compat.lru_cache(maxsize=None)
-def prepare(channels, depth):
-    """A cache wrapper around iisignature.prepare, since it takes a long time."""
-    return iisignature.prepare(channels, depth)
-
-
-class EsigError(Exception):
-    pass
-
-
-# All of the following functions wrap the analogous functions from each package, to provide a consistent interface for
-# testing against each other.
+memory_init_str = """import argparse
+import gc
+import time
+import esig.tosig
+import iisignature
+import signatory
+import torch
+self = argparse.Namespace()
+"""
 
 
 class BenchmarkBase(object):
-    def __init__(self, depth, repeat, number):
+    """Abstract base class. Subclasses should correspond to a particular function to be benchmarked.
+
+    Each subclass should specify the multiline strings 'not_include', 'mem_include' and 'run'. These are then run one
+    after the other, _in that order_.
+
+    not_include will be initial setup that should not be benchmarked.
+    mem_include is setup that should be included in total memory used but not total time taken.
+    run should define a single function run(self) specifying the operation to be benchmarked.
+
+    A single object 'self' is available to assign any variables to during setup in not_include and mem_include; this
+    will then be passed to run.
+
+    The esig.tosig, iisignature, signatory, and torch libraries may be assumed to be imported.
+
+    The function defined in run will be ran once for memory benchmarking, and several times for speed benchmarking.
+
+
+    As for why we implement it this way: memory benchmarking uses valgrind, meaning that practically speaking it has to
+    occur in a separate process, so we have to specify what we want to happen via strings that will be eval'd.
+    """
+
+    # Not counted for either timing or memory
+    not_include = ""
+
+    # Counted for memory but not timing
+    mem_include = ""
+
+    # Defines a 'run' function which is counted for memory and timing
+    run = """
+def run(self):
+    raise NotImplementedError
+"""
+
+    def __init__(self, size, depth, repeat, number, measure):
+        self.size = size
         self.depth = depth
         self.repeat = repeat
         self.number = number
+        self.measure = measure
 
-    def stmt(self):
-        raise NotImplementedError
+        # https://stackoverflow.com/questions/1463306/how-does-exec-work-with-locals
+        local_dict = locals()
+        exec(self.not_include, globals(), local_dict)
+        exec(self.run, globals(), local_dict)
+        exec(self.mem_include, globals(), local_dict)
+        self.time_statement = local_dict['run'].__get__(self, type(self))
 
-    def action(self, measure):
-        if measure == 'time':
+        self.mem_statement_baseline = '\n'.join([memory_init_str,
+                                                 'self.size = {size}'.format(size=repr(size)),
+                                                 'self.depth = {depth}'.format(depth=repr(depth)),
+                                                 'self.repeat = {repeat}'.format(repeat=repr(repeat)),
+                                                 'self.number = {number}'.format(number=repr(number)),
+                                                 'self.measure = {measure}'.format(measure=repr(measure)),
+                                                 self.not_include,
+                                                 self.run,
+                                                 'gc.collect()',
+                                                 'time.sleep(0.1)'])
+        self.mem_statement = '\n'.join([self.mem_statement_baseline,
+                                        self.mem_include,
+                                        'run(self)'])
+
+    def action(self):
+        if self.measure == 'time':
             return self.time()
-        elif measure == 'memory':
+        elif self.measure == 'memory':
             return self.memory()
         else:
-            raise ValueError("I don't know how to measure '{}'".format(measure))
+            raise ValueError("I don't know how to measure '{}'".format(self.measure))
 
     def time(self):
         try:
-            self.stmt()  # warm up
-        except EsigError:
+            self.time_statement()  # warm up
+        except Exception:
             return [math.inf]
-        return timeit.Timer(stmt=self.stmt).repeat(repeat=self.repeat, number=self.number)
+        return min(timeit.Timer(stmt=self.time_statement).repeat(repeat=self.repeat, number=self.number))
+
+    @staticmethod
+    def _memory(commands, peak):
+        files = os.listdir('.')
+        memory_out = 'memory.out'
+        memory_tmp = 'memory.tmp'
+
+        if memory_out in files or memory_tmp in files:
+            raise RuntimeError('Could not write due to existing memory files.')
+        with open(memory_tmp, 'w') as f:
+            f.write(commands)
+
+        try:
+            subprocess.run('valgrind --tool=massif --threshold=100.0 -q --massif-out-file={} python {}'
+                           .format(memory_out, memory_tmp), shell=True)
+            ms_print = subprocess.run('ms_print {}'.format(memory_out), stdout=subprocess.PIPE,
+                                      shell=True).stdout.decode()
+            lines = ms_print.split('\n')
+            for line in lines:
+                if 'Detailed snapshots' in line:
+                    if peak:
+                        line = line[:line.index(' (peak)')]
+                    else:
+                        line = line[:line.rindex(']')]
+                    comma = line.rindex(',')
+                    line = line[comma + 2:]
+                    if 'peak' in line:
+                        line = line[:-7]
+                    int(line)  # Just to check
+                    selected_line = re.compile('^ +' + line + ' +[0-9,]+ +([0-9,]+) +[0-9,]+ +[0-9,]+ +[0-9,]+$')
+                    break
+            else:
+                raise RuntimeError('Could not find which snapshot to select')
+
+            for line in lines:
+                match = selected_line.match(line)
+                if match:
+                    return int(match.group(1).replace(',', ''))
+            else:
+                raise RuntimeError('Could not locate selected snapshot')
+        finally:
+            try:
+                os.remove(memory_out)
+            except FileNotFoundError:
+                pass
+            try:
+                os.remove(memory_tmp)
+            except FileNotFoundError:
+                pass
 
     def memory(self):
-        try:
-            # load things that need loading; this may use extra memory
-            self.stmt()
-        except EsigError:
-            return [math.inf]
-
-        gc.collect()
-        if hasattr(self, 'gpu') and self.gpu:
-            torch.cuda.reset_max_memory_allocated()
-            self.stmt()
-            return [torch.cuda.max_memory_allocated()]
-        else:
-            background_usage = mem.memory_usage((lambda: None, (), {}), interval=0.000001)
-            # max because memory_used is a list of the memory used over 0.1s increments
-            # megabytes -> bytes
-            background_usage = max(background_usage) * 10 ** 6
-            # we don't do any repeats because we expect memory usage to be pretty independent of system state, unlike
-            # speed
-            memory_used = mem.memory_usage((self.stmt, (), {}), interval=0.000001)
-            memory_used = max(memory_used) * 10 ** 6
-            return [memory_used - background_usage]
+        baseline = self._memory(self.mem_statement_baseline, peak=False)
+        memory_used = self._memory(self.mem_statement, peak=True)
+        return memory_used - baseline
 
 
 class esig_signature_forward(BenchmarkBase):
-    def __init__(self, size, **kwargs):
-        self.path = torch.rand(size, dtype=torch.float).numpy()
-        super(esig_signature_forward, self).__init__(**kwargs)
+    not_include = """
+self.path = torch.rand(self.size, dtype=torch.float).numpy()
+"""
 
-    def stmt(self):
-        if not len(esig.tosig.stream2logsig(self.path[0], self.depth)):
-            raise EsigError
-
-        for batch_elem in self.path:
-            esig.tosig.stream2sig(batch_elem, self.depth)
+    run = """
+def run(self):
+    if not len(esig.tosig.stream2logsig(self.path[0], self.depth)):
+        raise Exception
+    
+    for batch_elem in self.path:
+        esig.tosig.stream2sig(batch_elem, self.depth)
+"""
 
 
 class esig_logsignature_forward(BenchmarkBase):
-    def __init__(self, size, **kwargs):
-        self.path = torch.rand(size, dtype=torch.float).numpy()
-        super(esig_logsignature_forward, self).__init__(**kwargs)
+    not_include = """
+self.path = torch.rand(self.size, dtype=torch.float).numpy()
+"""
 
-    def stmt(self):
-        if not len(esig.tosig.stream2logsig(self.path[0], self.depth)):
-            raise EsigError
+    run = """
+def run(self):
+    if not len(esig.tosig.stream2logsig(self.path[0], self.depth)):
+        raise Exception
 
-        for batch_elem in self.path:
-            esig.tosig.stream2logsig(batch_elem, self.depth)
+    for batch_elem in self.path:
+        esig.tosig.stream2logsig(batch_elem, self.depth)
+"""
 
 
 class esig_signature_backward(BenchmarkBase):
-    def __init__(self, size, **kwargs):
-        super(esig_signature_backward, self).__init__(**kwargs)
-
-    def stmt(self):
-        # esig doesn't provide this operation.
-        raise EsigError
+    run = """
+def run(self):
+    # esig doesn't provide this operation.
+    raise Exception
+"""
 
 
 class esig_logsignature_backward(BenchmarkBase):
-    def __init__(self, size, **kwargs):
-        super(esig_logsignature_backward, self).__init__(**kwargs)
-
-    def stmt(self):
-        # esig doesn't provide this operation.
-        raise EsigError
+    run = """
+def run(self):
+    # esig doesn't provide this operation.
+    raise Exception
+"""
 
 
 class iisignature_signature_forward(BenchmarkBase):
-    def __init__(self, size, stream=False, **kwargs):
-        self.path = torch.rand(size, dtype=torch.float).numpy()
-        self.stream = stream
-        super(iisignature_signature_forward, self).__init__(**kwargs)
+    not_include = """
+self.path = torch.rand(self.size, dtype=torch.float).numpy()
+"""
 
-    def stmt(self):
-        if self.stream:
-            iisignature.sig(self.path, self.depth, 2)
-        else:
-            iisignature.sig(self.path, self.depth, 0)
+    run = """
+def run(self):
+    iisignature.sig(self.path, self.depth)
+"""
 
 
 class iisignature_logsignature_forward(BenchmarkBase):
-    def __init__(self, size, **kwargs):
-        self.path = torch.rand(size, dtype=torch.float).numpy()
-        super(iisignature_logsignature_forward, self).__init__(**kwargs)
-        self.prep = prepare(self.path.shape[-1], self.depth)
+    not_include = """
+self.path = torch.rand(self.size, dtype=torch.float).numpy()
+"""
 
-    def stmt(self):
-        iisignature.logsig(self.path, self.prep)
+    mem_include = """
+self.prep = iisignature.prepare(self.path.shape[-1], self.depth)
+"""
+
+    run = """
+def run(self):
+    iisignature.logsig(self.path, self.prep)
+"""
 
 
 class iisignature_signature_backward(BenchmarkBase):
-    def __init__(self, size, **kwargs):
-        self.path = torch.rand(size, dtype=torch.float).numpy()
-        super(iisignature_signature_backward, self).__init__(**kwargs)
-        signature = iisignature.sig(self.path, self.depth)
-        self.grad = torch.rand_like(torch.tensor(signature, dtype=torch.float)).numpy()
+    not_include = """
+self.path = torch.rand(self.size, dtype=torch.float).numpy()
+shape = self.size[-3], iisignature.siglength(self.size[-1], self.depth)
+self.grad = torch.rand(shape).numpy()
+"""
 
-    def stmt(self):
-        iisignature.sigbackprop(self.grad, self.path, self.depth)
+    run = """
+def run(self):
+    iisignature.sigbackprop(self.grad, self.path, self.depth)
+"""
 
 
 class iisignature_logsignature_backward(BenchmarkBase):
-    def __init__(self, size, **kwargs):
-        self.path = torch.rand(size, dtype=torch.float).numpy()
-        super(iisignature_logsignature_backward, self).__init__(**kwargs)
-        self.prep = prepare(self.path.shape[-1], self.depth)
-        logsignature = iisignature.logsig(self.path, self.prep)
-        self.grad = torch.rand_like(torch.tensor(logsignature, dtype=torch.float)).numpy()
+    not_include = """
+self.path = torch.rand(self.size, dtype=torch.float).numpy()
+shape = self.size[-3], iisignature.logsiglength(self.size[-1], self.depth)
+self.grad = torch.rand(shape).numpy()
+"""
 
-    def stmt(self):
-        iisignature.logsigbackprop(self.grad, self.path, self.prep)
+    mem_include = """
+self.prep = iisignature.prepare(self.path.shape[-1], self.depth)
+"""
+
+    run = """
+def run(self):
+    iisignature.logsigbackprop(self.grad, self.path, self.prep)
+"""
 
 
 class signatory_signature_forward(BenchmarkBase):
-    def __init__(self, size, stream=False, gpu=False, **kwargs):
-        if gpu:
-            self.path = torch.rand(size, dtype=torch.float, device='cuda')
-        else:
-            self.path = torch.rand(size, dtype=torch.float)
-        super(signatory_signature_forward, self).__init__(**kwargs)
-        self.stream = stream
-        self.gpu = gpu
+    not_include = """
+self.path = torch.rand(self.size, dtype=torch.float)
+"""
 
-    def stmt(self):
-        signatory.signature(self.path, self.depth, stream=self.stream)
-        if self.gpu:
-            torch.cuda.synchronize()
+    run = """
+def run(self):
+    signatory.signature(self.path, self.depth)
+"""
+
+
+class signatory_signature_forward_gpu(BenchmarkBase):
+    not_include = """
+self.path = torch.rand(self.size, dtype=torch.float, device='cuda')
+"""
+
+    run = """
+def run(self):
+    signatory.signature(self.path, self.depth)
+    torch.cuda.synchronize()
+"""
 
 
 class signatory_logsignature_forward(BenchmarkBase):
-    def __init__(self, size, stream=False, gpu=False, mode='words', **kwargs):
-        if gpu:
-            self.path = torch.rand(size, dtype=torch.float, device='cuda')
-        else:
-            self.path = torch.rand(size, dtype=torch.float)
-        super(signatory_logsignature_forward, self).__init__(**kwargs)
-        # ensure that we're doing a fair test by caching if we can
-        # (equivalent to the call to 'prepare' in iisignature)
-        signatory.LogSignature(self.depth, mode=mode, stream=stream)(self.path)
-        self.stream = stream
-        self.gpu = gpu
-        self.mode = mode
+    not_include = """
+self.path = torch.rand(self.size, dtype=torch.float)
+"""
 
-    def stmt(self):
-        signatory.LogSignature(self.depth, mode=self.mode, stream=self.stream)(self.path)
-        if self.gpu:
-            torch.cuda.synchronize()
+    mem_include = """
+signatory.LogSignature.prepare(self.size[-1], self.depth)
+"""
+
+    run = """
+def run(self):
+    signatory.LogSignature(self.depth)(self.path)
+"""
+
+
+class signatory_logsignature_forward_gpu(BenchmarkBase):
+    not_include = """
+self.path = torch.rand(self.size, dtype=torch.float, device='cuda')
+"""
+
+    mem_include = """
+signatory.LogSignature.prepare(self.size[-1], self.depth)
+"""
+
+    run = """
+def run(self):
+    signatory.LogSignature(self.depth)(self.path)
+    torch.cuda.synchronize()
+"""
 
 
 class signatory_signature_backward(BenchmarkBase):
-    def __init__(self, size, gpu=False, **kwargs):
-        if gpu:
-            self.path = torch.rand(size, dtype=torch.float, device='cuda', requires_grad=True)
-        else:
-            self.path = torch.rand(size, dtype=torch.float, requires_grad=True)
-        super(signatory_signature_backward, self).__init__(**kwargs)
-        self.gpu = gpu
-        self.signature = signatory.signature(self.path, self.depth)
-        self.grad = torch.rand_like(self.signature)
+    not_include = """
+self.path = torch.rand(self.size, dtype=torch.float, requires_grad=True)
+shape = self.size[-3], signatory.signature_channels(self.size[-1], self.depth)
+self.grad = torch.rand(shape)
+"""
 
-    def stmt(self):
-        self.signature.backward(self.grad, retain_graph=True)
-        if self.gpu:
-            torch.cuda.synchronize()
+    mem_include = """
+self.signature = signatory.signature(self.path, self.depth)
+"""
+
+    run = """
+def run(self):
+    self.signature.backward(self.grad, retain_graph=self.measure == 'time')
+"""
+
+
+class signatory_signature_backward_gpu(BenchmarkBase):
+    not_include = """
+self.path = torch.rand(self.size, dtype=torch.float, requires_grad=True, device='cuda')
+shape = self.size[-3], signatory.signature_channels(self.size[-1], self.depth)
+self.grad = torch.rand(shape, device='cuda')
+"""
+
+    mem_include = """
+self.signature = signatory.signature(self.path, self.depth)
+"""
+
+    run = """
+def run(self):
+    self.signature.backward(self.grad, retain_graph=self.measure == 'time')
+    torch.cuda.synchronize()
+"""
 
 
 class signatory_logsignature_backward(BenchmarkBase):
-    def __init__(self, size, stream=False, gpu=False, mode='words', **kwargs):
-        if gpu:
-            self.path = torch.rand(size, dtype=torch.float, device='cuda', requires_grad=True)
-        else:
-            self.path = torch.rand(size, dtype=torch.float, requires_grad=True)
-        super(signatory_logsignature_backward, self).__init__(**kwargs)
-        self.logsignature = signatory.LogSignature(self.depth, mode=mode, stream=stream)(self.path)
-        self.grad = torch.rand_like(self.logsignature)
-        self.stream = stream
-        self.gpu = gpu
-        self.mode = mode
+    not_include = """
+self.path = torch.rand(self.size, dtype=torch.float, requires_grad=True)
+shape = self.size[-3], signatory.logsignature_channels(self.size[-1], self.depth)
+self.grad = torch.rand(shape)
+"""
 
-    def stmt(self):
-        self.logsignature.backward(self.grad, retain_graph=True)
-        if self.gpu:
-            torch.cuda.synchronize()
+    mem_include = """
+self.logsignature = signatory.LogSignature(self.depth)(self.path)
+"""
+
+    run = """
+def run(self):
+    self.logsignature.backward(self.grad, retain_graph=self.measure == 'time')
+"""
+
+
+class signatory_logsignature_backward_gpu(BenchmarkBase):
+    not_include = """
+self.path = torch.rand(self.size, dtype=torch.float, requires_grad=True, device='cuda')
+shape = self.size[-3], signatory.logsignature_channels(self.size[-1], self.depth)
+self.grad = torch.rand(shape, device='cuda')
+"""
+
+    mem_include = """
+self.logsignature = signatory.LogSignature(self.depth)(self.path)
+"""
+
+    run = """
+def run(self):
+    self.logsignature.backward(self.grad, retain_graph=self.measure == 'time')
+    torch.cuda.synchronize()
+"""
 
 
 signatory_cpu_str = 'Signatory CPU'
@@ -272,23 +410,23 @@ speedup_str = 'Ratio'
 
 
 signature_forward_fns = co.OrderedDict([(signatory_cpu_str, signatory_signature_forward),
-                                        (signatory_gpu_str, ft.partial(signatory_signature_forward, gpu=True)),
+                                        (signatory_gpu_str, signatory_signature_forward_gpu),
                                         (iisignature_str, iisignature_signature_forward),
                                         (esig_str, esig_signature_forward)])
 
 
 signature_backward_fns = co.OrderedDict([(signatory_cpu_str, signatory_signature_backward),
-                                         (signatory_gpu_str, ft.partial(signatory_signature_backward, gpu=True)),
+                                         (signatory_gpu_str, signatory_signature_backward_gpu),
                                          (iisignature_str, iisignature_signature_backward),
                                          (esig_str, esig_signature_backward)])
 
 logsignature_forward_fns = co.OrderedDict([(signatory_cpu_str, signatory_logsignature_forward),
-                                           (signatory_gpu_str, ft.partial(signatory_logsignature_forward, gpu=True)),
+                                           (signatory_gpu_str, signatory_logsignature_forward_gpu),
                                            (iisignature_str, iisignature_logsignature_forward),
                                            (esig_str, esig_logsignature_forward)])
 
 logsignature_backward_fns = co.OrderedDict([(signatory_cpu_str, signatory_logsignature_backward),
-                                            (signatory_gpu_str, ft.partial(signatory_logsignature_backward, gpu=True)),
+                                            (signatory_gpu_str, signatory_logsignature_backward_gpu),
                                             (iisignature_str, iisignature_logsignature_backward),
                                             (esig_str, esig_logsignature_backward)])
 
@@ -305,7 +443,11 @@ all_fns.update(logsignature_backward_fns_wrapper)
 
 
 class namedarray(object):
-    """Just a minimal helper for our needs elsewhere in this file. There are definitely fancier solutions available."""
+    """Wraps a numpy array with name-based lookup along axes.
+
+    Just a minimal helper for our needs elsewhere in this file. There are definitely fancier solutions available.
+    """
+
     def __init__(self, *size):
         self.array = np.empty(size, dtype=object)
         self.numdims = len(size)
@@ -413,8 +555,8 @@ class BenchmarkRunner(object):
             if (not self.test_signatory_gpu) and (library_name == signatory_gpu_str):
                 continue
             print(self._table_format_index(fn_name, size, depth), library_name)
-            test = library_fn(size=size, depth=depth, repeat=self.repeat, number=self.number)
-            library_results[library_name] = min(test.action(self.measure))
+            test = library_fn(size=size, depth=depth, repeat=self.repeat, number=self.number, measure=self.measure)
+            library_results[library_name] = test.action()
 
         if self.ratio:
             other_best = library_results[iisignature_str]

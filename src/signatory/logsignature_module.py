@@ -159,8 +159,8 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
 class LogSignature(nn.Module):
     """Module wrapper around the :func:`signatory.logsignature` function.
 
-    Calling this module on an input :attr:`path` with the same number of channels as the last input :attr:`path` it was
-    called with will be faster than the corresponding :func:`signatory.logsignature` function, as this module caches the
+    Calling this Module on an input :attr:`path` with the same number of channels as the last input :attr:`path` it was
+    called with will be faster than the corresponding :func:`signatory.logsignature` function, as this Module caches the
     result of certain computations which depend only on this value. (For larger depths or numbers of channels, this
     speedup will be substantial.)
 
@@ -185,10 +185,36 @@ class LogSignature(nn.Module):
     @staticmethod
     # This computation can be pretty slow! We definitely want to reuse it between instances
     @compat.lru_cache(maxsize=None)
-    def lyndon_info_cache(channels, depth, mode):
+    def _lyndon_info_cache(in_channels, depth, mode):
         mode = _mode_convert(mode)
         with compat.mac_exception_catcher:
-            return _impl.make_lyndon_info(channels, depth, mode)
+            return _impl.make_lyndon_info(in_channels, depth, mode)
+
+    @classmethod
+    def prepare(cls, in_channels, depth, mode="words"):
+        # type: (int, int, str) -> None
+        """Prepares all instances of this class for computing logsignatures of a certain size.
+
+        There is some nontrivial computation which must be done for every logsignature computation of a certain size,
+        and which is the same for all logsignature computations of that size. (Where 'size' refers to a specific
+        combination of input channels, depth of logsignature, and mode.)
+
+        :class:`signatory.LogSignature` caches this information, to help speed up later logsignature computations.
+        Normally this information will simply be computed and cached the first time it is needed.
+
+        This method allows for computing and cache this information up front, before performing any logsignature
+        computations at all (for example, for benchmarking reasons).
+
+        Arguments:
+            in_channels (int): as :func:`signatory.logsignature_channels`.
+
+            depth (int): as :func:`signatory.logsignature`.
+
+            mode (str, optional): as :func:`signatory.logsignature`.
+        """
+
+        # In particular does not return what _lyndon_info_cache returns
+        cls._lyndon_info_cache(in_channels, depth, mode)
 
     def forward(self, path, basepoint=False):
         # type: (torch.Tensor, Union[bool, torch.Tensor]) -> torch.Tensor
@@ -203,7 +229,7 @@ class LogSignature(nn.Module):
             As :func:`signatory.logsignature`.
         """
 
-        lyndon_info = self.lyndon_info_cache(path.size(-1), self.depth, self.mode)
+        lyndon_info = self._lyndon_info_cache(path.size(-1), self.depth, self.mode)
         # don't call logsignature itself because that (deliberately) doesn't expose a lyndon_info argument.
         # noinspection PyProtectedMember, PyUnresolvedReferences
         result = _LogSignatureFunction.apply(path, self.depth, self.stream, basepoint, self.inverse, self.mode,
@@ -265,7 +291,8 @@ def logsignature_channels(in_channels, depth):
 
     Arguments:
         in_channels (int): The number of channels in the input; that is, the dimension of the space that the input path
-            resides in.
+            resides in. If calling :func:`signatory.logsignature` with argument :attr:`path` then :attr:`in_channels`
+            should be equal to :attr:`path.size(-1)`.
 
         depth (int): The depth of the signature that is being computed.
 

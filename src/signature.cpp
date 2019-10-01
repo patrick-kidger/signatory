@@ -356,4 +356,28 @@ namespace signatory {
         return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
                {grad_path, grad_basepoint_value, grad_signature_at_stream};
     }
+
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+    signature_backward_custom(torch::Tensor grad_signature, torch::Tensor signature, torch::Tensor path,
+                              s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
+                              bool inverse, bool initial) {
+
+        misc::SigSpec sigspec{path, depth, stream, basepoint, inverse};
+
+        std::vector<torch::Tensor> signature_by_term;
+        if (stream) {
+            // Duplicating normal forward behaviour, which is to only calculate this on the forward pass
+            misc::slice_by_term(signature, signature_by_term, sigspec);
+        }
+
+        torch::Tensor path_increments = detail::compute_path_increments(path, basepoint_value, sigspec);
+
+        py::object backwards_info_capsule = misc::wrap_capsule<misc::BackwardsInfo>(std::move(sigspec),
+                                                                                    signature_by_term,
+                                                                                    signature,
+                                                                                    path_increments,
+                                                                                    initial);
+
+        return signature_backward(grad_signature, backwards_info_capsule);
+    }
 }  // namespace signatory

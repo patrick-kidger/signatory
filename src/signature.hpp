@@ -27,6 +27,12 @@ namespace signatory {
     // See signatory.signature for documentation
     std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
     signature_backward(torch::Tensor grad_signature, py::object backwards_info_capsule);
+
+    // Allows for calling a custom backward operation. To be used with care!
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+    signature_backward_custom(torch::Tensor grad_signature, torch::Tensor signature, torch::Tensor path,
+                              s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
+                              bool inverse, bool initial);
 }  // namespace signatory
 
 #endif //SIGNATORY_SIGNATURE_HPP

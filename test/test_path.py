@@ -76,11 +76,14 @@ class TestPath(utils.EnhancedTestCase):
             length = c.path.size(1)
             if isinstance(c.basepoint, torch.Tensor) or c.basepoint:
                 length += 1
-            for start in range(0, length + 1):
-                for end in range(start + 2, length + 1):
-                    if random.choice([True, False]):
-                        update = torch.rand(c.N, random.choice([1, 2, 3]), c.C, dtype=torch.double, device=c.device,
-                                            requires_grad=True)
-                    else:
-                        update = None
-                    autograd.gradcheck(gradchecked, (c.path, c.depth, c.basepoint, update, start, end))
+            for update_length in (False, 1, 2, 3):
+                if update_length:
+                    length += update_length
+                    update = lambda: torch.rand(c.N, update_length, c.C, dtype=torch.double, device=c.device,
+                                                requires_grad=True)
+                else:
+                    update = lambda: None
+
+                for start in range(0, length + 1):
+                    for end in range(start + 2, length + 1):
+                        autograd.gradcheck(gradchecked, (c.path, c.depth, c.basepoint, update(), start, end))

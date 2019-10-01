@@ -30,27 +30,39 @@ if False:
     from typing import Any, Union
 
 
+def interpret_forward_arguments(path, basepoint, initial):
+    basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
+    path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
+    if isinstance(initial, torch.Tensor):
+        initial_value = initial
+        initial = True
+    else:
+        initial_value = torch.Tensor()
+        initial = False
+    return path, basepoint, basepoint_value, initial, initial_value
+
+
+def interpret_backward_grad(ctx, grad_path, grad_basepoint, grad_initial):
+    grad_path = grad_path.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
+    if not isinstance(ctx.basepoint_as_passed, torch.Tensor):
+        grad_basepoint = None
+    if not ctx.initial:
+        grad_initial = None
+    return grad_path, grad_basepoint, grad_initial
+
+
 class _SignatureFunction(autograd.Function):
     @staticmethod
     def forward(ctx, path, depth, stream, basepoint, inverse, initial):
-        ctx.basepoint = basepoint
-
-        basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
-        if isinstance(initial, torch.Tensor):
-            initial_value = initial
-            initial = True
-        else:
-            initial_value = torch.Tensor()
-            initial = False
+        ctx.basepoint_as_passed = basepoint
+        path, basepoint, basepoint_value, initial, initial_value = interpret_forward_arguments(path, basepoint, initial)
         ctx.initial = initial
 
-        path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
         with compat.mac_exception_catcher:
             result, backwards_info = _impl.signature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
                                                              initial, initial_value)
-        if ctx.requires_grad:
-            ctx.backwards_info = backwards_info
-            ctx.save_for_backward(result)
+        ctx.backwards_info = backwards_info
+        ctx.save_for_backward(result)
 
         # would like to transpose here but we can't because of PyTorch bug 24413, so instead we have to transpose at
         # every call site instead.
@@ -69,11 +81,8 @@ class _SignatureFunction(autograd.Function):
 
         with compat.mac_exception_catcher:
             grad_path, grad_basepoint, grad_initial = _impl.signature_backward(grad_result, ctx.backwards_info)
-        grad_path = grad_path.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
-        if not isinstance(ctx.basepoint, torch.Tensor):
-            grad_basepoint = None
-        if not ctx.initial:
-            grad_initial = None
+
+        grad_path, grad_basepoint, grad_initial = interpret_backward_grad(ctx, grad_path, grad_basepoint, grad_initial)
 
         return grad_path, None, None, grad_basepoint, None, grad_initial
 

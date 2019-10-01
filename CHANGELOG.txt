@@ -1,3 +1,8 @@
+1.1.4
+-----
+Improved speed and stability of the backwards operation through Path.
+Added (fixed) memory profiling
+
 1.1.3
 -----
 Tweaks to be able to compile on different platforms.
@@ -17,8 +22,6 @@ Speed improvements to signature and logsignature both forwards and backwards.
 Added the all_words function
 Added the Path class
 signature and logsignature functions and classes now accept an 'inverse' option to calculate the inverse-signature or log-inverse-signature.
-
-BREAKING CHANGES: Minor ones only. Signature and Logsignature now take basepoint as a call-time argument rather than as an init-time argument. The position of the logsignature and Logsignature 'mode' argument has changed due to the addition of the new 'inverse' argument.
 
 1.1.0
 -----

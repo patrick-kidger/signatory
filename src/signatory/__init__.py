@@ -16,6 +16,15 @@
 
 import torch  # must be imported before anything from signatory
 
+try:
+    from . import _impl
+except ImportError as e:
+    if 'specified procedure could not be found' in str(e):
+        raise ImportError('Caught ImportError: {}. This can probably be fixed by updating your version of Python, '
+                          'e.g. from 3.6.6 to 3.6.9'.format(str(e)))
+    else:
+        raise
+
 from .augment import Augment
 from .logsignature_module import (logsignature,
                                   LogSignature,
@@ -32,6 +41,6 @@ from .utility import (lyndon_words,
                       all_words)
 
 
-__version__ = "1.1.3"
+__version__ = "1.1.4"
 
 del torch

@@ -71,19 +71,20 @@ def main():
                                   help="Skip computing and plotting the improvement ratio of Signatory over "
                                        "iisignature or esig.")
     benchmark_parser.add_argument('-m', '--measure', choices=('time', 'memory'), default='time',
-                                  help="Whether to measure speed or memory usage.")
+                                  help="Whether to measure speed or memory usage. Defaults to time.")
     benchmark_parser.add_argument('-f', '--fns', choices=('sigf', 'sigb', 'logsigf', 'logsigb', 'all'), default='all',
                                   help="Which functions to run: signature forwards, signature backwards, logsignature "
-                                       "forwards, logsignature backwards, or all of them.")
+                                       "forwards, logsignature backwards, or all of them. Defaults to all.")
     benchmark_parser.add_argument('-t', '--type', choices=('typical', 'depths', 'channels', 'small'), default='typical',
                                   help="What kind of benchmark to run. 'typical' tests on two typical size/depth "
                                        "combinations and prints the results as a table to stdout. 'depth' and "
                                        "'channels' are more thorough benchmarks (and will taking correspondingly "
-                                       "longer to run!) testing multiple depths or multiple channels respectively.")
+                                       "longer to run!) testing multiple depths or multiple channels respectively. "
+                                       "Defaults to typical.")
     benchmark_parser.add_argument('-o', '--output', choices=('table', 'graph', 'none'), default='table',
                                   help="How to format the output. 'table' formats as a table, 'graph' formats as a "
                                        "graph. 'none' prints no output at all (perhaps if you're retrieving the results"
-                                       " programmatically by importing command.py instead).")
+                                       " programmatically by importing command.py instead). Defaults to table.")
                                   
     docs_parser.add_argument('-o', '--open', action='store_true',
                              help="Open the documentation in a web browser as soon as it is built.")
