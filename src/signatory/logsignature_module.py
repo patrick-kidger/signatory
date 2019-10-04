@@ -56,9 +56,8 @@ class _LogSignatureFunction(autograd.Function):
         basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
 
         path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
-        with compat.mac_exception_catcher:
-            result, backwards_info = _impl.logsignature_forward(path, depth, stream, basepoint, basepoint_value,
-                                                                inverse, mode, lyndon_info)
+        result, backwards_info = _impl.logsignature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
+                                                            mode, lyndon_info)
         if ctx.requires_grad:
             ctx.backwards_info = backwards_info
             ctx.save_for_backward(result)
@@ -78,8 +77,7 @@ class _LogSignatureFunction(autograd.Function):
         # handle to it is already saved in ctx.backwards_info, which we do use.
         _ = ctx.saved_tensors
 
-        with compat.mac_exception_catcher:
-            grad_path, grad_basepoint = _impl.logsignature_backward(grad_result, ctx.backwards_info)
+        grad_path, grad_basepoint = _impl.logsignature_backward(grad_result, ctx.backwards_info)
         grad_path = grad_path.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
         if not isinstance(ctx.basepoint, torch.Tensor):
             grad_basepoint = None
@@ -187,8 +185,7 @@ class LogSignature(nn.Module):
     @compat.lru_cache(maxsize=None)
     def _lyndon_info_cache(in_channels, depth, mode):
         mode = _mode_convert(mode)
-        with compat.mac_exception_catcher:
-            return _impl.make_lyndon_info(in_channels, depth, mode)
+        return _impl.make_lyndon_info(in_channels, depth, mode)
 
     @classmethod
     def prepare(cls, in_channels, depth, mode="words"):

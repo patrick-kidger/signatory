@@ -15,10 +15,12 @@
 """Tests the Path class."""
 
 
+import gc
 import random
 import signatory
 import torch
 from torch import autograd
+import weakref
 
 import utils_testing as utils
 
@@ -73,17 +75,35 @@ class TestPath(utils.EnhancedTestCase):
                                   stream=False,
                                   requires_grad=True,
                                   size=utils.random_size(5)):
-            length = c.path.size(1)
+            base_length = c.path.size(1)
             if isinstance(c.basepoint, torch.Tensor) or c.basepoint:
-                length += 1
+                base_length += 1
             for update_length in (False, 1, 2, 3):
                 if update_length:
-                    length += update_length
+                    length = base_length + update_length
                     update = lambda: torch.rand(c.N, update_length, c.C, dtype=torch.double, device=c.device,
                                                 requires_grad=True)
                 else:
+                    length = base_length
                     update = lambda: None
 
                 for start in range(0, length + 1):
                     for end in range(start + 2, length + 1):
-                        autograd.gradcheck(gradchecked, (c.path, c.depth, c.basepoint, update(), start, end))
+                        try:
+                            autograd.gradcheck(gradchecked, (c.path, c.depth, c.basepoint, update(), start, end))
+                        except Exception:
+                            self.fail(c.fail(base_length=base_length, length=length, update_length=update_length))
+
+    def test_ctx_dies(self):
+        for c in utils.ConfigIter(inverse=False,
+                                  stream=False,
+                                  requires_grad=True,
+                                  size=utils.random_size(5)):
+            path_obj = signatory.Path(c.path, c.depth, basepoint=c.basepoint)
+            signatory_out = path_obj.signature(1, None)
+            ctx = signatory_out.grad_fn
+            ref = weakref.ref(ctx)
+            del ctx
+            del signatory_out
+            gc.collect()
+            self.assertIsNone(ref(), c.fail())

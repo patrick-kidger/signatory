@@ -67,8 +67,8 @@ def main():
                                   help="Skip esig tests as esig is typically very slow.")
     benchmark_parser.add_argument('-g', '--nogpu', action='store_false', dest='test_signatory_gpu',
                                   help="Skip Signatory GPU tests, (perhaps if you don't have a GPU installed).")
-    benchmark_parser.add_argument('-a', '--ratio', action='store_false',
-                                  help="Skip computing and plotting the improvement ratio of Signatory over "
+    benchmark_parser.add_argument('-a', '--ratio', action='store_true',
+                                  help="Enable computing and plotting the improvement ratio of Signatory over "
                                        "iisignature or esig.")
     benchmark_parser.add_argument('-m', '--measure', choices=('time', 'memory'), default='time',
                                   help="Whether to measure speed or memory usage. Defaults to time.")
@@ -81,9 +81,10 @@ def main():
                                        "'channels' are more thorough benchmarks (and will taking correspondingly "
                                        "longer to run!) testing multiple depths or multiple channels respectively. "
                                        "Defaults to typical.")
-    benchmark_parser.add_argument('-o', '--output', choices=('table', 'graph', 'none'), default='table',
+    benchmark_parser.add_argument('-o', '--output', choices=('table', 'graph', 'graphsave', 'none'), default='table',
                                   help="How to format the output. 'table' formats as a table, 'graph' formats as a "
-                                       "graph. 'none' prints no output at all (perhaps if you're retrieving the results"
+                                       "graph. 'graphsave' formats as a graph but saves it rather than displaying it. "
+                                       "'none' prints no output at all (perhaps if you're retrieving the results"
                                        " programmatically by importing command.py instead). Defaults to table.")
                                   
     docs_parser.add_argument('-o', '--open', action='store_true',
@@ -99,10 +100,10 @@ def main():
         print("Please enter a command. Use -h to see available commands.")
 
 
-here = os.path.realpath(os.path.dirname(__file__))
+_here = os.path.realpath(os.path.dirname(__file__))
 
 
-def get_device():
+def _get_device():
     import torch
     try:
         return 'CUDA device ' + str(torch.cuda.current_device())
@@ -110,7 +111,7 @@ def get_device():
         return 'no CUDA device'
 
 
-class NullContext(object):
+class _NullContext(object):
     def __enter__(self):
         pass
 
@@ -130,8 +131,8 @@ def test(args):
                           "install iisignature'")
     import test.runner
     import torch
-    with torch.cuda.device(args.device) if args.device != -1 else NullContext():
-        print('Using ' + get_device())
+    with torch.cuda.device(args.device) if args.device != -1 else _NullContext():
+        print('Using ' + _get_device())
         return test.runner.main(failfast=args.failfast, times=args.times, names=args.names)
 
 
@@ -150,8 +151,8 @@ def benchmark(args):
                           
     import test.benchmark as bench
     import torch
-    with torch.cuda.device(args.device) if args.device != -1 else NullContext():
-        print('Using ' + get_device())
+    with torch.cuda.device(args.device) if args.device != -1 else _NullContext():
+        print('Using ' + _get_device())
         if args.type == 'typical':
             runner = bench.BenchmarkRunner.typical(ratio=args.ratio,
                                                    test_esig=args.test_esig,
@@ -183,6 +184,8 @@ def benchmark(args):
         runner.run()
         if args.output == 'graph':
             runner.graph()
+        elif args.output == 'graphsave':
+            runner.graph(save=True)
         elif args.output == 'table':
             runner.table()
         elif args.output == 'none':
@@ -203,12 +206,12 @@ def docs(args=()):
         raise ImportError("The py2annotate package is required for running tests. It can be installed via 'pip "
                           "install py2annotate'")
     try:
-        shutil.rmtree(os.path.join(here, "docs", "_build"))
+        shutil.rmtree(os.path.join(_here, "docs", "_build"))
     except FileNotFoundError:
         pass
-    subprocess.Popen("sphinx-build -M html {} {}".format(os.path.join(here, "docs"), os.path.join(here, "docs", "_build"))).wait()
+    subprocess.Popen("sphinx-build -M html {} {}".format(os.path.join(_here, "docs"), os.path.join(_here, "docs", "_build"))).wait()
     if args.open:
-        webbrowser.open_new_tab('file:///{}'.format(os.path.join(here, 'docs', '_build', 'html', 'index.html')))
+        webbrowser.open_new_tab('file:///{}'.format(os.path.join(_here, 'docs', '_build', 'html', 'index.html')))
 
     
 def genreadme(args=()):
@@ -245,7 +248,7 @@ def genreadme(args=()):
                     elif stripline.startswith(includestr):
                         # [1:] to remove the leading / at the start; otherwise ends up being parsed as root
                         subfilename = stripline[len(includestr):].strip()[1:]
-                        out_line = parse_file(os.path.join(here, 'docs', subfilename))
+                        out_line = parse_file(os.path.join(_here, 'docs', subfilename))
                     else:
                         out_line = line
                     if ':ref:' in out_line:
@@ -255,21 +258,21 @@ def genreadme(args=()):
 
     def read_from_files(filenames):
         for filename in filenames:
-            filename = os.path.join(here, filename)
+            filename = os.path.join(_here, filename)
             outs.append(parse_file(filename))
 
-    read_from_files([os.path.join(here, 'docs', 'index.rst'),
-                     os.path.join(here, 'docs', 'pages', 'understanding', 'whataresignatures.rst'),
+    read_from_files([os.path.join(_here, 'docs', 'index.rst'),
+                     os.path.join(_here, 'docs', 'pages', 'understanding', 'whataresignatures.rst'),
                      os.path.join('docs', 'pages', 'usage', 'installation.rst')])
 
     outs.append("Documentation\n"
                 "#############\n"
                 "The documentation is available `here <https://signatory.readthedocs.io>`__.")
 
-    read_from_files([os.path.join(here, 'docs', 'pages', 'miscellaneous', 'citation.rst'),
-                     os.path.join(here, 'docs', 'pages', 'miscellaneous', 'acknowledgements.rst')])
+    read_from_files([os.path.join(_here, 'docs', 'pages', 'miscellaneous', 'citation.rst'),
+                     os.path.join(_here, 'docs', 'pages', 'miscellaneous', 'acknowledgements.rst')])
 
-    with io.open(os.path.join(here, 'README.rst'), 'w', encoding='utf-8') as f:
+    with io.open(os.path.join(_here, 'README.rst'), 'w', encoding='utf-8') as f:
         f.write('\n\n'.join(outs))
 
 

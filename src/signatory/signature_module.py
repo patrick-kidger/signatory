@@ -21,7 +21,6 @@ from torch import autograd
 from torch.autograd import function as autograd_function
 
 from . import backend
-from . import compatibility as compat
 # noinspection PyUnresolvedReferences
 from . import _impl
 
@@ -58,9 +57,8 @@ class _SignatureFunction(autograd.Function):
         path, basepoint, basepoint_value, initial, initial_value = interpret_forward_arguments(path, basepoint, initial)
         ctx.initial = initial
 
-        with compat.mac_exception_catcher:
-            result, backwards_info = _impl.signature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
-                                                             initial, initial_value)
+        result, backwards_info = _impl.signature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
+                                                         initial, initial_value)
         ctx.backwards_info = backwards_info
         ctx.save_for_backward(result)
 
@@ -79,8 +77,7 @@ class _SignatureFunction(autograd.Function):
         # handle to it is already saved in ctx.backwards_info, which we do use.
         _ = ctx.saved_tensors
 
-        with compat.mac_exception_catcher:
-            grad_path, grad_basepoint, grad_initial = _impl.signature_backward(grad_result, ctx.backwards_info)
+        grad_path, grad_basepoint, grad_initial = _impl.signature_backward(grad_result, ctx.backwards_info)
 
         grad_path, grad_basepoint, grad_initial = interpret_backward_grad(ctx, grad_path, grad_basepoint, grad_initial)
 
@@ -236,8 +233,7 @@ def signature_channels(channels, depth):
         An int specifying the number of channels in the signature of the path.
     """
 
-    with compat.mac_exception_catcher:
-        return _impl.signature_channels(channels, depth)
+    return _impl.signature_channels(channels, depth)
 
 
 def extract_signature_term(sigtensor, channels, depth):

@@ -20,7 +20,6 @@ from torch import autograd
 from torch.autograd import function as autograd_function
 
 from . import backend
-from . import compatibility as compat
 from . import signature_module as smodule
 from . import _impl
 
@@ -31,18 +30,33 @@ if False:
 
 class _BackwardShortcut(autograd.Function):
     @staticmethod
-    def forward(ctx, signature, path_pieces, depth, stream, basepoint, inverse, initial):
-        ctx.path_pieces = path_pieces
+    def forward(ctx, signature, depth, stream, basepoint, inverse, initial, *path_pieces):
+        # Calls to detach work around PyTorch bug 25340, which is a won't-fix.
+        ctx.signature = signature.detach()
+        ctx.path_pieces = [path_piece.detach() for path_piece in path_pieces]
         ctx.depth = depth
         ctx.stream = stream
-        ctx.basepoint = basepoint
+        ctx.basepoint = basepoint.detach() if isinstance(basepoint, torch.Tensor) else basepoint
         ctx.inverse = inverse
-        ctx.initial = initial
-        return signature
+        ctx.initial = initial.detach() if isinstance(initial, torch.Tensor) else initial
+
+        # Record the tensors upon which the backward calculation depends
+        save_for_backward = list(ctx.path_pieces)
+        save_for_backward.append(ctx.signature)
+        if isinstance(ctx.basepoint, torch.Tensor):
+            save_for_backward.append(ctx.basepoint)
+        ctx.save_for_backward(*save_for_backward)
+
+        return signature.detach()
 
     @staticmethod
     @autograd_function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
     def backward(ctx, grad_result):
+        # Test for any in-place changes
+        # This isn't perfect. If any of the stored tensors do not own their own storage (which is possible) then
+        # this check will always pass, even if they've been modified in-place. (PyTorch bug 24413)
+        _ = ctx.saved_tensors
+
         if len(ctx.path_pieces) > 1:
             # TODO: This concatenation isn't really necessary. Pretty much the only thing we do with this is to compute
             #       the increments. Not sure what the most elegant way to adjust _impl.signature_backward_custom to take
@@ -55,21 +69,32 @@ class _BackwardShortcut(autograd.Function):
                                                                                                        ctx.basepoint,
                                                                                                        ctx.initial)
 
-        with compat.mac_exception_catcher:
-            grad_path, grad_basepoint, grad_initial = _impl.signature_backward_custom(grad_result,
-                                                                                      ctx.signature,
-                                                                                      path,
-                                                                                      ctx.depth,
-                                                                                      ctx.stream,
-                                                                                      basepoint,
-                                                                                      basepoint_value,
-                                                                                      ctx.inverse,
-                                                                                      initial)
+        grad_path, grad_basepoint, grad_initial = _impl.signature_backward_custom(grad_result,
+                                                                                  ctx.signature,
+                                                                                  path,
+                                                                                  ctx.depth,
+                                                                                  ctx.stream,
+                                                                                  basepoint,
+                                                                                  basepoint_value,
+                                                                                  ctx.inverse,
+                                                                                  initial)
 
         grad_path, grad_basepoint, grad_initial = smodule.interpret_backward_grad(ctx, grad_path, grad_basepoint,
                                                                                   grad_initial)
 
-        return None, grad_path, None, None, grad_basepoint, None, grad_initial
+        result = [None, None, None, grad_basepoint, None, grad_initial]
+        start = 0
+        end = 0
+        for elem in ctx.path_pieces:
+            end += elem.size(-2)  # stream dimension
+            result.append(grad_path[:, start:end, :])
+            start = end
+        return tuple(result)
+
+
+def _backward_shortcut(signature, path_pieces, depth, stream, basepoint, inverse, initial):
+    # .detach() so that no gradients are taken through this argument
+    return _BackwardShortcut.apply(signature.detach(), depth, stream, basepoint, inverse, initial, *path_pieces)
 
 
 class Path(object):
@@ -158,42 +183,40 @@ class Path(object):
             # Friendlier help message for a common mess-up.
             raise ValueError("start={}, end={} is interpreted as {}, {} for path of length {}, which "
                              "does not describe a valid interval. The given start and end differ by only one, but "
-                             "recall that a single point is not sufficent to define a path."
+                             "a single point is not sufficent to define a path."
                              .format(old_start, old_end, start, end, self._length))
         if end - start < 2:
             raise ValueError("start={}, end={} is interpreted as {}, {} for path of length {}, which "
                              "does not describe a valid interval.".format(old_start, old_end, start, end, self._length))
 
-        sig_start = start - 1
-        sig_end = end - 2
-
         # Find the signature on [:end]
-        index_sig_end = bisect.bisect_right(self._signature_lengths, sig_end)
-        adjusted_sig_end = sig_end - self._signature_lengths[index_sig_end]
-        sig_at_end = self._signature[index_sig_end][:, adjusted_sig_end, :]
+        sig_end = end - 2
+        index_sig_end, sig_end = self._locate(self._signature_lengths, sig_end)
+        sig_at_end = self._signature[index_sig_end][:, sig_end, :]
 
         # If start takes its minimum value then that's all we need to return
-        if sig_start == -1:
+        if start == 0:
             return sig_at_end
 
         # Find the inverse signature on [:start]
-        index_sig_start = bisect.bisect_right(self._signature_lengths, sig_start)
-        adjusted_sig_start = sig_start - self._signature_lengths[index_sig_start]
-        inverse_sig_at_start = self._inverse_signature[index_sig_start][:, adjusted_sig_start, :]
+        sig_start = start - 1
+        index_sig_start, sig_start = self._locate(self._signature_lengths, sig_start)
+        inverse_sig_at_start = self._inverse_signature[index_sig_start][:, sig_start, :]
 
         # Find the signature on [start:end]
         signature = smodule.signature_combine(inverse_sig_at_start, sig_at_end, self._channels, self.depth)
 
         # Find path[start:end]
         path_pieces = []
-        index_end = bisect.bisect_right(self._lengths, end)
-        adjusted_end = end - self._lengths[index_end]
-        index_start = bisect.bisect_right(self._lengths, start)
-        adjusted_start = start - self._lengths[index_start]
-        path_pieces.append(self.path[index_start][:, adjusted_start:, :])
+        index_end, end = self._locate(self._lengths, end)
+        index_start, start = self._locate(self._lengths, start)
+        path_pieces.append(self.path[index_start][:, start:, :])
         for path_piece in self.path[index_start + 1:index_end]:
             path_pieces.append(path_piece)
-        path_pieces.append(self.path[index_end][:, :adjusted_end, :])
+        if end != 0:
+            # self.path[index_end] is off-the-end if end == 0
+            # and the path we'd append here is of zero length
+            path_pieces.append(self.path[index_end][:, :end, :])
 
         # We know that we're only returning the signature on [start:end], and that there is no dependence on the region
         # [0:start]. But if we were to compute the backwards operation naively then this information wouldn't be used.
@@ -205,7 +228,14 @@ class Path(object):
         #
         # This obviously isn't desirable if start takes a large value - lots of unnecessary work - so here we insert a
         # custom backwards that shortcuts that whole procedure.
-        return _BackwardShortcut.apply(signature, path_pieces, self._depth, False, False, False, False)
+        return _backward_shortcut(signature, path_pieces, self._depth, False, False, False, False)
+
+    @staticmethod
+    def _locate(lengths, index):
+        lengths_index = bisect.bisect_right(lengths, index)
+        if lengths_index > 0:
+            index -= lengths[lengths_index - 1]
+        return lengths_index, index
 
     def update(self, path):
         # type: (torch.Tensor) -> None

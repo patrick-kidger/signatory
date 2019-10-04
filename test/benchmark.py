@@ -495,6 +495,10 @@ class BenchmarkRunner(object):
     """Runs all functions across all libraries and records their times or memory usage for multiple sizes and depths."""
 
     def __init__(self, sizes, depths, ratio, test_esig, test_signatory_gpu, measure, fns):
+        if measure == 'memory' and test_signatory_gpu:
+            raise RuntimeError('Memory comparisons for Signatory GPU are not meaningful, as everything else operates '
+                               'on the CPU.')
+
         self.sizes = sizes
         self.depths = depths
         self.repeat = 50
@@ -618,13 +622,16 @@ class BenchmarkRunner(object):
         new_kwargs.update(kwargs)
         return cls(**new_kwargs)
 
-    def graph(self, log=True):
+    def graph(self, log=True, save=False):
         """Plots the result as a graph."""
 
         self.check_graph()
 
         fig = plt.figure()
         ax = fig.gca()
+        #ax = fig.add_axes([0.1, 0.1, 0.6, 0.75])
+        #ax = fig.add_subplot(121)
+        #ax = plt.subplot(121)
 
         _, example_row_value = next(iter(self.results))
         x_axes = [[] for _ in range(len(example_row_value))]
@@ -643,8 +650,9 @@ class BenchmarkRunner(object):
 
         for x_axis, y_axis, label in zip(x_axes, y_axes, labels):
             ax.plot(x_axis, y_axis, label=label)
-        ax.legend(loc='upper left')
-        ax.set_title(list(self.fns.keys())[0])
+        ax.legend(mode='expand', ncol=len(example_row_value), bbox_to_anchor=(0, 1.1, 1, 0), borderaxespad=0.)
+        title_string = list(self.fns.keys())[0] + ': ' + self.measure
+        ax.set_title(title_string, y=1.1)
         ax.set_ylabel("Time in seconds")
         if len(self.sizes) > 1:
             ax.set_xlabel("Number of channels")
@@ -656,7 +664,11 @@ class BenchmarkRunner(object):
             raise RuntimeError
         start, end = ax.get_xlim()
         ax.xaxis.set_ticks(range(int(math.ceil(start)), int(math.floor(end)) + 1))
-        plt.show()
+        plt.tight_layout()
+        if save:
+            plt.savefig(title_string.lower().replace(' ', '_').replace(':', ''))
+        else:
+            plt.show()
 
     def table(self):
         """Formats the results into a table."""

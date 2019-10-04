@@ -212,6 +212,7 @@ namespace signatory {
                                               signature_by_term_at_stream,
                                               sigspec);
         }
+
         py::object backwards_info_capsule = misc::wrap_capsule<misc::BackwardsInfo>(std::move(sigspec),
                                                                                     signature_by_term,
                                                                                     signature,
