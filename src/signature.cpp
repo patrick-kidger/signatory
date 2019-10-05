@@ -16,6 +16,7 @@
 
 #include <torch/extension.h>
 #include <cstdint>    // int64_t
+#include <omp.h>
 #include <tuple>      // std::tie, std::tuple
 #include <vector>     // std::vector
 
@@ -183,34 +184,71 @@ namespace signatory {
         // compute the first term
         if (initial) {
             first_term.copy_(initial_value);
-            ta_ops::mult_fused_restricted_exp(path_increments.narrow(/*dim=*/stream_dim,
-                                                                     /*start=*/0,
-                                                                     /*len=*/1).squeeze(stream_dim),
+            ta_ops::mult_fused_restricted_exp(path_increments[0],
                                               signature_by_term_at_stream,
                                               sigspec);
         }
         else {
-            ta_ops::restricted_exp(path_increments.narrow(/*dim=*/stream_dim,
-                                                          /*start=*/0,
-                                                          /*len=*/1).squeeze(stream_dim),
+            ta_ops::restricted_exp(path_increments[0],
                                    signature_by_term_at_stream,
                                    sigspec);
         }
 
-        for (int64_t stream_index = 1; stream_index < sigspec.output_stream_size; ++stream_index) {
-            if (stream) {
-                signature.narrow(/*dim=*/stream_dim,
-                                 /*start=*/stream_index,
-                                 /*len=*/1).copy_(signature.narrow(/*dim=*/stream_dim,
-                                                                   /*start=*/stream_index - 1,
-                                                                   /*len=*/1));
+        if (stream) {
+            for (int64_t stream_index = 1; stream_index < sigspec.output_stream_size; ++stream_index) {
+                signature[stream_index].copy_(signature[stream_index - 1]);
                 misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index);
+                ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
+                                                  signature_by_term_at_stream,
+                                                  sigspec);
             }
-            ta_ops::mult_fused_restricted_exp(path_increments.narrow(/*dim=*/stream_dim,
-                                                                     /*start=*/stream_index,
-                                                                     /*len=*/1).squeeze(stream_dim),
-                                              signature_by_term_at_stream,
-                                              sigspec);
+        }
+        else {
+            #ifdef _OPENMP
+
+            int64_t nthreads = omp_get_max_threads();
+            std::vector<std::vector<torch::Tensor>> omp_results(nthreads);
+            // There's no guarantee that we actually get the maximum number of threads, so we have to check which ones
+            // actually get used.
+            // This also serves as check that start < end, in the block below
+            std::vector<bool> omp_used(nthreads, false);
+
+            #pragma omp parallel default(none) shared(omp_results, omp_used, path_increments, sigspec)
+            {
+                int64_t start = 1 + ((sigspec.output_stream_size - 1) * omp_get_thread_num()) / omp_get_num_threads();
+                int64_t end = 1 + ((sigspec.output_stream_size - 1) * (1 + omp_get_thread_num())) / omp_get_num_threads();
+                if (start < end) {
+                    std::vector<torch::Tensor> omp_signature_by_term_at_stream;
+                    torch::Tensor omp_signature = torch::empty({sigspec.batch_size, sigspec.output_channels}, sigspec.opts);
+                    misc::slice_by_term(omp_signature, omp_signature_by_term_at_stream, sigspec);
+                    ta_ops::restricted_exp(path_increments[start], omp_signature_by_term_at_stream, sigspec);
+                    for (int64_t stream_index = start + 1; stream_index < end; ++stream_index) {
+                        ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
+                                                          omp_signature_by_term_at_stream,
+                                                          sigspec);
+                    }
+                    omp_results[omp_get_thread_num()] = omp_signature_by_term_at_stream;
+                    omp_used[omp_get_thread_num()] = true;
+                }
+            }
+
+            for (int64_t thread_index = 0; thread_index < nthreads; ++thread_index) {
+                if (omp_used[thread_index]) {
+                    ta_ops::mult(signature_by_term_at_stream, omp_results[thread_index], sigspec);
+                }
+                // there is no else{break;} block because it need not be true that the used threads are contiguously
+                // indexed, because of the start < end condition above.
+            }
+
+            #else
+
+            for (int64_t stream_index = 1; stream_index < sigspec.output_stream_size; ++stream_index) {
+                ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
+                                                  signature_by_term_at_stream,
+                                                  sigspec);
+            }
+
+            #endif
         }
 
         py::object backwards_info_capsule = misc::wrap_capsule<misc::BackwardsInfo>(std::move(sigspec),

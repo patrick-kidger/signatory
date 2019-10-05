@@ -56,10 +56,16 @@ namespace signatory {
         // 'next' should be as passed to mult_fused_restricted_exp
         // 'prev' should as passed to mult_fused_restricted_exp
         void mult_fused_restricted_exp_backward(torch::Tensor grad_next,
-                                                std::vector<torch::Tensor> grad_prev,
+                                                std::vector<torch::Tensor>& grad_prev,
                                                 torch::Tensor next,
                                                 const std::vector<torch::Tensor>& prev,
                                                 const misc::SigSpec& sigspec);
+
+        // Computes a multiplication in the tensor algebra.
+        // 'arg1' and 'arg2' are both general members of the tensor algebra.
+        // arg1 is modified to hold arg1 \otimes arg2.
+        void mult(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
+                  const misc::MinimalSpec& minimalspec);
 
         // Computes (sort of) multiplication in the tensor algebra.
         // 'arg1' is assumed to be a member of the tensor algebra, with assumed scalar value 'scalar_term_value'.

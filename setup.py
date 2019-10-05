@@ -36,7 +36,7 @@ ext_modules = [cpp.CppExtension(name='_impl',
                                          'src/misc.hpp',
                                          'src/signature.hpp',
                                          'src/tensor_algebra_ops.hpp'],
-                                extra_compile_args=['-fvisibility=hidden'])]
+                                extra_compile_args=['-fvisibility=hidden', '-fopenmp'])]
 # fvisibility flag because of https://pybind11.readthedocs.io/en/stable/faq.html#someclass-declared-with-greater-visibility-than-the-type-of-its-field-someclass-member-wattributes
 
 

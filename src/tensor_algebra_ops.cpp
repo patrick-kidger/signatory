@@ -28,7 +28,7 @@ namespace signatory {
     namespace ta_ops {
         namespace detail {
             // This is the loop that's used inside some of the forward operations in the tensor algebra
-            void multdiv_inner(torch::Tensor tensor_at_depth,
+            void mult_inner(torch::Tensor tensor_at_depth,
                                const std::vector<torch::Tensor>& arg1,
                                const std::vector<torch::Tensor>& arg2,
                                s_size_type depth_index) {
@@ -43,7 +43,7 @@ namespace signatory {
             }
 
             // This is the loop that's used inside some of the backward operations in the tensor algebra
-            void multdiv_inner_backward(torch::Tensor grad_tensor_at_depth,
+            void mult_inner_backward(torch::Tensor grad_tensor_at_depth,
                                         std::vector<torch::Tensor>& grad_arg1,
                                         std::vector<torch::Tensor>& grad_arg2,
                                         const std::vector<torch::Tensor> arg1,
@@ -169,7 +169,7 @@ namespace signatory {
         }
 
         void mult_fused_restricted_exp_backward(torch::Tensor grad_next,
-                                                std::vector<torch::Tensor> grad_prev,
+                                                std::vector<torch::Tensor>& grad_prev,
                                                 torch::Tensor next,
                                                 const std::vector<torch::Tensor>& prev,
                                                 const misc::SigSpec& sigspec) {
@@ -315,6 +315,15 @@ namespace signatory {
             }
         }
 
+        void mult(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
+                  const misc::MinimalSpec& minimalspec) {
+            for (s_size_type depth_index = minimalspec.depth - 1; depth_index >= 0; --depth_index) {
+                torch::Tensor tensor_at_depth = arg1[depth_index];
+                detail::mult_inner(tensor_at_depth, arg1, arg2, depth_index);
+                tensor_at_depth += arg2[depth_index];
+            }
+        }
+
         void mult_partial(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
                           torch::Scalar scalar_term_value, s_size_type top_terms_to_skip, const misc::SigSpec& sigspec)
         {
@@ -324,7 +333,7 @@ namespace signatory {
                 // corresponding to the zero scalar assumed to be associated with arg2
                 tensor_at_depth.zero_();
 
-                detail::multdiv_inner(tensor_at_depth, arg1, arg2, depth_index);
+                detail::mult_inner(tensor_at_depth, arg1, arg2, depth_index);
 
                 tensor_at_depth.add_(arg2[depth_index], scalar_term_value);
             }
@@ -342,7 +351,7 @@ namespace signatory {
 
                 grad_arg2[depth_index].add_(grad_tensor_at_depth, scalar_value_term);
 
-                detail::multdiv_inner_backward(grad_tensor_at_depth, grad_arg1, grad_arg2, arg1, arg2, depth_index);
+                detail::mult_inner_backward(grad_tensor_at_depth, grad_arg1, grad_arg2, arg1, arg2, depth_index);
 
                 grad_tensor_at_depth.zero_();
             }
@@ -440,11 +449,7 @@ namespace signatory {
         misc::slice_by_term(ret, arg1, minimalspec);
         misc::slice_by_term(arg2_inp.detach(), arg2, minimalspec);
 
-        for (s_size_type depth_index = depth - 1; depth_index >= 0; --depth_index) {
-            torch::Tensor tensor_at_depth = arg1[depth_index];
-            ta_ops::detail::multdiv_inner(tensor_at_depth, arg1, arg2, depth_index);
-            tensor_at_depth += arg2[depth_index];
-        }
+        ta_ops::mult(arg1, arg2, minimalspec);
 
         return ret;
     }
@@ -471,7 +476,7 @@ namespace signatory {
         for (s_size_type depth_index = 0; depth_index < depth; ++depth_index) {
             torch::Tensor grad_tensor_at_depth = grad_arg1[depth_index];
             grad_arg2[depth_index] += grad_tensor_at_depth;
-            ta_ops::detail::multdiv_inner_backward(grad_tensor_at_depth, grad_arg1, grad_arg2, arg1, arg2, depth_index);
+            ta_ops::detail::mult_inner_backward(grad_tensor_at_depth, grad_arg1, grad_arg2, arg1, arg2, depth_index);
         }
         return std::pair<torch::Tensor, torch::Tensor> {grad_arg1_inp, grad_arg2_inp};
     }
