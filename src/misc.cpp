@@ -63,17 +63,10 @@ namespace signatory {
             depth{depth}
         {};
 
-        SigSpec::SigSpec(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, bool inverse) :
-            MinimalSpec(path.size(channel_dim), depth),
-            opts{torch::TensorOptions().dtype(path.dtype()).device(path.device())},
-            input_stream_size{path.size(stream_dim)},
-            batch_size{path.size(batch_dim)},
-            output_stream_size{path.size(stream_dim) - (basepoint ? 0 : 1)},
-            output_channels{signature_channels(path.size(channel_dim), depth)},
-            reciprocals{torch::ones({depth - 1}, opts)},
-            stream{stream},
-            basepoint{basepoint},
-            inverse{inverse}
+        LogSpec::LogSpec(torch::Tensor tensor, int64_t input_channels, s_size_type depth) :
+            MinimalSpec(input_channels, depth),
+            opts{torch::TensorOptions().dtype(tensor.dtype()).device(tensor.device())},
+            reciprocals{torch::ones({depth - 1}, opts)}
         {
             if (depth > 1) {
                                                   // Cast to torch::Scalar is ambiguous
@@ -81,6 +74,18 @@ namespace signatory {
                                                depth - 1, opts);
             }  // and reciprocals will be empty - of size 0 - if depth == 1.
         };
+
+        SigSpec::SigSpec(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, bool inverse) :
+            LogSpec(path, path.size(channel_dim), depth),
+            input_stream_size{path.size(stream_dim)},
+            batch_size{path.size(batch_dim)},
+            output_stream_size{path.size(stream_dim) - (basepoint ? 0 : 1)},
+            output_channels{signature_channels(path.size(channel_dim), depth)},
+            stream{stream},
+            basepoint{basepoint},
+            inverse{inverse},
+            is_cuda{path.is_cuda()}
+        {};
 
         BackwardsInfo::BackwardsInfo(SigSpec&& sigspec_, const std::vector<torch::Tensor>& signature_by_term_,
                                      torch::Tensor signature_, torch::Tensor path_increments_, bool initial_) :

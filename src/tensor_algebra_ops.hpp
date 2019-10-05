@@ -74,7 +74,8 @@ namespace signatory {
         // terms are left unchanged. Thus the result ends up being a weird hybrid of what was passed in, and the result
         // of an actual multiplication.
         void mult_partial(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
-                          torch::Scalar scalar_term_value, s_size_type top_terms_to_skip, const misc::SigSpec& sigspec);
+                          torch::Scalar scalar_term_value, s_size_type top_terms_to_skip,
+                          const misc::MinimalSpec& minimalspec)
 
         // Backwards through mult_partial.
         // 'arg1', 'arg2', 'scalar_value_term', 'top_terms_to_skip' should be as in the forward call to mult_partial.
@@ -86,7 +87,7 @@ namespace signatory {
                                    const std::vector<torch::Tensor>& arg2,
                                    torch::Scalar scalar_value_term,
                                    s_size_type top_terms_to_skip,
-                                   const misc::SigSpec& sigspec);
+                                   const misc::MinimalSpec& minimalspec);
 
         // Computes the logarithm in the tensor algebra
         // 'output_vector' and 'input_vector' are both members of the tensor algebra, with assumed scalar values 1.

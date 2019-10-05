@@ -64,10 +64,11 @@ class _BackwardShortcut(autograd.Function):
             path = torch.cat(ctx.path_pieces, dim=-2)  # along stream dim
         else:
             path = ctx.path_pieces[0]
+
         ctx.basepoint_as_passed = ctx.basepoint
-        path, basepoint, basepoint_value, initial, initial_value = smodule.interpret_forward_arguments(path,
-                                                                                                       ctx.basepoint,
-                                                                                                       ctx.initial)
+        basepoint, basepoint_value = backend.interpret_basepoint(ctx.basepoint, path)
+        path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
+        initial, initial_value = backend.interpret_initial(ctx.initial)
 
         grad_path, grad_basepoint, grad_initial = _impl.signature_backward_custom(grad_result,
                                                                                   ctx.signature,
@@ -94,7 +95,13 @@ class _BackwardShortcut(autograd.Function):
 
 def _backward_shortcut(signature, path_pieces, depth, stream, basepoint, inverse, initial):
     # .detach() so that no gradients are taken through this argument
-    return _BackwardShortcut.apply(signature.detach(), depth, stream, basepoint, inverse, initial, *path_pieces)
+    result = _BackwardShortcut.apply(signature.detach(), depth, stream, basepoint, inverse, initial, *path_pieces)
+
+    # We have to do the transpose outside of autograd.Function.apply to avoid PyTorch bug 24413
+    if stream:
+        result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere and we
+                                         # don't want to change it.
+    return result
 
 
 class Path(object):

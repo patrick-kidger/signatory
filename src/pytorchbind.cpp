@@ -17,21 +17,33 @@
 
 #include <torch/extension.h>  // to get the pybind11 stuff
 
-#include "logsignature.hpp"  // signatory::logsignature_forward, signatory::logsignature_backward,
+#include "logsignature.hpp"  // signatory::signature_to_logsignature_forward,
+                             // signatory::signature_to_logsignature_backward,
                              // signatory::make_lyndon_info
-#include "misc.hpp"          // signatory::LogSignatureMode, signatory::signature_channels
-#include "signature.hpp"     // signatory::signature_forward, signatory::signature_backward,
-#include "lyndon.hpp"        // signatory::lyndon_words, signatory::lyndon_brackets,
+
+#include "misc.hpp"          // signatory::built_with_open_mp,
+                             // signatory::LogSignatureMode,
+                             // signatory::signature_channels
+
+#include "signature.hpp"     // signatory::signature_forward,
+                             // signatory::signature_backward,
+
+#include "lyndon.hpp"        // signatory::lyndon_words,
+                             // signatory::lyndon_brackets,
                              // signatory::lyndon_words_to_basis_transform
-#include "tensor_algebra_ops.hpp"  // signatory::tensor_algebra_mult_forward, signatory::tensor_algebra_mult_backward
+
+#include "tensor_algebra_ops.hpp"  // signatory::tensor_algebra_mult_forward,
+                                   // signatory::tensor_algebra_mult_backward
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.def("logsignature_forward",
-          &signatory::logsignature_forward);
-    m.def("logsignature_backward",
-          &signatory::logsignature_backward);
+    m.def("signature_to_logsignature_forward",
+          &signatory::signature_to_logsignature_forward);
+    m.def("signature_to_logsignature_backward",
+          &signatory::signature_to_logsignature_backward);
     m.def("make_lyndon_info",
         &signatory::make_lyndon_info);
+    m.def("built_with_open_mp",
+          &signatory::built_with_open_mp);
     py::enum_<signatory::LogSignatureMode>(m, "LogSignatureMode")
             .value("Expand", signatory::LogSignatureMode::Expand)
             .value("Brackets", signatory::LogSignatureMode::Brackets)

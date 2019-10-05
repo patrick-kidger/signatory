@@ -2,7 +2,7 @@
 -----
 Improved speed and stability of the backwards operation through Path.
 Added (fixed) memory profiling
-Dramatically improved the speed of the forward calculation of signature and logsignature via more parallelisation
+Dramatically improved the speed of several calculations, in particular the the forward calculation of signatures and logsignatures, via parallelisation
 
 1.1.3
 -----

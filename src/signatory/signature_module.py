@@ -29,18 +29,6 @@ if False:
     from typing import Any, Union
 
 
-def interpret_forward_arguments(path, basepoint, initial):
-    basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
-    path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
-    if isinstance(initial, torch.Tensor):
-        initial_value = initial
-        initial = True
-    else:
-        initial_value = torch.Tensor()
-        initial = False
-    return path, basepoint, basepoint_value, initial, initial_value
-
-
 def interpret_backward_grad(ctx, grad_path, grad_basepoint, grad_initial):
     grad_path = grad_path.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
     if not isinstance(ctx.basepoint_as_passed, torch.Tensor):
@@ -52,13 +40,15 @@ def interpret_backward_grad(ctx, grad_path, grad_basepoint, grad_initial):
 
 class _SignatureFunction(autograd.Function):
     @staticmethod
-    def forward(ctx, path, depth, stream, basepoint, inverse, initial):
+    def forward(ctx, path, depth, stream, basepoint, inverse, initial, already_parallel):
         ctx.basepoint_as_passed = basepoint
-        path, basepoint, basepoint_value, initial, initial_value = interpret_forward_arguments(path, basepoint, initial)
+        basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
+        path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
+        initial, initial_value = backend.interpret_initial(initial)
         ctx.initial = initial
 
         result, backwards_info = _impl.signature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
-                                                         initial, initial_value)
+                                                         initial, initial_value, already_parallel)
         ctx.backwards_info = backwards_info
         ctx.save_for_backward(result)
 
@@ -164,14 +154,103 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
         :func:`signatory.signature_channels`.
 
     """
-    # noinspection PyUnresolvedReferences
-    result = _SignatureFunction.apply(path, depth, stream, basepoint, inverse, initial)
 
-    # We have to do the transpose outside of autograd.Function.apply to avoid a PyTorch bug.
-    # https://github.com/pytorch/pytorch/issues/24413
+    # This forms part of a somewhat involved set of optimisations via parallelisation.
+    #
+    # Parallelisation is accomplished via OpenMP in the C++ code in the special case of:
+    #     stream==False,
+    #     the path is on the CPU,
+    #     gradient isn't required,
+    #     and Signatory was compiled with OpenMP.
+    # Rationale: stream==False is an inherently serial problem, so we can't parallelise at all then.
+    #            If the problem is on the GPU then OpenMP slows things down. I don't know why.
+    #            If a gradient is required then whilst OpenMP would be quicker on the forward pass, it would be slower
+    #               on the backward pass than our second parallelisation approach, below. (And a hybrid approach is not
+    #               possible as the OpenMP approach doesn't generate certain information needed for the more-efficient
+    #               backward pass.)
+    #
+    # Here we try parallelisation with another trick: we split apart the stream dimension into chunks and push them into
+    # the batch dimension. Then afterwards we pull it out and perform the remaining few multiplications. This requires:
+    #     stream==False
+    #     That the batch size is currently small enough that this will speed things up, not slow things down
+    #     That the stream size is currently large enough, for the same reason.
+    #
+    # As a final remark, this is all done in the Python rather than the C++ so that the backward pass is hooked up.
+
+    # Test if our problem uses gradients anywhere
+    grad = False
+    grad = grad and path.requires_grad
+    if isinstance(basepoint, torch.Tensor):
+        grad = grad and basepoint.requires_grad
+    if isinstance(initial, torch.Tensor):
+        grad = grad and initial.requires_grad
+
+    open_mp_parallel = _impl.built_with_open_mp() and not grad and not path.is_cuda
+
+    # If the batch dimension is >=32 then we're probably already getting maximum parallelisation, and this trick will
+    # instead slow things down. This figure is chosen empirically, but is essentially arbitrary.
+    # TODO: choose it dynamically based on available hardware.
+    threshold = 32
+
+    batch_size, stream_size, channel_size = path.shape
+    if (not open_mp_parallel                 # If parallelisation not already provided by OpenMP
+        and batch_size < threshold           # And we have available parallelisation capacity
+        and stream_size > 2 * threshold      # And the problem is large enough that this will improve speed
+                                             #     (Note also that we must have at least stream_size > threshold for the
+                                             #     code below not to throw an error!)
+        and not stream):                     # And the problem isn't inherently serial
+
+        mult = int(round(float(threshold) / batch_size))  # Number of chunks to split the stream in to
+        remainder = stream_size % mult                    # How much of the stream is left over at the end
+        reduced_bulk_length = int(stream_size / mult)     # How large each chunk of the stream is
+        bulk_length = stream_size - remainder             # How large all the chunk of the stream are, except remainder
+
+        path_bulk = path[:, 0:bulk_length]
+        path_remainder = path[:, bulk_length:]
+
+        # Need to set basepoints to the end of each previous chunk
+        path_bulk = path_bulk.view(batch_size, mult, reduced_bulk_length, channel_size)
+        ends = path_bulk[:, -1].roll(shifts=1, dims=-2)
+        if remainder != 0:
+            basepoint_remainder = ends[:, 0].clone()
+        if isinstance(basepoint, torch.Tensor):
+            # noinspection PyUnresolvedReferences
+            ends[:, 0].copy_(basepoint)
+        elif basepoint is True:
+            ends[:, 0].zero_()
+        else:
+            # noinspection PyUnresolvedReferences
+            ends[:, 0].copy_(path_bulk[:, 0, 0])
+        path_bulk = path_bulk.view(batch_size * mult, reduced_bulk_length, channel_size)
+        basepoint = ends.view(batch_size * mult, channel_size)
+
+        # noinspection PyUnresolvedReferences
+        result_bulk = _SignatureFunction.apply(path_bulk, depth, stream, basepoint, inverse, False)
+        result_bulk = result_bulk.view(batch_size, mult, result_bulk.size(-1))
+        if isinstance(initial, torch.Tensor):
+            result = initial
+            chunks = [result_bulk[:, i:i + 1] for i in range(0, mult)]
+        else:
+            result = result_bulk[:, 0:1]
+            chunks = [result_bulk[:, i:i + 1] for i in range(1, mult)]
+
+        if remainder != 0:
+            # noinspection PyUnresolvedReferences
+            result_remainder = _SignatureFunction.apply(path_remainder, depth, stream, basepoint_remainder, inverse,
+                                                        False, False)
+            chunks.append(result_remainder)
+
+        for chunk in chunks:
+            result = signature_combine(result, chunk, channel_size, depth, inverse)
+
+    else:
+        # noinspection PyUnresolvedReferences
+        result = _SignatureFunction.apply(path, depth, stream, basepoint, inverse, initial, open_mp_parallel)
+
+    # We have to do the transpose outside of autograd.Function.apply to avoid PyTorch bug 24413
     if stream:
-        result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere and we
-                                         # don't want to change it.
+        # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere and we don't want to change it.
+        result = result.transpose(0, 1)
     return result
 
 

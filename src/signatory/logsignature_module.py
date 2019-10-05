@@ -51,11 +51,11 @@ class _LogSignatureFunction(autograd.Function):
         # LogSignature).
 
         mode = _mode_convert(mode)
-        ctx.basepoint = basepoint
+        ctx.basepoint_as_passed = basepoint
 
         basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
-
         path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
+
         result, backwards_info = _impl.logsignature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
                                                             mode, lyndon_info)
         if ctx.requires_grad:
@@ -79,7 +79,7 @@ class _LogSignatureFunction(autograd.Function):
 
         grad_path, grad_basepoint = _impl.logsignature_backward(grad_result, ctx.backwards_info)
         grad_path = grad_path.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
-        if not isinstance(ctx.basepoint, torch.Tensor):
+        if not isinstance(ctx.basepoint_as_passed, torch.Tensor):
             grad_basepoint = None
 
         return grad_path, None, None, grad_basepoint, None, None, None
@@ -146,8 +146,7 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
     # noinspection PyUnresolvedReferences
     result = _LogSignatureFunction.apply(path, depth, stream, basepoint, inverse, mode, None)
 
-    # We have to do the transpose outside of autograd.Function.apply to avoid a PyTorch bug.
-    # https://github.com/pytorch/pytorch/issues/24413
+    # We have to do the transpose outside of autograd.Function.apply to avoid PyTorch bug 24413
     if stream:
         result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere and we
                                          # don't want to change it.
@@ -232,8 +231,7 @@ class LogSignature(nn.Module):
         result = _LogSignatureFunction.apply(path, self.depth, self.stream, basepoint, self.inverse, self.mode,
                                              lyndon_info)
 
-        # We have to do the transpose outside of autograd.Function.apply to avoid a PyTorch bug.
-        # https://github.com/pytorch/pytorch/issues/24413
+        # We have to do the transpose outside of autograd.Function.apply to avoid PyTorch bug 24413
         if self.stream:
             result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere
                                              # and we don't want to change it.

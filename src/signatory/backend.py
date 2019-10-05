@@ -32,6 +32,16 @@ def interpret_basepoint(basepoint, path):
     return basepoint, basepoint_value
 
 
+def interpret_initial(initial):
+    if isinstance(initial, torch.Tensor):
+        initial_value = initial
+        initial = True
+    else:
+        initial_value = torch.Tensor()
+        initial = False
+    return initial, initial_value
+
+
 class TensorAlgebraMult(autograd.Function):
     @staticmethod
     def forward(ctx, arg1, arg2, input_channels, depth):

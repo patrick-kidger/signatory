@@ -325,9 +325,10 @@ namespace signatory {
         }
 
         void mult_partial(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
-                          torch::Scalar scalar_term_value, s_size_type top_terms_to_skip, const misc::SigSpec& sigspec)
+                          torch::Scalar scalar_term_value, s_size_type top_terms_to_skip,
+                          const misc::MinimalSpec& minimalspec)
         {
-            for (s_size_type depth_index = sigspec.depth - top_terms_to_skip - 1; depth_index >= 0; --depth_index) {
+            for (s_size_type depth_index = minimalspec.depth - top_terms_to_skip - 1; depth_index >= 0; --depth_index) {
                 torch::Tensor tensor_at_depth = arg1[depth_index];
 
                 // corresponding to the zero scalar assumed to be associated with arg2
@@ -345,8 +346,8 @@ namespace signatory {
                                    const std::vector<torch::Tensor>& arg2,
                                    torch::Scalar scalar_value_term,
                                    s_size_type top_terms_to_skip,
-                                   const misc::SigSpec& sigspec) {
-            for (s_size_type depth_index = 0; depth_index < sigspec.depth - top_terms_to_skip; ++depth_index) {
+                                   const misc::MinimalSpec& minimalspec) {
+            for (s_size_type depth_index = 0; depth_index < minimalspec.depth - top_terms_to_skip; ++depth_index) {
                 torch::Tensor grad_tensor_at_depth = grad_arg1[depth_index];
 
                 grad_arg2[depth_index].add_(grad_tensor_at_depth, scalar_value_term);

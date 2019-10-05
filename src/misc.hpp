@@ -30,6 +30,16 @@ namespace signatory {
     // See signatory.logsignature for further documentation
     enum class LogSignatureMode { Expand, Brackets, Words };
 
+    #ifdef _OPENMP
+        constexpr bool open_mp = true;
+    #else
+        constexpr bool open_mp = false;
+    #endif
+
+    bool built_with_open_mp() {
+        return open_mp;
+    }
+
     // signed-ness is important because we'll sometimes iterate downwards
     // it is very deliberately not called 'size_type' because otherwise when using it in e.g. the constructor for
     // something inheriting from std::vector, then 'size_type' will there refer to std::vector::size_type instead.
@@ -58,21 +68,26 @@ namespace signatory {
             s_size_type depth;
         };
 
+        // Encapsulates the things necessary for logsignature computations
+        struct LogSpec : MinimalSpec {
+            LogSpec(torch::Tensor tensor, int64_t input_channels, s_size_type depth);
+            torch::TensorOptions opts;
+            torch::Tensor reciprocals;
+        };
+
         // Encapsulates all the things that aren't tensors for signature and logsignature computations. This will get
         // passed around through most such functions.
-        struct SigSpec : MinimalSpec {
+        struct SigSpec : LogSpec {
             SigSpec(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, bool inverse);
 
-            torch::TensorOptions opts;
             int64_t input_stream_size;
             int64_t batch_size;
             int64_t output_stream_size;
             int64_t output_channels;
-            int64_t n_output_dims;
-            torch::Tensor reciprocals;
             bool stream;
             bool basepoint;
             bool inverse;
+            bool is_cuda;
         };
 
         // Argument 'in' is assumed to be a tensor with channel dimension of size minimalspec.input_channels.

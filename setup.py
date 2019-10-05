@@ -15,7 +15,9 @@
 """setup.py - hopefully you know what this does without me telling you..."""
 
 
+import os
 import setuptools
+import sys
 try:
     import torch.utils.cpp_extension as cpp
 except ImportError:
@@ -23,6 +25,18 @@ except ImportError:
     
 import metadata
 
+extra_compile_args = []
+
+# fvisibility flag because of https://pybind11.readthedocs.io/en/stable/faq.html#someclass-declared-with-greater-visibility-than-the-type-of-its-field-someclass-member-wattributes
+if 'win' not in sys.platform:
+    extra_compile_args.append('-fvisibility=hidden')
+
+# Set SIGNATORY_OMP=0 when compiling to disable using OpenMP
+if int(os.environ.get('SIGNATORY_OMP', 1)):
+    if 'win' in sys.platform:
+        extra_compile_args.append('/OPENMP')
+    else:
+        extra_compile_args.append('-fopenmp')
 
 ext_modules = [cpp.CppExtension(name='_impl',
                                 sources=['src/logsignature.cpp',
@@ -36,8 +50,7 @@ ext_modules = [cpp.CppExtension(name='_impl',
                                          'src/misc.hpp',
                                          'src/signature.hpp',
                                          'src/tensor_algebra_ops.hpp'],
-                                extra_compile_args=['-fvisibility=hidden', '-fopenmp'])]
-# fvisibility flag because of https://pybind11.readthedocs.io/en/stable/faq.html#someclass-declared-with-greater-visibility-than-the-type-of-its-field-someclass-member-wattributes
+                                extra_compile_args=extra_compile_args)]
 
 
 setuptools.setup(name=metadata.project,
