@@ -26,6 +26,7 @@ For quick reference these are a list of all provided functions, grouped by which
     signatory.logsignature
     signatory.LogSignature
     signatory.logsignature_channels
+    signatory.signature_to_logsignature
 
 :ref:`reference-path`
 

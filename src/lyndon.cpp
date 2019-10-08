@@ -55,43 +55,47 @@ namespace signatory {
             constexpr CompareWords compare_words {};
         }  // namespace signatory::lyndon::detail
 
-        LyndonWords::LyndonWords(const misc::MinimalSpec& lyndonspec, WordTag) : lyndonspec{lyndonspec} {
-            this->reserve(lyndonspec.depth);
-            for (s_size_type depth_index = 0; depth_index < lyndonspec.depth; ++depth_index) {
+        LyndonWords::LyndonWords(int64_t input_channel_size, s_size_type depth, WordTag) :
+            input_channel_size{input_channel_size}, depth{depth}
+        {
+            this->reserve(depth);
+            for (s_size_type depth_index = 0; depth_index < depth; ++depth_index) {
                 this->emplace_back();
             }
 
             std::vector<int64_t> word;
-            word.reserve(lyndonspec.depth);
+            word.reserve(depth);
             word.push_back(-1);
 
             while (word.size()) {
                 ++word.back();
-                (*this)[word.size() - 1].emplace_back(word, false, lyndonspec);
+                (*this)[word.size() - 1].emplace_back(word, false, input_channel_size);
                 int64_t pos = 0;
-                while (word.size() < static_cast<u_size_type>(lyndonspec.depth)) {
+                while (word.size() < static_cast<u_size_type>(depth)) {
                     word.push_back(word[pos]);
                     ++pos;
                 }
-                while (word.size() && word.back() == lyndonspec.input_channels - 1) {
+                while (word.size() && word.back() == input_channel_size - 1) {
                     word.pop_back();
                 }
             }
             finalise();
         }
 
-        LyndonWords::LyndonWords(const misc::MinimalSpec& lyndonspec, BracketTag) : lyndonspec{lyndonspec} {
-            this->reserve(lyndonspec.depth);
-            for (s_size_type depth_index = 0; depth_index < lyndonspec.depth; ++depth_index) {
+        LyndonWords::LyndonWords(int64_t input_channel_size, s_size_type depth, BracketTag) :
+            input_channel_size{input_channel_size}, depth{depth}
+        {
+            this->reserve(depth);
+            for (s_size_type depth_index = 0; depth_index < depth; ++depth_index) {
                 this->emplace_back();
             }
 
-            (*this)[0].reserve(lyndonspec.input_channels);
-            for (int64_t channel_index = 0; channel_index < lyndonspec.input_channels; ++channel_index) {
-                (*this)[0].emplace_back(std::vector<int64_t> {channel_index}, true, lyndonspec);
+            (*this)[0].reserve(input_channel_size);
+            for (int64_t channel_index = 0; channel_index < input_channel_size; ++channel_index) {
+                (*this)[0].emplace_back(std::vector<int64_t> {channel_index}, true, input_channel_size);
             }
 
-            for (s_size_type target_depth_index = 1; target_depth_index < lyndonspec.depth; ++target_depth_index) {
+            for (s_size_type target_depth_index = 1; target_depth_index < depth; ++target_depth_index) {
                 auto& target_depth_class = (*this)[target_depth_index];
 
                 auto& depth_class1 = (*this)[0];
@@ -100,7 +104,7 @@ namespace signatory {
                     auto index_start = std::upper_bound(depth_class2.begin(), depth_class2.end(), elem,
                                                         detail::compare_words);
                     for (auto elemptr = index_start; elemptr != depth_class2.end(); ++elemptr) {
-                        target_depth_class.emplace_back(&elem, &*elemptr, lyndonspec);
+                        target_depth_class.emplace_back(&elem, &*elemptr, input_channel_size);
                     }
                 }
 
@@ -115,7 +119,7 @@ namespace signatory {
                         auto index_end = std::upper_bound(index_start, depth_class2.end(), *elem.extra->second_child,
                                                           detail::compare_words);
                         for (auto elemptr = index_start; elemptr != index_end; ++elemptr) {
-                            target_depth_class.emplace_back(&elem, &*elemptr, lyndonspec);
+                            target_depth_class.emplace_back(&elem, &*elemptr, input_channel_size);
                         }
                     }
                 }
@@ -133,15 +137,15 @@ namespace signatory {
             //                                                                lexicographically
             //          \--------------------------------------------------------/
             //                  All anagram classes of the same depth
-            lyndon_anagrams.reserve(this->lyndonspec.depth);
-            for (s_size_type depth_index = 0; depth_index < this->lyndonspec.depth; ++depth_index) {
+            lyndon_anagrams.reserve(depth);
+            for (s_size_type depth_index = 0; depth_index < depth; ++depth_index) {
                 lyndon_anagrams.emplace_back();
             }
 
             std::vector<s_size_type> anagram_class_sizes;
             anagram_class_sizes.reserve(amount);
             // First go through and figure out the anagram classes
-            for (s_size_type depth_index = 0; depth_index < this->lyndonspec.depth; ++depth_index) {
+            for (s_size_type depth_index = 0; depth_index < depth; ++depth_index) {
                 for (auto& lyndon_word : (*this)[depth_index]) {
                     auto& word = lyndon_word.extra->word;
                     auto& anagram_class = lyndon_anagrams[depth_index][std::multiset<int64_t> (word.begin(), word.end())];
@@ -221,11 +225,11 @@ namespace signatory {
                                 // record the coefficients of Lyndon words. At lower depths we need to record the
                                 // coefficients of non-Lyndon words in case some concatenation on to them becomes a Lyndon
                                 // word at higher depths.
-                                if (static_cast<s_size_type>(letters.size()) < lyndonspec.depth ||
+                                if (static_cast<s_size_type>(letters.size()) < depth ||
                                     lyndon_word->is_lyndon_anagram(first_then_second)) {
                                     bracket_expansion[first_then_second] += product;
                                 }
-                                if (static_cast<s_size_type>(letters.size()) < lyndonspec.depth ||
+                                if (static_cast<s_size_type>(letters.size()) < depth ||
                                     lyndon_word->is_lyndon_anagram(second_then_first)) {
                                     bracket_expansion[second_then_first] -= product;
                                 }
@@ -238,14 +242,14 @@ namespace signatory {
                             const std::vector<int64_t>& word = word_coeff.first;
                             int64_t coeff = word_coeff.second;
 
-                            // Filter out non-Lyndon words. (If letters.size() == lyndonspec.depth then we've essentially
+                            // Filter out non-Lyndon words. (If letters.size() == depth then we've essentially
                             // already done this above so the if statement should always be true, so we check that
                             // preferentially as it's probably faster to check. Probably - I know I know I should time it
                             // but it's not that big a deal either way...)
                             auto ptr_to_word = std::lower_bound(lyndon_word->extra->anagram_limit, end, word,
                                                                 detail::compare_words);
                             if (ptr_to_word != end) {
-                                if (static_cast<s_size_type>(letters.size()) == lyndonspec.depth ||
+                                if (static_cast<s_size_type>(letters.size()) == depth ||
                                     (*ptr_to_word)->extra->word == word) {
                                     transforms_back.emplace_back(lyndon_word->compressed_index,
                                                                  (*ptr_to_word)->compressed_index,
@@ -258,7 +262,7 @@ namespace signatory {
                         }
 
                         // At the final depth then we don't need to record what we've found
-                        if (static_cast<s_size_type>(letters.size()) < lyndonspec.depth) {
+                        if (static_cast<s_size_type>(letters.size()) < depth) {
                             lyndon_word->extra->expansion = std::move(bracket_expansion);
                         }
                     }
@@ -280,7 +284,7 @@ namespace signatory {
             // initialised) but it's a boatload more efficient to do this after all the Lyndon words are generated,
             // rather than applying this to them one-by-one.
             int64_t tensor_algebra_offset = 0;
-            int64_t num_words = lyndonspec.input_channels;
+            int64_t num_words = input_channel_size;
             s_size_type compressed_offset = 0;
             for (auto& depth_class : (*this)) {
                 for (s_size_type compressed_index = 0;
@@ -291,12 +295,12 @@ namespace signatory {
                     lyndon_word.compressed_index = compressed_offset + compressed_index;
                 }
                 tensor_algebra_offset += num_words;
-                num_words *= lyndonspec.input_channels;
+                num_words *= input_channel_size;
                 compressed_offset += depth_class.size();
             }
 
             // Figure out the total amount of Lyndon words
-            if (lyndonspec.input_channels == 1) {
+            if (input_channel_size == 1) {
                 // In this case there only exists a singe Lyndon word '0', at (*this)[0].back(). There are no
                 // higher-depth words: (*this)[1], (*this)[2], ... etc. are all size-0 vectors.
                 amount = 1;
@@ -314,15 +318,15 @@ namespace signatory {
                 second_child{second_child_}
         {};
 
-        LyndonWord::LyndonWord(const std::vector<int64_t>& word, bool extra, const misc::MinimalSpec& lyndonspec)
+        LyndonWord::LyndonWord(const std::vector<int64_t>& word, bool extra, int64_t input_channel_size)
         {
-            init(word, extra, nullptr, nullptr, lyndonspec);
+            init(word, extra, nullptr, nullptr, input_channel_size);
         };
 
-        LyndonWord::LyndonWord(LyndonWord* first_child, LyndonWord* second_child, const misc::MinimalSpec& lyndonspec)
+        LyndonWord::LyndonWord(LyndonWord* first_child, LyndonWord* second_child, int64_t input_channel_size)
         {
             std::vector<int64_t> word = detail::concat_vectors(first_child->extra->word, second_child->extra->word);
-            init(word, true, first_child, second_child, lyndonspec);
+            init(word, true, first_child, second_child, input_channel_size);
         };
 
         // Checks if the given 'word' is:
@@ -330,18 +334,16 @@ namespace signatory {
         // (b) also a Lyndon word itself
         // (c) an anagram of 'this'
         bool LyndonWord::is_lyndon_anagram (const std::vector<int64_t>& word) const {
-            return std::binary_search(this->extra->anagram_limit,  this->extra->anagram_class->end(), word,
-                                      detail::compare_words);
+            return std::binary_search(extra->anagram_limit,  extra->anagram_class->end(), word, detail::compare_words);
         }
 
         // Actually performs the initialisation
         void LyndonWord::init(const std::vector<int64_t>& word, bool extra_, LyndonWord* first_child,
-                              LyndonWord* second_child, const misc::MinimalSpec& lyndonspec) {
-
+                              LyndonWord* second_child, int64_t input_channel_size) {
             int64_t current_stride = 1;
             for (auto word_index = word.rbegin(); word_index != word.rend(); ++word_index) {
                 tensor_algebra_index += *word_index * current_stride;
-                current_stride *= lyndonspec.input_channels;
+                current_stride *= input_channel_size;
             }
             // We still need to add on to tensor_algebra_index the offset corresponding to number of all smaller
             // words.
@@ -358,7 +360,7 @@ namespace signatory {
 
     std::vector<std::vector<int64_t>> lyndon_words(int64_t channels, int64_t depth) {
         misc::checkargs_channels_depth(channels, depth);
-        lyndon::LyndonWords lyndon_words(misc::MinimalSpec {channels, depth}, lyndon::LyndonWords::bracket_tag);
+        lyndon::LyndonWords lyndon_words(channels, depth, lyndon::LyndonWords::bracket_tag);
 
         std::vector<std::vector<int64_t>> lyndon_words_as_words;
         lyndon_words_as_words.reserve(lyndon_words.amount);
@@ -374,7 +376,7 @@ namespace signatory {
 
     std::vector<py::object> lyndon_brackets(int64_t channels, int64_t depth) {
         misc::checkargs_channels_depth(channels, depth);
-        lyndon::LyndonWords lyndon_words(misc::MinimalSpec {channels, depth}, lyndon::LyndonWords::bracket_tag);
+        lyndon::LyndonWords lyndon_words(channels, depth, lyndon::LyndonWords::bracket_tag);
 
         std::vector<py::object> lyndon_words_as_brackets;
         lyndon_words_as_brackets.reserve(lyndon_words.amount);
@@ -411,7 +413,7 @@ namespace signatory {
                                                                                                     int64_t depth)
     {
         misc::checkargs_channels_depth(channels, depth);
-        lyndon::LyndonWords lyndon_words(misc::MinimalSpec {channels, depth}, lyndon::LyndonWords::bracket_tag);
+        lyndon::LyndonWords lyndon_words(channels, depth, lyndon::LyndonWords::bracket_tag);
         std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>> transforms;
         std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>> transforms_backward;
         lyndon_words.to_lyndon_basis(transforms, transforms_backward);

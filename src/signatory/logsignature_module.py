@@ -21,8 +21,8 @@ from torch import nn
 from torch import autograd
 from torch.autograd import function as autograd_function
 
-from . import backend
 from . import compatibility as compat
+from . import signature_module as smodule
 # noinspection PyUnresolvedReferences
 from . import _impl
 
@@ -42,47 +42,82 @@ def _mode_convert(mode):
         raise ValueError("Invalid values for argument 'mode'. Valid values are 'expand', 'brackets', or 'words'.")
 
 
-# noinspection PyProtectedMember
-class _LogSignatureFunction(autograd.Function):
+class _SignatureToLogsignature(autograd.Function):
     @staticmethod
-    def forward(ctx, path, depth, stream, basepoint, inverse, mode, lyndon_info):
-        # lyndon_info isn't a documented parameter because it's only used internally in the package.
-        # It must be either None (as in logsignature) or the result of a call to _impl._make_lyndon_info (as in
-        # LogSignature).
-
+    def forward(ctx, signature, channels, depth, stream, mode, lyndon_info):
         mode = _mode_convert(mode)
-        ctx.basepoint_as_passed = basepoint
+        if stream:
+            signature = signature.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
 
-        basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
-        path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
+        logsignature_, backwards_info = _impl.signature_to_logsignature_forward(signature, channels, depth, stream,
+                                                                                mode, lyndon_info)
+        ctx.backwards_info = backwards_info
+        ctx.save_for_backward(logsignature_)
 
-        result, backwards_info = _impl.logsignature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
-                                                            mode, lyndon_info)
-        if ctx.requires_grad:
-            ctx.backwards_info = backwards_info
-            ctx.save_for_backward(result)
-
-        # would like to transpose here but we can't because of PyTorch bug 24413, so instead we have to transpose at
-        # every call site instead.
-        return result
+        # would like to transpose here but we can't because of PyTorch bug 24413, so instead we have to transpose in the
+        # wrapper instead
+        return logsignature_
 
     @staticmethod
     @autograd_function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
-    def backward(ctx, grad_result):
-        # Because in the forward pass we transpose at every call site, our grad_result comes to us here
+    def backward(ctx, grad_logsignature):
+        # Because in the forward pass we transpose in the wrapper, our grad_result comes to us here
         # already-transposed. so we don't need to do it here.
 
         # Just to check that the result of the forward pass hasn't been modified in-place. (Which would make the result
-        # of the backwards calculation be incorrect!) The reason we don't actually use the tensor is because another
-        # handle to it is already saved in ctx.backwards_info, which we do use.
+        # of the backwards calculation be incorrect!)
         _ = ctx.saved_tensors
 
-        grad_path, grad_basepoint = _impl.logsignature_backward(grad_result, ctx.backwards_info)
-        grad_path = grad_path.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
-        if not isinstance(ctx.basepoint_as_passed, torch.Tensor):
-            grad_basepoint = None
+        grad_signature = _impl.signature_to_logsignature_backward(grad_logsignature, ctx.backwards_info)
 
-        return grad_path, None, None, grad_basepoint, None, None, None
+        return grad_signature, None, None, None, None, None
+
+
+def _signature_to_logsignature(signature, channels, depth, stream, mode, lyndon_info):
+    logsignature_ = _SignatureToLogsignature.apply(signature, channels, depth, stream, mode, lyndon_info)
+    if stream:
+        logsignature_ = logsignature_.transpose(0, 1)
+    return logsignature_
+
+
+def signature_to_logsignature(signature, channels, depth, stream=False, mode="words"):
+    # type: (torch.Tensor, int, int, bool, str) -> torch.Tensor
+    """Converts a signature to a logsignature.
+
+    Arguments:
+        signature (:class:`torch.Tensor`): The result of a call to :func:`signatory.signature`.
+
+        channels (int): The number of input channels of the path that :func:`signatory.signature` was called with.
+
+        depth (int): The :attr:`depth` that :func:`signatory.signature` was called with.
+
+        stream (bool, optional): Defaults to False. The :attr:`stream` that :func:`signatory.signature` was called with.
+
+        mode (str, optional): Defaults to "words". As :func:`signatory.logsignature`.
+
+    Example:
+        .. code-block:: python
+
+            import signatory
+            import torch
+            batch, stream, channels = 8, 8, 8
+            depth = 3
+            path = torch.rand(batch, stream, channels)
+            signature = signatory.signature(path, depth)
+            logsignature = signatory.signature_to_logsignature(signature, channels, depth)
+
+    Returns:
+        A :class:`torch.Tensor` representing the logsignature corresponding to the given signature.
+    """
+    return _signature_to_logsignature(signature, channels, depth, stream, mode, None)
+
+
+def _logsignature(path, depth, stream, basepoint, inverse, mode, lyndon_info):
+    # Deliberately no initial. To support that for logsignatures we'd need to be able to expand a (potentially
+    # compressed) logsignature into a signature first. (Which is certainly possible in principle)
+    signature = smodule.signature(path, depth, stream=stream, basepoint=basepoint, inverse=inverse, initial=None)
+    return _signature_to_logsignature(signature, path.size(-1), depth, stream=stream, mode=mode,
+                                      lyndon_info=lyndon_info)
 
 
 def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode="words"):
@@ -143,14 +178,7 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
         In all cases, the ordering corresponds to the ordering on words given by first ordering the words by length,
         and then ordering each length class lexicographically.
     """
-    # noinspection PyUnresolvedReferences
-    result = _LogSignatureFunction.apply(path, depth, stream, basepoint, inverse, mode, None)
-
-    # We have to do the transpose outside of autograd.Function.apply to avoid PyTorch bug 24413
-    if stream:
-        result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere and we
-                                         # don't want to change it.
-    return result
+    return _logsignature(path, depth, stream=stream, basepoint=basepoint, inverse=inverse, mode=mode, lyndon_info=None)
 
 
 class LogSignature(nn.Module):
@@ -226,16 +254,7 @@ class LogSignature(nn.Module):
         """
 
         lyndon_info = self._lyndon_info_cache(path.size(-1), self.depth, self.mode)
-        # don't call logsignature itself because that (deliberately) doesn't expose a lyndon_info argument.
-        # noinspection PyProtectedMember, PyUnresolvedReferences
-        result = _LogSignatureFunction.apply(path, self.depth, self.stream, basepoint, self.inverse, self.mode,
-                                             lyndon_info)
-
-        # We have to do the transpose outside of autograd.Function.apply to avoid PyTorch bug 24413
-        if self.stream:
-            result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere
-                                             # and we don't want to change it.
-        return result
+        return _logsignature(path, self.depth, self.stream, basepoint, self.inverse, self.mode, lyndon_info)
 
     def extra_repr(self):
         return ('depth={depth}, stream={stream}, basepoint={basepoint}, mode{mode}'

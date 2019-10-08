@@ -65,7 +65,8 @@ if 'darwin' in sys.platform:
 
 
 from .augment import Augment
-from .logsignature_module import (logsignature,
+from .logsignature_module import (signature_to_logsignature,
+                                  logsignature,
                                   LogSignature,
                                   Logsignature,  # alias for LogSignature
                                   logsignature_channels)

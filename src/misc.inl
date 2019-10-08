@@ -21,26 +21,42 @@
 
 namespace signatory {
     namespace misc {
-        inline void slice_by_term(torch::Tensor in, std::vector<torch::Tensor>& out, const MinimalSpec& minimalspec) {
+        torch::TensorOptions make_opts(torch::Tensor tensor) {
+            return torch::TensorOptions().dtype(tensor.dtype()).device(tensor.device());
+        }
+
+        torch::Tensor make_reciprocals(s_size_type depth, torch::TensorOptions opts) {
+            if (depth > 1) {
+                return torch::ones({depth - 1}, opts) /
+                       torch::linspace(2, static_cast<torch::Scalar>(static_cast<int64_t>(depth)), depth - 1, opts);
+                                          // Cast to torch::Scalar is ambiguous
+            }
+            else {
+                return torch::ones({0}, opts);
+            }
+        }
+
+        inline void slice_by_term(torch::Tensor in, std::vector<torch::Tensor>& out, int64_t input_channel_size,
+                                  s_size_type depth) {
             int64_t current_memory_pos = 0;
-            int64_t current_memory_length = minimalspec.input_channels;
+            int64_t current_memory_length = input_channel_size;
             out.clear();
-            out.reserve(minimalspec.depth);
-            for (int64_t i = 0; i < minimalspec.depth; ++i) {
+            out.reserve(depth);
+            for (int64_t i = 0; i < depth; ++i) {
                 out.push_back(in.narrow(/*dim=*/channel_dim,
                                         /*start=*/current_memory_pos,
                                         /*len=*/current_memory_length));
                 current_memory_pos += current_memory_length;
-                current_memory_length *= minimalspec.input_channels;
+                current_memory_length *= input_channel_size;
             }
         }
 
-        inline void slice_at_stream(std::vector<torch::Tensor> in, std::vector<torch::Tensor>& out,
+        inline void slice_at_stream(const std::vector<torch::Tensor>& in, std::vector<torch::Tensor>& out,
                                     int64_t stream_index) {
             out.clear();
             out.reserve(in.size());
             for (auto elem : in) {
-                out.push_back(elem.narrow(/*dim=*/stream_dim, /*start=*/stream_index, /*len=*/1).squeeze(stream_dim));
+                out.push_back(elem[stream_index]);
             }
         }
 

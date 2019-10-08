@@ -16,6 +16,7 @@
 
 
 #include <torch/extension.h>  // to get the pybind11 stuff
+#include <thread>             // std::thread::hardware_concurrency
 
 #include "logsignature.hpp"  // signatory::signature_to_logsignature_forward,
                              // signatory::signature_to_logsignature_backward,
@@ -32,8 +33,8 @@
                              // signatory::lyndon_brackets,
                              // signatory::lyndon_words_to_basis_transform
 
-#include "tensor_algebra_ops.hpp"  // signatory::tensor_algebra_mult_forward,
-                                   // signatory::tensor_algebra_mult_backward
+#include "tensor_algebra_ops.hpp"  // signatory::signature_combine_forward,
+                                   // signatory::signature_combine_backward
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("signature_to_logsignature_forward",
@@ -41,9 +42,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("signature_to_logsignature_backward",
           &signatory::signature_to_logsignature_backward);
     m.def("make_lyndon_info",
-        &signatory::make_lyndon_info);
+          &signatory::make_lyndon_info);
     m.def("built_with_open_mp",
           &signatory::built_with_open_mp);
+    m.def("hardware_concurrency",
+          &std::thread::hardware_concurrency);
     py::enum_<signatory::LogSignatureMode>(m, "LogSignatureMode")
             .value("Expand", signatory::LogSignatureMode::Expand)
             .value("Brackets", signatory::LogSignatureMode::Brackets)
@@ -65,8 +68,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("lyndon_words_to_basis_transform",
           &signatory::lyndon_words_to_basis_transform,
           py::return_value_policy::move);
-    m.def("tensor_algebra_mult_forward",
-          &signatory::tensor_algebra_mult_forward);
-    m.def("tensor_algebra_mult_backward",
-        &signatory::tensor_algebra_mult_backward);
+    m.def("signature_combine_forward",
+          &signatory::signature_combine_forward);
+    m.def("signature_combine_backward",
+        &signatory::signature_combine_backward);
 }

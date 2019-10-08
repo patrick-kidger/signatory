@@ -39,7 +39,7 @@ namespace signatory {
              * J.-P. Duval, Theor. Comput. Sci. 1988, doi:10.1016/0304-3975(88)90113-2.
              * Each LyndonWord we produce does _not_ have any ExtraLyndonInformation set.
              */
-            LyndonWords(const misc::MinimalSpec& lyndonspec, WordTag);
+            LyndonWords(int64_t input_channel_size, s_size_type depth, WordTag);
 
             /* Generates Lyndon words with their standard bracketing. No reference for this algorithm I'm afraid,
              * I made it up myself.
@@ -47,7 +47,7 @@ namespace signatory {
              * consider calling LyndonWords::delete_extra(), to reclaim the memory corresponding to
              * ExtraLyndonInformation.
              */
-            LyndonWords(const misc::MinimalSpec& lyndonspec, BracketTag);
+            LyndonWords(int64_t input_channel_size, s_size_type depth, BracketTag);
 
             using std::vector<std::vector<LyndonWord>>::operator[];
             using std::vector<std::vector<LyndonWord>>::begin;
@@ -65,10 +65,10 @@ namespace signatory {
             void delete_extra();
 
             int64_t amount;
+            int64_t input_channel_size;
+            s_size_type depth;
         private:
             void finalise();
-
-            misc::MinimalSpec lyndonspec;
         };
 
         /* Represents a single Lyndon word. It is primarily represented by a pair of indices, corresponding to how
@@ -101,14 +101,15 @@ namespace signatory {
 
             // Constructor for LyndonWords(..., LyndonWords::word_tag) (with extra==false) and
             // constructor for LyndonWords(..., LyndonWords::bracket_tag) for the depth == 1 words (with extra==true).
-            LyndonWord(const std::vector<int64_t>& word, bool extra, const misc::MinimalSpec& lyndonspec);
+            LyndonWord(const std::vector<int64_t>& word, bool extra, int64_t input_channel_size);
 
             // Constructor for LyndonWords(..., LyndonWords::bracket_tag) for the depth > 1 words.
-            LyndonWord(LyndonWord* first_child, LyndonWord* second_child, const misc::MinimalSpec& lyndonspec);
+            LyndonWord(LyndonWord* first_child, LyndonWord* second_child, int64_t input_channel_size);
 
-            /* The index of this element in the sequence of all Lyndon words i.e. given some lyndonspec and tag:
+            /* The index of this element in the sequence of all Lyndon words i.e. given some input_channel_size, depth,
+             * and tag:
              *
-             * LyndonWords lyndon_words(lyndonspec, tag);
+             * LyndonWords lyndon_words(input_channel_size, depth, tag);
              * s_size_type counter = 0
              * for (auto& depth_class : lyndon_words) {
              *     for (auto& lyndon_word : depth_class) {
@@ -126,8 +127,8 @@ namespace signatory {
             friend struct LyndonWords;
         private:
             bool is_lyndon_anagram (const std::vector<int64_t>& word) const;
-            void init(const std::vector<int64_t>& word, bool extra_, LyndonWord* first_child,
-                      LyndonWord* second_child, const misc::MinimalSpec& lyndonspec);
+            void init(const std::vector<int64_t>& word, bool extra_, LyndonWord* first_child, LyndonWord* second_child,
+                      int64_t input_channel_size);
         };
     }  // namespace signatory::lyndon
 

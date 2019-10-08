@@ -30,12 +30,11 @@ namespace signatory {
 
     // See signatory.logsignature for documentation
     std::tuple<torch::Tensor, py::object>
-    signature_to_logsignature_forward(torch::Tensor signature, py::object backwards_info_capsule, LogSignatureMode mode,
-                                      py::object lyndon_info_capsule);
+    signature_to_logsignature_forward(torch::Tensor signature, int64_t input_channel_size, s_size_type depth,
+                                      bool stream, LogSignatureMode mode, py::object lyndon_info_capsule);
 
     // See signatory.logsignature for documentation
-    std::tuple<torch::Tensor, py::object>
-    signature_to_logsignature_backward(torch::Tensor grad_logsignature, py::object backwards_info_capsule);
+    torch::Tensor signature_to_logsignature_backward(torch::Tensor grad_logsignature, py::object backwards_capsule);
 }  // namespace signatory
 
 #endif //SIGNATORY_LOGSIGNATURE_HPP

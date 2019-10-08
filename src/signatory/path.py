@@ -21,6 +21,7 @@ from torch.autograd import function as autograd_function
 
 from . import backend
 from . import signature_module as smodule
+from . import logsignature_module as lmodule
 from . import _impl
 
 # noinspection PyUnreachableCode
@@ -243,6 +244,24 @@ class Path(object):
         if lengths_index > 0:
             index -= lengths[lengths_index - 1]
         return lengths_index, index
+
+    def logsignature(self, start=None, end=None, mode="words"):
+        # type: (Union[int, None], Union[int, None], str) -> torch.Tensor
+        """Returns the logsignature on a particular interval.
+
+        Arguments:
+            start (int or None, optional): As :meth:`signatory.Path.signature`.
+
+            end (int or None, optional): As :meth:`signatory.Path.signature`.
+
+            mode (str, optional): As :func:`signatory.logsignature`.
+
+        Returns:
+            The logsignature on the interval :attr:`[start, end]`. See the documentation for
+            :meth:`signatory.Path.signature`.
+        """
+        signature = self.signature(start, end)
+        return lmodule.signature_to_logsignature(signature, self._channels, self._depth, stream=False, mode=mode)
 
     def update(self, path):
         # type: (torch.Tensor) -> None

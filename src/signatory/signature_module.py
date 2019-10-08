@@ -40,7 +40,7 @@ def interpret_backward_grad(ctx, grad_path, grad_basepoint, grad_initial):
 
 class _SignatureFunction(autograd.Function):
     @staticmethod
-    def forward(ctx, path, depth, stream, basepoint, inverse, initial, already_parallel):
+    def forward(ctx, path, depth, stream, basepoint, inverse, initial, open_mp_parallelise):
         ctx.basepoint_as_passed = basepoint
         basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
         path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
@@ -48,7 +48,7 @@ class _SignatureFunction(autograd.Function):
         ctx.initial = initial
 
         result, backwards_info = _impl.signature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
-                                                         initial, initial_value, already_parallel)
+                                                         initial, initial_value, open_mp_parallelise)
         ctx.backwards_info = backwards_info
         ctx.save_for_backward(result)
 
@@ -71,7 +71,7 @@ class _SignatureFunction(autograd.Function):
 
         grad_path, grad_basepoint, grad_initial = interpret_backward_grad(ctx, grad_path, grad_basepoint, grad_initial)
 
-        return grad_path, None, None, grad_basepoint, None, grad_initial
+        return grad_path, None, None, grad_basepoint, None, grad_initial, None
 
 
 def signature(path, depth, stream=False, basepoint=False, inverse=False, initial=None):
@@ -179,21 +179,21 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
 
     # Test if our problem uses gradients anywhere
     grad = False
-    grad = grad and path.requires_grad
+    grad = grad or path.requires_grad
     if isinstance(basepoint, torch.Tensor):
-        grad = grad and basepoint.requires_grad
+        grad = grad or basepoint.requires_grad
     if isinstance(initial, torch.Tensor):
-        grad = grad and initial.requires_grad
+        grad = grad or initial.requires_grad
 
-    open_mp_parallel = _impl.built_with_open_mp() and not grad and not path.is_cuda
+    open_mp_parallelise = _impl.built_with_open_mp() and not grad and not path.is_cuda
 
-    # If the batch dimension is >=32 then we're probably already getting maximum parallelisation, and this trick will
-    # instead slow things down. This figure is chosen empirically, but is essentially arbitrary.
-    # TODO: choose it dynamically based on available hardware.
-    threshold = 32
+    # If the batch dimension is large then we're probably already getting maximum parallelisation, and this trick will
+    # instead slow things down.
+    _threshold = _impl.hardware_concurrency()
+    threshold = _threshold if _threshold != 0 else 32
 
     batch_size, stream_size, channel_size = path.shape
-    if (not open_mp_parallel                 # If parallelisation not already provided by OpenMP
+    if (not open_mp_parallelise              # If parallelisation not already provided by OpenMP
         and batch_size < threshold           # And we have available parallelisation capacity
         and stream_size > 2 * threshold      # And the problem is large enough that this will improve speed
                                              #     (Note also that we must have at least stream_size > threshold for the
@@ -225,7 +225,7 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
         basepoint = ends.view(batch_size * mult, channel_size)
 
         # noinspection PyUnresolvedReferences
-        result_bulk = _SignatureFunction.apply(path_bulk, depth, stream, basepoint, inverse, False)
+        result_bulk = _SignatureFunction.apply(path_bulk, depth, stream, basepoint, inverse, False, False)
         result_bulk = result_bulk.view(batch_size, mult, result_bulk.size(-1))
         if isinstance(initial, torch.Tensor):
             result = initial
@@ -245,7 +245,7 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
 
     else:
         # noinspection PyUnresolvedReferences
-        result = _SignatureFunction.apply(path, depth, stream, basepoint, inverse, initial, open_mp_parallel)
+        result = _SignatureFunction.apply(path, depth, stream, basepoint, inverse, initial, open_mp_parallelise)
 
     # We have to do the transpose outside of autograd.Function.apply to avoid PyTorch bug 24413
     if stream:
@@ -345,6 +345,21 @@ def extract_signature_term(sigtensor, channels, depth):
     return sigtensor.narrow(dim=-1, start=start, length=channels ** depth)
 
 
+class _SignatureCombineFunction(autograd.Function):
+    @staticmethod
+    def forward(ctx, arg1, arg2, input_channels, depth):
+        ctx.save_for_backward(arg1, arg2)
+        ctx.input_channels = input_channels
+        ctx.depth = depth
+        return _impl.signature_combine_forward(arg1, arg2, input_channels, depth)
+
+    @staticmethod
+    def backward(ctx, grad):
+        arg1, arg2 = ctx.saved_tensors
+        grad_arg1, grad_arg2 = _impl.signature_combine_backward(grad, arg1, arg2, ctx.input_channels, ctx.depth)
+        return grad_arg1, grad_arg2, None, None
+
+
 def signature_combine(sigtensor1, sigtensor2, input_channels, depth, inverse=False):
     # type: (torch.Tensor, torch.Tensor, int, int, bool) -> torch.Tensor
     r"""Combines two signatures into a single signature.
@@ -386,10 +401,7 @@ def signature_combine(sigtensor1, sigtensor2, input_channels, depth, inverse=Fal
         is set to whatever value of :attr:`inverse` was used to create :attr:`sigtensor1` and :attr:`sigtensor2`.
 
         If this is not done then the return value of this function will be essentially meaningless numbers.
-
-        Neither of these errors can be caught programmatically by this function; it is up to the software developer to
-        get it right!
     """
     if inverse:
         sigtensor1, sigtensor2 = sigtensor2, sigtensor1
-    return backend.TensorAlgebraMult.apply(sigtensor1, sigtensor2, input_channels, depth)
+    return _SignatureCombineFunction.apply(sigtensor1, sigtensor2, input_channels, depth)

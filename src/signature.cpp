@@ -41,9 +41,9 @@
 namespace signatory {
     namespace detail {
         // Takes the path and basepoint and returns the path increments
-        torch::Tensor compute_path_increments(torch::Tensor path, torch::Tensor basepoint_value,
-                                              const misc::SigSpec& sigspec) {
-            int64_t num_increments {sigspec.input_stream_size - 1};
+        torch::Tensor compute_path_increments(torch::Tensor path, bool basepoint, torch::Tensor basepoint_value,
+                                              bool inverse) {
+            int64_t num_increments {path.size(stream_dim) - 1};
             // The difference between these cases: basepoint/no basepoint + inverse/no inverse are basically just
             // niceties.
             // Essentially all that's going on is that if basepoint is passed then the basepoint is concatenated on to
@@ -51,10 +51,10 @@ namespace signatory {
             // All that's going on if inverse is passed is just to multiply everything by -1.
             // We break it up into special cases like this because doing either of the above operations naively involves
             // unnecessary extra operations.
-            if (sigspec.basepoint) {
-                if (sigspec.inverse) {
+            if (basepoint) {
+                if (inverse) {
                     torch::Tensor path_increments = torch::empty_like(path);
-                    path_increments.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/1).copy_(basepoint_value);
+                    path_increments[0].copy_(basepoint_value);
                     path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments).copy_(
                             path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments));
                     path_increments -= path;
@@ -62,14 +62,14 @@ namespace signatory {
                 }
                 else {
                     torch::Tensor path_increments = path.clone();
-                    path_increments.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/1) -= basepoint_value;
+                    path_increments[0] -= basepoint_value;
                     path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -=
                             path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments);
                     return path_increments;
                 }
             }
             else {
-                if (sigspec.inverse) {
+                if (inverse) {
                     return path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments) -
                            path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments);
                 }
@@ -83,82 +83,110 @@ namespace signatory {
         // Computes the backward pass through the path increments operation.
         // Returns the gradients for the original path, and for the basepoint.
         std::tuple<torch::Tensor, torch::Tensor>
-        compute_path_increments_backward(torch::Tensor grad_path_increments, const misc::SigSpec& sigspec) {
-            int64_t num_increments{sigspec.input_stream_size - 1};
-            if (sigspec.basepoint) {
-                if (sigspec.inverse) {
+        compute_path_increments_backward(torch::Tensor grad_path_increments, bool basepoint, bool inverse,
+                                         torch::TensorOptions opts) {
+            int64_t batch_size {grad_path_increments.size(batch_dim)};
+            int64_t input_stream_size {grad_path_increments.size(stream_dim)};
+            int64_t input_channel_size {grad_path_increments.size(channel_dim)};
+            if (!basepoint) {
+                ++input_stream_size;
+            }
+
+            int64_t num_increments{input_stream_size - 1};
+            if (basepoint) {
+                if (inverse) {
                     torch::Tensor grad_path = torch::empty_like(grad_path_increments);
                     grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments).copy_(
                             grad_path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments));
-                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/-1, /*len=*/1).zero_();
+                    grad_path[-1].zero_();
                     grad_path -= grad_path_increments;
                     return std::tuple<torch::Tensor, torch::Tensor>
-                           {grad_path, grad_path_increments.narrow(/*dim=*/stream_dim,
-                                                                   /*start=*/0,
-                                                                   /*len=*/1).squeeze(stream_dim)};
+                           {grad_path, grad_path_increments[0]};
                 }
                 else {
                     torch::Tensor grad_path = grad_path_increments.clone();
                     grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments)
                             -= grad_path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments);
                     return std::tuple<torch::Tensor, torch::Tensor>
-                           {grad_path, -grad_path_increments.narrow(/*dim=*/stream_dim,
-                                                                    /*start=*/0,
-                                                                    /*len=*/1).squeeze(stream_dim)};
+                           {grad_path, -grad_path_increments[0]};
                 }
             }
             else {
-                if (sigspec.inverse) {
-                    torch::Tensor grad_path = torch::empty({sigspec.input_stream_size,
-                                                            sigspec.batch_size,
-                                                            sigspec.input_channels},
-                                                           sigspec.opts);
-                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/-1, /*len=*/1).zero_();
-                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/0,
+                if (inverse) {
+                    torch::Tensor grad_path = torch::empty({input_stream_size, batch_size, input_channel_size}, opts);
+                    grad_path[-1].zero_();
+                    grad_path.narrow(/*dim=*/stream_dim,
+                                     /*start=*/0,
                                      /*len=*/num_increments).copy_(grad_path_increments);
                     grad_path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -= grad_path_increments;
                     // no second return value in this case
-                    return std::tuple<torch::Tensor, torch::Tensor> {grad_path, torch::empty({0}, sigspec.opts)};
+                    return std::tuple<torch::Tensor, torch::Tensor> {grad_path, torch::empty({0}, opts)};
 
                 }
                 else {
-                    torch::Tensor grad_path = torch::empty({sigspec.input_stream_size,
-                                                            sigspec.batch_size,
-                                                            sigspec.input_channels},
-                                                           sigspec.opts);
-                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/1).zero_();
+                    torch::Tensor grad_path = torch::empty({input_stream_size, batch_size, input_channel_size}, opts);
+                    grad_path[0].zero_();
                     grad_path.narrow(/*dim=*/stream_dim, /*start=*/1,
                                      /*len=*/num_increments).copy_(grad_path_increments);
                     grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments) -= grad_path_increments;
                     // no second return value in this case
-                    return std::tuple<torch::Tensor, torch::Tensor> {grad_path, torch::empty({0}, sigspec.opts)};
+                    return std::tuple<torch::Tensor, torch::Tensor> {grad_path, torch::empty({0}, opts)};
                 }
             }
         }
+
+        struct SignatureBackwardsCapsule{
+            SignatureBackwardsCapsule(torch::Tensor signature_, torch::Tensor path_increments_, s_size_type depth_,
+                                      bool stream_, bool basepoint_, bool inverse_, bool initial_) :
+            // Call to detach works around PyTorch bug 25340, which is a won't-fix. Basically, it makes sure that
+            // backwards_info doesn't have references to any other tensors, and therefore in particular doesn't have
+            // references to the tensor that is the output of the signature function: because this output tensor has a
+            // reference to the Python-level 'ctx' variable, which in turn has a reference to the BackwardsInfo object,
+            // and we get an uncollected cycle. (Some of the references are at the C++ level so this isn't picked up by
+            // Python.)
+            // Thus not doing this gives a massive memory leak.
+                signature{signature_.detach()},
+                path_increments{path_increments_.detach()},
+                depth{depth_},
+                stream{stream_},
+                basepoint{basepoint_},
+                inverse{inverse_},
+                initial{initial_}
+            {};
+
+            torch::Tensor signature;
+            torch::Tensor path_increments;
+            s_size_type depth;
+            bool stream;
+            bool basepoint;
+            bool inverse;
+            bool initial;
+
+            constexpr static auto capsule_name = "signatory.SignatureBackwardsCapsule";
+        };
+
+        struct bool_wrapper { bool value; };
     }  // namespace signatory::detail
 
     std::tuple<torch::Tensor, py::object>
     signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
-                      bool inverse, bool initial, torch::Tensor initial_value, bool open_mp_parallel)
-    {
+                      bool inverse, bool initial, torch::Tensor initial_value, bool open_mp_parallelise) {
+        misc::checkargs(path, depth, basepoint, basepoint_value, initial, initial_value);
+
         // No sense keeping track of gradients when we have a dedicated backwards function (and in-place operations mean
         // that in any case one cannot autograd through this function)
         path = path.detach();
         basepoint_value = basepoint_value.detach();
         initial_value = initial_value.detach();
 
-        misc::checkargs(path, depth, basepoint, basepoint_value, initial, initial_value);
+        int64_t batch_size = path.size(batch_dim);
+        int64_t input_channel_size = path.size(channel_dim);
+        int64_t output_stream_size = path.size(stream_dim) - (basepoint ? 0 : 1);
+        int64_t output_channel_size = signature_channels(path.size(channel_dim), depth);
+        torch::TensorOptions opts = misc::make_opts(path);
+        torch::Tensor reciprocals = misc::make_reciprocals(depth, opts);
 
-        if (!path.is_floating_point()) {
-            path = path.to(torch::kFloat32);
-        }
-        if (basepoint) {
-            basepoint_value = basepoint_value.to(path.dtype());
-        }
-
-        misc::SigSpec sigspec{path, depth, stream, basepoint, inverse};
-
-        torch::Tensor path_increments = detail::compute_path_increments(path, basepoint_value, sigspec);
+        torch::Tensor path_increments = detail::compute_path_increments(path, basepoint, basepoint_value, inverse);
 
         // We allocate memory for certain things upfront.
         // We want to construct things in-place wherever possible. Signatures get large; this saves a lot of time.
@@ -169,115 +197,125 @@ namespace signatory {
         std::vector<torch::Tensor> signature_by_term_at_stream;
         if (stream) {
             // if stream == true then we want to store all intermediate results
-            signature = torch::empty({sigspec.output_stream_size,
-                                      sigspec.batch_size,
-                                      sigspec.output_channels},
-                                     sigspec.opts);
-            first_term = signature.narrow(/*dim=*/stream_dim,
-                                          /*start=*/0,
-                                          /*len=*/1).squeeze(stream_dim);
-            misc::slice_by_term(signature, signature_by_term, sigspec);
+            signature = torch::empty({output_stream_size, batch_size, output_channel_size}, opts);
+            first_term = signature[0];
+            misc::slice_by_term(signature, signature_by_term, input_channel_size, depth);
         }
         else {
-            signature = torch::empty({sigspec.batch_size, sigspec.output_channels}, sigspec.opts);
+            signature = torch::empty({batch_size, output_channel_size}, opts);
             first_term = signature;
         }
-        misc::slice_by_term(first_term, signature_by_term_at_stream, sigspec);
+        misc::slice_by_term(first_term, signature_by_term_at_stream, input_channel_size, depth);
 
         // compute the first term
         if (initial) {
             first_term.copy_(initial_value);
             ta_ops::mult_fused_restricted_exp(path_increments[0],
                                               signature_by_term_at_stream,
-                                              sigspec);
+                                              inverse,
+                                              reciprocals);
         }
         else {
             ta_ops::restricted_exp(path_increments[0],
                                    signature_by_term_at_stream,
-                                   sigspec);
+                                   reciprocals);
         }
 
         if (stream) {
-            for (int64_t stream_index = 1; stream_index < sigspec.output_stream_size; ++stream_index) {
+            for (int64_t stream_index = 1; stream_index < output_stream_size; ++stream_index) {
                 signature[stream_index].copy_(signature[stream_index - 1]);
                 misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index);
                 ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
                                                   signature_by_term_at_stream,
-                                                  sigspec);
+                                                  inverse,
+                                                  reciprocals);
             }
         }
         else {
-            if (open_mp_parallel) {
+            if (open_mp_parallelise && open_mp) {
                 int64_t nthreads = omp_get_max_threads();
                 std::vector<std::vector<torch::Tensor>> omp_results(nthreads);
                 // There's no guarantee that we actually get the maximum number of threads, so we have to check
                 // which ones actually get used.
-                // This also serves as check that start < end, in the block below
-                std::vector<bool> omp_used(nthreads, false);
+                // This also serves as a check that start < end, in the block below
+                std::vector<detail::bool_wrapper> omp_used(nthreads, {false});
+                // As for why we bother with the wrapper: std::vector<bool> is special-cased from other vectors and is
+                // basically broken. https://stackoverflow.com/questions/670308/alternative-to-vectorbool
 
-                #pragma omp parallel default(none) shared(omp_results, omp_used, path_increments, sigspec)
+                #pragma omp parallel default(none) shared(omp_results, omp_used, path_increments, inverse, reciprocals,\
+                                                          output_stream_size, batch_size, output_channel_size, \
+                                                          input_channel_size, depth, opts)
                 {
-                    int64_t start = 1 + ((sigspec.output_stream_size - 1) * omp_get_thread_num()) / omp_get_num_threads();
-                    int64_t end = 1 + ((sigspec.output_stream_size - 1) * (1 + omp_get_thread_num())) / omp_get_num_threads();
+                    int64_t start = 1 + ((output_stream_size - 1) * omp_get_thread_num()) / omp_get_num_threads();
+                    int64_t end = 1 + ((output_stream_size - 1) * (1 + omp_get_thread_num())) / omp_get_num_threads();
                     if (start < end) {
                         std::vector<torch::Tensor> omp_signature_by_term_at_stream;
-                        torch::Tensor omp_signature = torch::empty({sigspec.batch_size,
-                                                                    sigspec.output_channels},
-                                                                   sigspec.opts);
-                        misc::slice_by_term(omp_signature, omp_signature_by_term_at_stream, sigspec);
-                        ta_ops::restricted_exp(path_increments[start], omp_signature_by_term_at_stream, sigspec);
+                        torch::Tensor omp_signature = torch::empty({batch_size, output_channel_size}, opts);
+                        misc::slice_by_term(omp_signature, omp_signature_by_term_at_stream, input_channel_size, depth);
+                        ta_ops::restricted_exp(path_increments[start], omp_signature_by_term_at_stream, reciprocals);
                         for (int64_t stream_index = start + 1; stream_index < end; ++stream_index) {
                             ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
                                                               omp_signature_by_term_at_stream,
-                                                              sigspec);
+                                                              inverse,
+                                                              reciprocals);
                         }
-                        omp_results[omp_get_thread_num()] = omp_signature_by_term_at_stream;
-                        omp_used[omp_get_thread_num()] = true;
+                        omp_results[omp_get_thread_num()] = std::move(omp_signature_by_term_at_stream);
+                        omp_used[omp_get_thread_num()] = {true};
                     }
                 }
 
                 for (int64_t thread_index = 0; thread_index < nthreads; ++thread_index) {
-                    if (omp_used[thread_index]) {
-                        ta_ops::mult(signature_by_term_at_stream, omp_results[thread_index], sigspec);
+                    if (omp_used[thread_index].value) {
+                        ta_ops::mult(signature_by_term_at_stream, omp_results[thread_index]);
                     }
                     // there is no else{break;} block because it need not be true that the used threads are
                     // contiguously indexed, because of the start < end condition above.
                 }
             }
             else {
-                for (int64_t stream_index = 1; stream_index < sigspec.output_stream_size; ++stream_index) {
+                for (int64_t stream_index = 1; stream_index < output_stream_size; ++stream_index) {
                     ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
                                                       signature_by_term_at_stream,
-                                                      sigspec);
+                                                      inverse,
+                                                      reciprocals);
                 }
             }
         }
 
-        py::object backwards_info_capsule = misc::wrap_capsule<misc::BackwardsInfo>(std::move(sigspec),
-                                                                                    signature_by_term,
-                                                                                    signature,
-                                                                                    path_increments,
-                                                                                    initial);
+        py::object backwards_capsule = misc::wrap_capsule<detail::SignatureBackwardsCapsule>(signature,
+                                                                                             path_increments,
+                                                                                             depth,
+                                                                                             stream,
+                                                                                             basepoint,
+                                                                                             inverse,
+                                                                                             initial);
 
-        return std::tuple<torch::Tensor, py::object> {signature, backwards_info_capsule};
+        return std::tuple<torch::Tensor, py::object> {signature, backwards_capsule};
     }
 
     std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
-    signature_backward(torch::Tensor grad_signature, py::object backwards_info_capsule) {
-        misc::BackwardsInfo* backwards_info = misc::unwrap_capsule<misc::BackwardsInfo>(backwards_info_capsule);
-
-        // Unpacked backwards_info
-        const misc::SigSpec& sigspec = backwards_info->sigspec;
-        const std::vector<torch::Tensor>& signature_by_term = backwards_info->signature_by_term;
+    signature_backward(torch::Tensor grad_signature, py::object backwards_capsule) {
+        detail::SignatureBackwardsCapsule* backwards_info =
+                misc::unwrap_capsule<detail::SignatureBackwardsCapsule>(backwards_capsule);
         torch::Tensor signature = backwards_info->signature;
         torch::Tensor path_increments = backwards_info->path_increments;
+        s_size_type depth = backwards_info->depth;
+        bool stream = backwards_info->stream;
+        bool basepoint = backwards_info->basepoint;
+        bool inverse = backwards_info->inverse;
         bool initial = backwards_info->initial;
 
-        misc::checkargs_backward(grad_signature, sigspec);
+        torch::TensorOptions opts = misc::make_opts(signature);
+        torch::Tensor reciprocals = misc::make_reciprocals(depth, opts);
+        int64_t output_stream_size = path_increments.size(stream_dim);
+        int64_t batch_size = path_increments.size(batch_dim);
+        int64_t input_channel_size = path_increments.size(channel_dim);
+        int64_t output_channel_size = signature.size(channel_dim);
 
-        if (!grad_signature.is_floating_point()) {
-            grad_signature = grad_signature.to(torch::kFloat32);
-        }
+        misc::checkargs_backward(grad_signature, stream, output_stream_size, batch_size, output_channel_size, opts);
+
+        std::vector<torch::Tensor> signature_by_term;
+        misc::slice_by_term(signature, signature_by_term, input_channel_size, depth);
 
         // When computing the signature we essentially did a lot of computations of the form
         // A \otimes exp(b),
@@ -294,10 +332,8 @@ namespace signatory {
         // can just use. In the stream==false case this information must be recomputed.
 
         torch::Tensor grad_signature_at_stream;
-        if (sigspec.stream) {
-            grad_signature_at_stream = grad_signature.narrow(/*dim=*/stream_dim,
-                                                             /*start=*/-1,
-                                                             /*length=*/1).squeeze(stream_dim);
+        if (stream) {
+            grad_signature_at_stream = grad_signature[-1];
         }
         else {
             grad_signature_at_stream = grad_signature;
@@ -305,13 +341,13 @@ namespace signatory {
         // make sure not to leak changes
         grad_signature_at_stream = grad_signature_at_stream.clone();
 
-        misc::slice_by_term(grad_signature_at_stream, grad_signature_by_term_at_stream, sigspec);
+        misc::slice_by_term(grad_signature_at_stream, grad_signature_by_term_at_stream, input_channel_size, depth);
 
-        if (sigspec.stream) {
-            // if sigspec.stream then we already know the signature of x_1, ... x_k because we saved it as our result,
+        if (stream) {
+            // if stream then we already know the signature of x_1, ... x_k because we saved it as our result,
             // and we don't need to worry about recomputing it (c.f. the else branch below).
-            if (sigspec.output_stream_size < 2) {
-                // However if sigspec.output_stream_size is so small that we never even enter the for loop below. In
+            if (output_stream_size < 2) {
+                // However if output_stream_size is so small that we never even enter the for loop below. In
                 // which case signature_by_term_at_stream isn't set. We fix that here for the sake of
                 // restricted_exp_backward after the for loop, which requires it to be set.
                 misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, 0);
@@ -325,51 +361,39 @@ namespace signatory {
             // pass we do it for k going from n to 2.
             // In particular we clone the signature here as we're going to modify it in-place during these computations
             // and we don't want to leak changes to the original output.
-            misc::slice_by_term(signature.clone(), signature_by_term_at_stream, sigspec);
+            misc::slice_by_term(signature.clone(), signature_by_term_at_stream, input_channel_size, depth);
         }
 
-        torch::Tensor grad_path_increments = torch::empty({sigspec.output_stream_size,
-                                                           sigspec.batch_size,
-                                                           sigspec.input_channels},
-                                                          sigspec.opts);
 
-        for (int64_t stream_index = sigspec.output_stream_size - 1; stream_index >= 1; --stream_index) {
-            torch::Tensor grad_next = grad_path_increments.narrow(/*dim=*/stream_dim,
-                                                                  /*start=*/stream_index,
-                                                                  /*len=*/1).squeeze(stream_dim);
-            torch::Tensor next = path_increments.narrow(/*dim=*/stream_dim,
-                                                        /*start=*/stream_index,
-                                                        /*len=*/1).squeeze(stream_dim);
+        torch::Tensor grad_path_increments = torch::empty_like(path_increments);
 
-            if (sigspec.stream) {
+        for (int64_t stream_index = output_stream_size - 1; stream_index >= 1; --stream_index) {
+            torch::Tensor grad_next = grad_path_increments[stream_index];
+            torch::Tensor next = path_increments[stream_index];
+
+            if (stream) {
                 // Just look up signature_by_term_at_stream because we saved it for output
                 misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index - 1);
             }
             else {
                 // Recompute signature_by_term_at_stream
-                ta_ops::mult_fused_restricted_exp(-next, signature_by_term_at_stream, sigspec);
+                ta_ops::mult_fused_restricted_exp(-next, signature_by_term_at_stream, inverse, reciprocals);
             }
 
             ta_ops::mult_fused_restricted_exp_backward(grad_next, grad_signature_by_term_at_stream, next,
-                                                       signature_by_term_at_stream, sigspec);
+                                                       signature_by_term_at_stream, inverse, reciprocals);
 
-            if (sigspec.stream) {
-                // If sigspec.stream then gradients may well have accumulated on the signatures of the partial paths, so
+            if (stream) {
+                // If stream then gradients may well have accumulated on the signatures of the partial paths, so
                 // add those on here.
-                grad_signature_at_stream += grad_signature.narrow(/*dim=*/stream_dim,
-                                                                  /*start=*/stream_index - 1,
-                                                                  /*len=*/1).squeeze(stream_dim);
+                grad_signature_at_stream += grad_signature[stream_index - 1];
             }
         }
 
-        torch::Tensor grad_next = grad_path_increments.narrow(/*dim=*/stream_dim,
-                                                              /*start=*/0,
-                                                              /*len=*/1).squeeze(stream_dim);
-        torch::Tensor next = path_increments.narrow(/*dim=*/stream_dim,
-                                                    /*start=*/0,
-                                                    /*len=*/1).squeeze(stream_dim);
+        torch::Tensor grad_next = grad_path_increments[0];
+        torch::Tensor next = path_increments[0];
         if (initial) {
-            if (sigspec.stream) {
+            if (stream) {
                 // We're using memory we own if stream==false, but we're using memory we don't own if stream==true. So
                 // we have to clone here before we modify it.
                 for (auto& elem : signature_by_term_at_stream) {
@@ -377,23 +401,25 @@ namespace signatory {
                 }
             }
             // Recover initial_value in signature_by_term_at_stream
-            ta_ops::mult_fused_restricted_exp(-next, signature_by_term_at_stream, sigspec);
+            ta_ops::mult_fused_restricted_exp(-next, signature_by_term_at_stream, inverse, reciprocals);
             // grad_signature_by_term_at_stream is using the same memory as grad_signature_at_stream, which represents
             // the gradient through initial_value.
             ta_ops::mult_fused_restricted_exp_backward(grad_next, grad_signature_by_term_at_stream, next,
-                                                       signature_by_term_at_stream, sigspec);
+                                                       signature_by_term_at_stream, inverse, reciprocals);
         }
         else {
             ta_ops::restricted_exp_backward(grad_next, grad_signature_by_term_at_stream, next,
-                                            signature_by_term_at_stream, sigspec);
+                                            signature_by_term_at_stream, reciprocals);
         }
-
 
         // Find the gradient on the path from the gradient on the path increments.
         torch::Tensor grad_path;
         torch::Tensor grad_basepoint_value;
         std::tie(grad_path, grad_basepoint_value) = detail::compute_path_increments_backward(grad_path_increments,
-                                                                                             sigspec);
+                                                                                             basepoint,
+                                                                                             inverse,
+                                                                                             opts);
+
         return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
                {grad_path, grad_basepoint_value, grad_signature_at_stream};
     }
@@ -403,21 +429,15 @@ namespace signatory {
                               s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
                               bool inverse, bool initial) {
 
-        misc::SigSpec sigspec{path, depth, stream, basepoint, inverse};
+        torch::Tensor path_increments = detail::compute_path_increments(path, basepoint, basepoint_value, inverse);
 
-        std::vector<torch::Tensor> signature_by_term;
-        if (stream) {
-            // Duplicating normal forward behaviour, which is to only calculate this on the forward pass
-            misc::slice_by_term(signature, signature_by_term, sigspec);
-        }
-
-        torch::Tensor path_increments = detail::compute_path_increments(path, basepoint_value, sigspec);
-
-        py::object backwards_info_capsule = misc::wrap_capsule<misc::BackwardsInfo>(std::move(sigspec),
-                                                                                    signature_by_term,
-                                                                                    signature,
-                                                                                    path_increments,
-                                                                                    initial);
+        py::object backwards_info_capsule = misc::wrap_capsule<detail::SignatureBackwardsCapsule>(signature,
+                                                                                                  path_increments,
+                                                                                                  depth,
+                                                                                                  stream,
+                                                                                                  basepoint,
+                                                                                                  inverse,
+                                                                                                  initial);
 
         return signature_backward(grad_signature, backwards_info_capsule);
     }

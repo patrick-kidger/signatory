@@ -26,12 +26,18 @@
 
 
 namespace signatory {
+    // Note that ta_ops operations do not perform any checking that the information passed is in a valid state.
     namespace ta_ops {
         // Computes a restricted exponential.
+        //
         // That is, it computes the exponential of 'in', and places the result in 'out'. It is restricted because 'in'
         // can only be a member of the lowest nonscalar level of the tensor algebra.
         // (We don't compute the exponential of an arbitrary element of the tensor algebra.)
-        void restricted_exp(torch::Tensor in, std::vector<torch::Tensor>& out, const misc::SigSpec& sigspec);
+        //
+        // 'in' should be a tensor of shape (batch, stream, channel)
+        // 'out' should already be of the appropriate size corresponding to the depth.
+        // 'reciprocals' should all the reciprocals out to depth 'out.size()' already computed.
+        void restricted_exp(torch::Tensor in, std::vector<torch::Tensor>& out, torch::Tensor reciprocals);
 
         // Backwards through the restricted exponential.
         // 'in' should be as passed to restricted_exp.
@@ -40,15 +46,15 @@ namespace signatory {
         // 'grad_out' is the input gradient to this function, and will be modified in-place.
         void restricted_exp_backward(torch::Tensor grad_in, std::vector<torch::Tensor>& grad_out,
                                      torch::Tensor in, const std::vector<torch::Tensor>& out,
-                                     const misc::SigSpec& sigspec);
+                                     torch::Tensor reciprocals);
 
         // Computes a fused multiply-exponentiate.
         // 'next' should be a member of the lowest nonscalar level of the tensor algebra.
         // 'prev' should be a general member of the tensor algebra.
         // If sigspec.inverse == false then 'prev' is modified to hold prev \otimes \exp(next)
         // If sigspec.inverse == true then 'prev' is modified to hold \exp(next) \otimes prev
-        void mult_fused_restricted_exp(torch::Tensor next, std::vector<torch::Tensor>& prev,
-                                       const misc::SigSpec& sigspec);
+        void mult_fused_restricted_exp(torch::Tensor next, std::vector<torch::Tensor>& prev, bool inverse,
+                                       torch::Tensor reciprocals);
 
         // Backwards through the fused multiply-exponentiate.
         // 'grad_next' will have the gradient from this operation copied in to it.
@@ -59,13 +65,13 @@ namespace signatory {
                                                 std::vector<torch::Tensor>& grad_prev,
                                                 torch::Tensor next,
                                                 const std::vector<torch::Tensor>& prev,
-                                                const misc::SigSpec& sigspec);
+                                                bool inverse,
+                                                torch::Tensor reciprocals);
 
         // Computes a multiplication in the tensor algebra.
         // 'arg1' and 'arg2' are both general members of the tensor algebra.
         // arg1 is modified to hold arg1 \otimes arg2.
-        void mult(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
-                  const misc::MinimalSpec& minimalspec);
+        void mult(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2);
 
         // Computes (sort of) multiplication in the tensor algebra.
         // 'arg1' is assumed to be a member of the tensor algebra, with assumed scalar value 'scalar_term_value'.
@@ -74,8 +80,7 @@ namespace signatory {
         // terms are left unchanged. Thus the result ends up being a weird hybrid of what was passed in, and the result
         // of an actual multiplication.
         void mult_partial(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
-                          torch::Scalar scalar_term_value, s_size_type top_terms_to_skip,
-                          const misc::MinimalSpec& minimalspec)
+                          torch::Scalar scalar_term_value, s_size_type top_terms_to_skip);
 
         // Backwards through mult_partial.
         // 'arg1', 'arg2', 'scalar_value_term', 'top_terms_to_skip' should be as in the forward call to mult_partial.
@@ -86,15 +91,14 @@ namespace signatory {
                                    const std::vector<torch::Tensor>& arg1,
                                    const std::vector<torch::Tensor>& arg2,
                                    torch::Scalar scalar_value_term,
-                                   s_size_type top_terms_to_skip,
-                                   const misc::MinimalSpec& minimalspec);
+                                   s_size_type top_terms_to_skip);
 
         // Computes the logarithm in the tensor algebra
         // 'output_vector' and 'input_vector' are both members of the tensor algebra, with assumed scalar values 1.
         // They are assumed to have equal values to each other when passed.
         // Then 'output_vector' is modified to be log(input_vector).
         void log(std::vector<torch::Tensor>& output_vector, const std::vector<torch::Tensor>& input_vector,
-                 const misc::SigSpec& sigspec);
+                 torch::Tensor reciprocals);
 
         // Computes the backwards pass through compute_log
         // 'input_vector' is as passed to log.
@@ -103,7 +107,7 @@ namespace signatory {
         void log_backward(std::vector<torch::Tensor>& grad_output_vector,
                           std::vector<torch::Tensor>& grad_input_vector,
                           const std::vector<torch::Tensor>& input_vector,
-                          const misc::SigSpec& sigspec);
+                          torch::Tensor reciprocals);
     }  // namespace signatory::ta_ops
 
     // Computes arg1_inp \otimes arg2_inp in the tensor algebra.
@@ -111,15 +115,15 @@ namespace signatory {
     // 'input_channels' and 'depth' are the corresponding numbers of channels and depths for these tensors. These must
     // be consistent with the sizes of 'arg1_inp' and 'arg2_inp'.
     // Both arguments are left unmodified. The result of the operation is returned.
-    torch::Tensor tensor_algebra_mult_forward(torch::Tensor arg1_inp, torch::Tensor arg2_inp, int64_t input_channels,
-                                              s_size_type depth);
+    torch::Tensor signature_combine_forward(torch::Tensor arg1_inp, torch::Tensor arg2_inp, int64_t input_channels,
+                                            s_size_type depth);
 
     // The corresponding backward operation for tensor_algebra_mult_forward.
     // 'grad' should be the gradient on the output of tensor_algebra_mult_forward. All other arguments should be as they
     // were inputted to tensor_algebra_mult_forward.
     std::pair<torch::Tensor, torch::Tensor>
-    tensor_algebra_mult_backward(torch::Tensor grad, torch::Tensor arg1_inp, torch::Tensor arg2_inp,
-                                 int64_t input_channels, s_size_type depth);
+    signature_combine_backward(torch::Tensor grad, torch::Tensor arg1_inp, torch::Tensor arg2_inp,
+                               int64_t input_channels, s_size_type depth);
 }  // namespace signatory
 
 #endif //SIGNATORY_TENSOR_ALGEBRA_OPS_HPP
