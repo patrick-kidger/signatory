@@ -66,6 +66,8 @@ if 'darwin' in sys.platform:
 
 from .augment import Augment
 from .logsignature_module import (signature_to_logsignature,
+                                  SignatureToLogSignature,
+                                  SignatureToLogsignature,
                                   logsignature,
                                   LogSignature,
                                   Logsignature,  # alias for LogSignature
@@ -75,7 +77,8 @@ from .signature_module import (signature,
                                Signature,
                                signature_channels,
                                extract_signature_term,
-                               signature_combine)
+                               signature_combine,
+                               multi_signature_combine)
 from .utility import (lyndon_words,
                       lyndon_brackets,
                       all_words)

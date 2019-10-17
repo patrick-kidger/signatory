@@ -17,6 +17,7 @@ For quick reference these are a list of all provided functions, grouped by which
     signatory.signature_channels
     signatory.extract_signature_term
     signatory.signature_combine
+    signatory.multi_signature_combine
 
 :ref:`reference-logsignatures`
 
@@ -27,6 +28,7 @@ For quick reference these are a list of all provided functions, grouped by which
     signatory.LogSignature
     signatory.logsignature_channels
     signatory.signature_to_logsignature
+    signatory.SignatureToLogSignature
 
 :ref:`reference-path`
 

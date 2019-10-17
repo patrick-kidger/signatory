@@ -47,9 +47,9 @@ class TestSignatureAccuracy(utils.EnhancedTestCase):
     @staticmethod
     def _reverse_path(path, basepoint):
         basepoint, basepoint_value = signatory.backend.interpret_basepoint(basepoint, path)
-        reverse_path = path.flip(1)
+        reverse_path = path.flip(-2)
         if basepoint:
-            reverse_path = torch.cat([reverse_path, basepoint_value.unsqueeze(1)], dim=1)
+            reverse_path = torch.cat([reverse_path, basepoint_value.unsqueeze(-2)], dim=-2)
         return reverse_path
 
     def test_inverse(self):
@@ -97,6 +97,41 @@ class TestSignatureAccuracy(utils.EnhancedTestCase):
                 self.fail(c.diff_fail(path_grad=path_grad, true_path_grad=c.path.grad))
             if not path_initial_grad.allclose(path_initial.grad):
                 self.fail(c.diff_fail(path_initial_grad=path_initial_grad, true_path_initial_grad=path_initial.grad))
+
+    def test_parallelisation(self):
+        for c in utils.ConfigIter(requires_grad=True, stream=False):
+            # no parallelisation when stream=True
+            true_sig = signatory.signature(c.path, c.depth, True, c.basepoint, c.inverse)[:, -1]
+            grad = torch.rand_like(true_sig)
+            true_sig.backward(grad)
+            true_path_grad = c.path.grad.clone()
+            true_basepoint_grad = c.basepoint.grad.clone()
+            c.path.grad.zero_()
+            c.basepoint.grad.zero_()
+
+            basepoint_detached = c.basepoint
+            if isinstance(basepoint_detached, torch.Tensor):
+                basepoint_detached = basepoint_detached.detach()
+            openmp_sig = signatory.signature.__globals__['_signature_openmp'](c.path.detach(), c.depth, c.stream,
+                                                                              basepoint_detached, c.inverse, None)
+            batch_trick_sig = signatory.signature.__globals__['_signature_batch_trick'](c.path, c.depth, c.stream,
+                                                                                        c.basepoint, c.inverse, None)
+            if openmp_sig is None:
+                raise RuntimeError(c.fail())
+            if batch_trick_sig is None:
+                raise RuntimeError(c.fail())
+
+            batch_trick_sig.backward(grad)
+
+            if not true_sig.allclose(openmp_sig):
+                self.fail(c.diff_fail(true_sig=true_sig, openmp_sig=openmp_sig))
+            if not true_sig.allclose(batch_trick_sig):
+                self.fail(c.diff_fail(true_sig=true_sig, batch_trick_sig=batch_trick_sig))
+            if not true_path_grad.allclose(c.path.grad):
+                self.fail(c.diff_fail(true_path_grad=true_path_grad, batch_trick_path_grad=c.path.grad))
+            if not true_basepoint_grad.allclose(c.basepoint.grad):
+                self.fail(c.diff_fail(true_basepoint_grad=true_basepoint_grad,
+                                      batch_trick_basepoint_grad=c.basepoint.grad))
 
 
 class TestLogSignatureAccuracy(utils.EnhancedTestCase):

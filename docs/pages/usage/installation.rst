@@ -37,8 +37,8 @@ For most use-cases, the prebuilt binaries available as described above should be
 Subsequent to this,
 
 - Tests can be run, see ``python command.py test --help``. This requires installing `iisignature <https://github.com/bottler/iisignature>`__.
-- Speed benchmarks can be performed, see ``python command.py benchmark --help``. This requires installing `iisignature <https://github.com/bottler/iisignature>`__ and `esig <https://pypi.org/project/esig/>`__.
-- Documentation built via ``python command.py docs``. This requires installing `Sphinx <https://pypi.org/project/Sphinx/>`__, `sphinx_rtd_theme <https://pypi.org/project/sphinx-rtd-theme/>`__, `py2annotate <https://github.com/patrick-kidger/py2annotate>`__ and `subprocess32 <https://pypi.org/project/subprocess32/>`__.
+- Speed and memory  benchmarks can be performed, see ``python command.py benchmark --help``. This requires installing `iisignature <https://github.com/bottler/iisignature>`__, `esig <https://pypi.org/project/esig/>`__, and `memory profiler <https://pypi.org/project/memory-profiler/su>`__.
+- Documentation built via ``python command.py docs``. This requires installing `Sphinx <https://pypi.org/project/Sphinx/>`__, `sphinx_rtd_theme <https://pypi.org/project/sphinx-rtd-theme/>`__ and `py2annotate <https://github.com/patrick-kidger/py2annotate>`__.
 
 .. note::
     

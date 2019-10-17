@@ -28,6 +28,7 @@ namespace signatory {
     namespace ta_ops {
         namespace detail {
             // This is the loop that's used inside some of the forward operations in the tensor algebra
+            // It corresponds to the noncommutative part of these operations.
             void mult_inner(torch::Tensor tensor_at_depth,
                             const std::vector<torch::Tensor>& arg1,
                             const std::vector<torch::Tensor>& arg2,
@@ -37,8 +38,8 @@ namespace signatory {
                     torch::Tensor out_view = tensor_at_depth.view({arg1[j].size(batch_dim),
                                                                    arg1[j].size(channel_dim),
                                                                    arg2[k].size(channel_dim)});
-                    out_view.addcmul_(arg2[k].unsqueeze(channel_dim - 1),      /* += (this tensor times */
-                                      arg1[j].unsqueeze(channel_dim));         /*     this tensor times */
+                    out_view.addcmul_(arg2[k].unsqueeze(channel_dim - 1),  /* += (this tensor times */
+                                      arg1[j].unsqueeze(channel_dim));     /*     this tensor)      */
                 }
             }
 
@@ -64,7 +65,89 @@ namespace signatory {
             torch::Scalar log_coefficient_at_depth(s_size_type depth_index, torch::Tensor reciprocals) {
                 return ((misc::is_even(depth_index) ? -1 : 1) * reciprocals[depth_index]).item();
             }
+
+            // Computes (sort of) multiplication in the tensor algebra.
+            // 'arg1' is assumed to be a member of the tensor algebra, with assumed scalar value 'scalar_term_value'.
+            // 'arg2' is assumed to be a member of the tensor algebra, with assumed scalar value zero.
+            // Then 'arg1' is modified to hold arg1 \otimes arg2 for some of its terms; its highest 'top_terms_to_skip'
+            // many terms are left unchanged. Thus the result ends up being a weird hybrid of what was passed in, and
+            // the result of an actual multiplication.
+            void mult_partial(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
+                              torch::Scalar scalar_term_value, s_size_type top_terms_to_skip) {
+                auto depth = arg1.size();
+                for (s_size_type depth_index = depth - top_terms_to_skip - 1; depth_index >= 0; --depth_index) {
+                    torch::Tensor tensor_at_depth = arg1[depth_index];
+
+                    // corresponding to the zero scalar assumed to be associated with arg2
+                    tensor_at_depth.zero_();
+
+                    detail::mult_inner(tensor_at_depth, arg1, arg2, depth_index);
+
+                    tensor_at_depth.add_(arg2[depth_index], scalar_term_value);
+                }
+            }
+
+            // Backwards through mult_partial.
+            // 'arg1', 'arg2', 'scalar_value_term', 'top_terms_to_skip' should be as in the forward call to
+            // mult_partial.
+            // 'grad_arg1' is the input gradient, and will be modified in-place.
+            // 'grad_arg2' is the output gradient, and will have the result of this operation added on to it.
+            void mult_partial_backward(std::vector<torch::Tensor>& grad_arg1,
+                                       std::vector<torch::Tensor>& grad_arg2,
+                                       const std::vector<torch::Tensor>& arg1,
+                                       const std::vector<torch::Tensor>& arg2,
+                                       torch::Scalar scalar_value_term,
+                                       s_size_type top_terms_to_skip) {
+                s_size_type depth = arg1.size();
+                for (s_size_type depth_index = 0; depth_index < depth - top_terms_to_skip; ++depth_index) {
+                    torch::Tensor grad_tensor_at_depth = grad_arg1[depth_index];
+
+                    grad_arg2[depth_index].add_(grad_tensor_at_depth, scalar_value_term);
+
+                    detail::mult_inner_backward(grad_tensor_at_depth, grad_arg1, grad_arg2, arg1, arg2, depth_index);
+
+                    grad_tensor_at_depth.zero_();
+                }
+            }
         }  // namespace signatory::ta_ops::detail
+
+        void mult(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2, bool inverse) {
+            auto& arg_a = inverse ? arg2 : arg1;
+            auto& arg_b = inverse ? arg1 : arg2;
+
+            auto depth = arg_a.size();
+            for (s_size_type depth_index = depth - 1; depth_index >= 0; --depth_index) {
+                torch::Tensor tensor_at_depth = arg1[depth_index];  // not arg_a or arg_b
+                detail::mult_inner(tensor_at_depth, arg_a, arg_b, depth_index);
+                tensor_at_depth += arg2[depth_index];  // not arg_a or arg_b
+            }
+        }
+
+        template<bool add_not_copy>
+        void mult_backward(std::vector<torch::Tensor>& grad_arg1,
+                           std::vector<torch::Tensor>& grad_arg2,
+                           const std::vector<torch::Tensor>& arg1,
+                           const std::vector<torch::Tensor>& arg2) {
+            s_size_type depth = arg1.size();
+            for (s_size_type depth_index = 0; depth_index < depth; ++depth_index) {
+                torch::Tensor grad_tensor_at_depth = grad_arg1[depth_index];
+                if (add_not_copy) {
+                    grad_arg2[depth_index] += grad_tensor_at_depth;
+                }
+                else {
+                    grad_arg2[depth_index].copy_(grad_tensor_at_depth);
+                }
+                detail::mult_inner_backward(grad_tensor_at_depth, grad_arg1, grad_arg2, arg1, arg2, depth_index);
+            }
+        }
+        template void mult_backward</*add_not_copy=*/false>(std::vector<torch::Tensor>& grad_arg1,
+                                                            std::vector<torch::Tensor>& grad_arg2,
+                                                            const std::vector<torch::Tensor>& arg1,
+                                                            const std::vector<torch::Tensor>& arg2);
+        template void mult_backward</*add_not_copy=*/true>(std::vector<torch::Tensor>& grad_arg1,
+                                                           std::vector<torch::Tensor>& grad_arg2,
+                                                           const std::vector<torch::Tensor>& arg1,
+                                                           const std::vector<torch::Tensor>& arg2);
 
         void restricted_exp(torch::Tensor in, std::vector<torch::Tensor>& out, torch::Tensor reciprocals) {
             int64_t batch_size = in.size(batch_dim);
@@ -332,59 +415,17 @@ namespace signatory {
             }
         }
 
-        void mult(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2) {
-            auto depth = arg1.size();
-            for (s_size_type depth_index = depth - 1; depth_index >= 0; --depth_index) {
-                torch::Tensor tensor_at_depth = arg1[depth_index];
-                detail::mult_inner(tensor_at_depth, arg1, arg2, depth_index);
-                tensor_at_depth += arg2[depth_index];
-            }
-        }
-
-        void mult_partial(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
-                          torch::Scalar scalar_term_value, s_size_type top_terms_to_skip) {
-            auto depth = arg1.size();
-            for (s_size_type depth_index = depth - top_terms_to_skip - 1; depth_index >= 0; --depth_index) {
-                torch::Tensor tensor_at_depth = arg1[depth_index];
-
-                // corresponding to the zero scalar assumed to be associated with arg2
-                tensor_at_depth.zero_();
-
-                detail::mult_inner(tensor_at_depth, arg1, arg2, depth_index);
-
-                tensor_at_depth.add_(arg2[depth_index], scalar_term_value);
-            }
-        }
-
-        void mult_partial_backward(std::vector<torch::Tensor>& grad_arg1,
-                                   std::vector<torch::Tensor>& grad_arg2,
-                                   const std::vector<torch::Tensor>& arg1,
-                                   const std::vector<torch::Tensor>& arg2,
-                                   torch::Scalar scalar_value_term,
-                                   s_size_type top_terms_to_skip) {
-            s_size_type depth = arg1.size();
-            for (s_size_type depth_index = 0; depth_index < depth - top_terms_to_skip; ++depth_index) {
-                torch::Tensor grad_tensor_at_depth = grad_arg1[depth_index];
-
-                grad_arg2[depth_index].add_(grad_tensor_at_depth, scalar_value_term);
-
-                detail::mult_inner_backward(grad_tensor_at_depth, grad_arg1, grad_arg2, arg1, arg2, depth_index);
-
-                grad_tensor_at_depth.zero_();
-            }
-        }
-
         void log(std::vector<torch::Tensor>& output_vector, const std::vector<torch::Tensor>& input_vector,
                  torch::Tensor reciprocals) {
             auto depth = input_vector.size();
             output_vector[0].copy_(input_vector[0] * detail::log_coefficient_at_depth(depth - 2, reciprocals));
             for (s_size_type depth_index = depth - 3; depth_index >= 0; --depth_index) {
-                mult_partial(output_vector,
-                             input_vector,
-                             /*scalar_value_term=*/detail::log_coefficient_at_depth(depth_index, reciprocals),
-                             /*top_terms_to_skip=*/depth_index + 1);
+                detail::mult_partial(output_vector,
+                                     input_vector,
+                                     /*scalar_value_term=*/detail::log_coefficient_at_depth(depth_index, reciprocals),
+                                     /*top_terms_to_skip=*/depth_index + 1);
             }
-            mult_partial(output_vector, input_vector, /*scalar_value_term=*/1, /*top_terms_to_skip=*/0);
+            detail::mult_partial(output_vector, input_vector, /*scalar_value_term=*/1, /*top_terms_to_skip=*/0);
         }
 
         void log_backward(std::vector<torch::Tensor>& grad_output_vector,
@@ -416,30 +457,31 @@ namespace signatory {
                     copy_vector.push_back(elem.clone());
                 }
                 record_vector.push_back(copy_vector);
-                mult_partial(scratch_vector,
-                             input_vector,
-                             /*scalar_value_term=*/detail::log_coefficient_at_depth(depth_index, reciprocals),
-                             /*top_terms_to_skip=*/depth_index + 1);
+                detail::mult_partial(scratch_vector,
+                                     input_vector,
+                                     /*scalar_value_term=*/detail::log_coefficient_at_depth(depth_index, reciprocals),
+                                     /*top_terms_to_skip=*/depth_index + 1);
             }
             record_vector.push_back(scratch_vector);
 
             // Now actually perform the backwards operation
             s_size_type backward_index = record_vector.size() - 1;
-            mult_partial_backward(grad_output_vector,
-                                  grad_input_vector,
-                                  record_vector[backward_index],
-                                  input_vector,
-                                  /*scalar_value_term=*/1,
-                                  /*top_terms_to_skip=*/0);
+            detail::mult_partial_backward(grad_output_vector,
+                                          grad_input_vector,
+                                          record_vector[backward_index],
+                                          input_vector,
+                                          /*scalar_value_term=*/1,
+                                          /*top_terms_to_skip=*/0);
 
             for (s_size_type depth_index = 0; depth_index < depth - 2; ++depth_index) {
                 --backward_index;
-                mult_partial_backward(grad_output_vector,
-                                      grad_input_vector,
-                                      record_vector[backward_index],
-                                      input_vector,
-                                      /*scalar_value_term=*/detail::log_coefficient_at_depth(depth_index, reciprocals),
-                                      /*top_terms_to_skip=*/depth_index + 1);
+                detail::mult_partial_backward(grad_output_vector,
+                                              grad_input_vector,
+                                              record_vector[backward_index],
+                                              input_vector,
+                                              /*scalar_value_term=*/detail::log_coefficient_at_depth(depth_index,
+                                                                                                     reciprocals),
+                                              /*top_terms_to_skip=*/depth_index + 1);
             }
 
             grad_input_vector[0].add_(grad_output_vector[0],
@@ -447,59 +489,120 @@ namespace signatory {
         }
     }  // namespace signatory::ta_ops
 
-    torch::Tensor signature_combine_forward(torch::Tensor arg1_inp, torch::Tensor arg2_inp, int64_t input_channels,
+    torch::Tensor signature_combine_forward(std::vector<torch::Tensor> sigtensors, int64_t input_channels,
                                             s_size_type depth) {
-        int64_t num_signature_channels = signature_channels(input_channels, depth);
-        if (arg1_inp.ndimension() != 2 || arg2_inp.ndimension() != 2) {
-            throw std::invalid_argument("sigtensor1 and sigtensor2 should both be 2-dimensional, corresponding to"
-                                        "(batch, signature_channels).");
+        misc::checkargs_channels_depth(input_channels, depth);
+        if (sigtensors.size() == 0) {
+            throw std::invalid_argument("sigtensors must be of nonzero length.");
         }
-        if (arg1_inp.size(batch_dim) != arg2_inp.size(batch_dim)) {
-            throw std::invalid_argument("sigtensor1 and sigtensor2 do not have the same number of batch elements.");
+        int64_t expected_signature_channels = signature_channels(input_channels, depth);
+        if (sigtensors[0].ndimension() != 2) {
+            throw std::invalid_argument("An element of sigtensors is not two-dimensional. Every element must have "
+                                        "two dimensions, corresponding to "
+                                        "(batch, signature_channels(input_channels, depth))");
         }
-        if (arg1_inp.size(channel_dim) != arg2_inp.size(channel_dim)) {
-            throw std::invalid_argument("sigtensor1 and sigtensor2 do not have the same number of channels.");
-        }
-        if (arg1_inp.size(channel_dim) != num_signature_channels ||
-            arg2_inp.size(channel_dim) != num_signature_channels) {
-            throw std::invalid_argument("sigtensor1 or sigtensor2 did not have the expected number of channels.");
+        int64_t batch_size = sigtensors[0].size(batch_dim);
+        for (auto& elem : sigtensors) {
+            if (elem.ndimension() != 2) {
+                throw std::invalid_argument("An element of sigtensors is not two-dimensional. Every element must have "
+                                            "two dimensions, corresponding to "
+                                            "(batch, signature_channels(input_channels, depth))");
+            }
+            if (elem.size(batch_dim) != batch_size) {
+                throw std::invalid_argument("Not every element of sigtensors has the same number of batch dimensions.");
+            }
+            if (elem.size(channel_dim) != expected_signature_channels) {
+                throw std::invalid_argument("An element of sigtensors did not have the right number of channels.");
+            }
+            // No sense keeping track of gradients when we have a custom backwards (and we're doing inplace operations)
+            elem = elem.detach();
         }
 
-        torch::Tensor ret = arg1_inp.detach().clone();
-
-        std::vector<torch::Tensor> arg1;
-        std::vector<torch::Tensor> arg2;
-        misc::slice_by_term(ret, arg1, input_channels, depth);
-        misc::slice_by_term(arg2_inp.detach(), arg2, input_channels, depth);
-
-        ta_ops::mult(arg1, arg2);
-
-        return ret;
+        torch::Tensor out = sigtensors[0].clone();
+        std::vector<torch::Tensor> out_vector;
+        misc::slice_by_term(out, out_vector, input_channels, depth);
+        for (u_size_type sigtensor_index = 1; sigtensor_index < sigtensors.size(); ++sigtensor_index) {
+            std::vector<torch::Tensor> sigtensor_vector;
+            misc::slice_by_term(sigtensors[sigtensor_index], sigtensor_vector, input_channels, depth);
+            ta_ops::mult(out_vector, sigtensor_vector, /*inverse=*/false);
+        }
+        return out;
     }
 
-    std::pair<torch::Tensor, torch::Tensor>
-    signature_combine_backward(torch::Tensor grad, torch::Tensor arg1_inp, torch::Tensor arg2_inp,
-                               int64_t input_channels, s_size_type depth) {
-        if (grad.size(batch_dim) != arg1_inp.size(batch_dim) || grad.size(channel_dim) != arg1_inp.size(channel_dim)) {
-            throw std::invalid_argument("grad is of the wrong size.");
+    std::vector<torch::Tensor> signature_combine_backward(torch::Tensor grad_out,
+                                                          torch::Tensor out,
+                                                          std::vector<torch::Tensor> sigtensors,
+                                                          int64_t input_channels,
+                                                          s_size_type depth) {
+        if (grad_out.size(batch_dim) != sigtensors[0].size(batch_dim) ||
+                grad_out.size(channel_dim) != sigtensors[0].size(channel_dim)) {
+            throw std::invalid_argument("grad_out is of the wrong size.");
         }
-        torch::Tensor grad_arg1_inp = grad.clone();
-        torch::Tensor grad_arg2_inp = torch::zeros_like(arg2_inp);
 
-        std::vector<torch::Tensor> grad_arg1;
-        std::vector<torch::Tensor> grad_arg2;
-        std::vector<torch::Tensor> arg1;
-        std::vector<torch::Tensor> arg2;
-        misc::slice_by_term(grad_arg1_inp, grad_arg1, input_channels, depth);
-        misc::slice_by_term(grad_arg2_inp, grad_arg2, input_channels, depth);
-        misc::slice_by_term(arg1_inp, arg1, input_channels, depth);
-        misc::slice_by_term(arg2_inp, arg2, input_channels, depth);
-
-        for (s_size_type depth_index = 0; depth_index < depth; ++depth_index) {
-            torch::Tensor grad_tensor_at_depth = grad_arg1[depth_index];
-            grad_arg2[depth_index] += grad_tensor_at_depth;
-            ta_ops::detail::mult_inner_backward(grad_tensor_at_depth, grad_arg1, grad_arg2, arg1, arg2, depth_index);
+        // Allocate memory for the output gradients
+        std::vector<torch::Tensor> grad_sigtensors;
+        grad_sigtensors.reserve(sigtensors.size());
+        grad_sigtensors.emplace_back();  // we'll fill in the first slot at the very end
+        for (s_size_type sigtensors_index = 1;
+             sigtensors_index < static_cast<s_size_type>(sigtensors.size());
+             ++sigtensors_index) {
+            grad_sigtensors.push_back(torch::empty_like(sigtensors[sigtensors_index]));
         }
-        return std::pair<torch::Tensor, torch::Tensor> {grad_arg1_inp, grad_arg2_inp};
+
+        // Recompute the inputs to each tensor multiplication
+        std::vector<std::vector<torch::Tensor>> scratch_vector_vector;
+        scratch_vector_vector.reserve(sigtensors.size() - 2);
+        torch::Tensor scratch = sigtensors[0];  // no clone necessary here, we're going to do it in the loop below
+        // -1 to the size because we don't need to store the final output
+        for (u_size_type sigtensor_index = 1; sigtensor_index < sigtensors.size() - 1; ++sigtensor_index) {
+            scratch = scratch.clone();
+            std::vector<torch::Tensor> scratch_vector;
+            misc::slice_by_term(scratch, scratch_vector, input_channels, depth);
+
+            std::vector<torch::Tensor> sigtensor_vector;
+            misc::slice_by_term(sigtensors[sigtensor_index], sigtensor_vector, input_channels, depth);
+            ta_ops::mult(scratch_vector, sigtensor_vector, /*inverse=*/false);
+
+            scratch_vector_vector.push_back(scratch_vector);
+        }
+
+        // Allocate memory for the gradient when computing backward through the tensor multiplications
+        torch::Tensor grad_scratch = grad_out.clone();
+        std::vector<torch::Tensor> grad_scratch_vector;
+        misc::slice_by_term(grad_scratch, grad_scratch_vector, input_channels, depth);
+
+        for (s_size_type sigtensors_index = sigtensors.size() - 1; sigtensors_index >= 2; --sigtensors_index) {
+            // Recompute the inputs of each multiplication
+            std::vector<torch::Tensor> sigtensor_vector;
+            misc::slice_by_term(sigtensors[sigtensors_index], sigtensor_vector, input_channels, depth);
+
+            // Actually perform the backward operation
+            std::vector<torch::Tensor> grad_sigtensor_vector;
+            misc::slice_by_term(grad_sigtensors[sigtensors_index], grad_sigtensor_vector, input_channels, depth);
+            ta_ops::mult_backward</*add_not_copy=*/false>(grad_scratch_vector, grad_sigtensor_vector,
+                                                          // -1 because we're getting the input to this operation, so we
+                                                          // need to look one step into the past
+                                                          // -1 again because we don't store this input for the very
+                                                          // first operation (we don't need to for that one), and it's
+                                                          // pulled out as a special case below.
+                                                          scratch_vector_vector[sigtensors_index - 2],
+                                                          sigtensor_vector);
+        }
+        if (sigtensors.size() > 1) {
+            // sigtensors_index == 1
+            // This iteration pulled out because we don't need to do the final division
+            std::vector<torch::Tensor> sigtensor_vector;
+            misc::slice_by_term(sigtensors[1], sigtensor_vector, input_channels, depth);
+            std::vector<torch::Tensor> first_sigtensor_vector;
+            misc::slice_by_term(sigtensors[0], first_sigtensor_vector, input_channels, depth);
+            std::vector<torch::Tensor> grad_sigtensor_vector;
+            misc::slice_by_term(grad_sigtensors[1], grad_sigtensor_vector, input_channels, depth);
+            ta_ops::mult_backward</*add_not_copy=*/false>(grad_scratch_vector, grad_sigtensor_vector,
+                                                          first_sigtensor_vector, sigtensor_vector);
+        }
+        // Fill in the gradient for the very first sigtensor.
+        grad_sigtensors[0] = grad_scratch;
+
+        return grad_sigtensors;
     }
 }  // namespace signatory

@@ -27,16 +27,7 @@
 #include "pycapsule.hpp"
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
-
-// TODO: Change LogSignature to Logsignature everywhere
-// TODO: add logsignature, logsignature_channels, update to Path. Path.signature should accept stream argument.
-// TODO: add example on reparameterisation invariance
-// TODO: add sparse computations
-// TODO: try doing the word->brackets by manually computing the inverse and then using torch.sparse.mm?
-// TODO: signature_jacobian, logsignature_jacobian
-// TODO: switch to pytest over unittest; rationalise some tests when we do
-// TODO: check for interrupts + release GIL?
-
+#
 
 namespace signatory {
     namespace detail {
@@ -138,15 +129,8 @@ namespace signatory {
         struct SignatureBackwardsCapsule{
             SignatureBackwardsCapsule(torch::Tensor signature_, torch::Tensor path_increments_, s_size_type depth_,
                                       bool stream_, bool basepoint_, bool inverse_, bool initial_) :
-            // Call to detach works around PyTorch bug 25340, which is a won't-fix. Basically, it makes sure that
-            // backwards_info doesn't have references to any other tensors, and therefore in particular doesn't have
-            // references to the tensor that is the output of the signature function: because this output tensor has a
-            // reference to the Python-level 'ctx' variable, which in turn has a reference to the BackwardsInfo object,
-            // and we get an uncollected cycle. (Some of the references are at the C++ level so this isn't picked up by
-            // Python.)
-            // Thus not doing this gives a massive memory leak.
-                signature{signature_.detach()},
-                path_increments{path_increments_.detach()},
+                signature{signature_},
+                path_increments{path_increments_},
                 depth{depth_},
                 stream{stream_},
                 basepoint{basepoint_},
@@ -168,10 +152,69 @@ namespace signatory {
         struct bool_wrapper { bool value; };
     }  // namespace signatory::detail
 
+    void signature_checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value,
+                             bool initial, torch::Tensor initial_value) {
+        if (path.ndimension() == 2) {
+            // Friendlier help message for a common mess-up.
+            throw std::invalid_argument("Argument 'path' must be a 3-dimensional tensor, with dimensions "
+                                        "corresponding to (batch, stream, channel) respectively. If you just want "
+                                        "the signature or logsignature of a single path then wrap it in a single "
+                                        "batch dimension by replacing e.g. `signature(path, depth)` with "
+                                        "`signature(path.unsqueeze(0), depth).squeeze(0)`.");
+        }
+        if (path.ndimension() != 3) {
+            throw std::invalid_argument("Argument 'path' must be a 3-dimensional tensor, with dimensions "
+                                        "corresponding to (batch, stream, channel) respectively.");
+        }
+        if (path.size(batch_dim) == 0 || path.size(stream_dim) == 0 || path.size(channel_dim) == 0) {
+            throw std::invalid_argument("Argument 'path' cannot have dimensions of size zero.");
+        }
+        if (!basepoint && path.size(stream_dim) == 1) {
+            throw std::invalid_argument("Argument 'path' must have stream dimension of size at least 2. (Need at "
+                                        "least this many points to define a path.)");
+        }
+        if (depth < 1) {
+            throw std::invalid_argument("Argument 'depth' must be an integer greater than or equal to one.");
+        }
+        if (!path.is_floating_point()) {
+            throw std::invalid_argument("Argument 'path' must be of floating point type.");
+        }
+        torch::TensorOptions path_opts = misc::make_opts(path);
+        if (basepoint) {
+            if (basepoint_value.ndimension() != 2) {
+                throw std::invalid_argument("Argument 'basepoint' must be a 2-dimensional tensor, corresponding to "
+                                            "(batch, channel) respectively.");
+            }
+            if (basepoint_value.size(channel_dim) != path.size(channel_dim) ||
+                basepoint_value.size(batch_dim) != path.size(batch_dim)) {
+                throw std::invalid_argument("Arguments 'basepoint' and 'path' must have dimensions of the same "
+                                            "size.");
+            }
+            if (path_opts != misc::make_opts(basepoint_value)) {
+                throw std::invalid_argument("Argument 'basepoint' does not have the same dtype or device as "
+                                            "'path'.");
+            }
+        }
+        if (initial) {
+            if (initial_value.ndimension() != 2) {
+                throw std::invalid_argument("Argument 'initial' must be a 2-dimensional tensor, corresponding to "
+                                            "(batch, signature_channels) respectively.");
+            }
+            if (initial_value.size(channel_dim) != signature_channels(path.size(channel_dim), depth) ||
+                initial_value.size(batch_dim) != path.size(batch_dim)) {
+                throw std::invalid_argument("Argument 'initial' must have correctly sized batch and channel "
+                                            "dimensions.");
+            }
+            if (path_opts != misc::make_opts(initial_value)) {
+                throw std::invalid_argument("Argument 'initial' does not have the same dtype or device as 'path'.");
+            }
+        }
+    }
+
     std::tuple<torch::Tensor, py::object>
     signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
                       bool inverse, bool initial, torch::Tensor initial_value, bool open_mp_parallelise) {
-        misc::checkargs(path, depth, basepoint, basepoint_value, initial, initial_value);
+        signature_checkargs(path, depth, basepoint, basepoint_value, initial, initial_value);
 
         // No sense keeping track of gradients when we have a dedicated backwards function (and in-place operations mean
         // that in any case one cannot autograd through this function)
@@ -263,10 +306,9 @@ namespace signatory {
                         omp_used[omp_get_thread_num()] = {true};
                     }
                 }
-
                 for (int64_t thread_index = 0; thread_index < nthreads; ++thread_index) {
                     if (omp_used[thread_index].value) {
-                        ta_ops::mult(signature_by_term_at_stream, omp_results[thread_index]);
+                        ta_ops::mult(signature_by_term_at_stream, omp_results[thread_index], inverse);
                     }
                     // there is no else{break;} block because it need not be true that the used threads are
                     // contiguously indexed, because of the start < end condition above.

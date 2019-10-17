@@ -19,6 +19,10 @@
 #define SIGNATORY_SIGNATURE_HPP
 
 namespace signatory {
+    // Checks the arguments for the signature_forward function.
+    void signature_checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value,
+                             bool initial, torch::Tensor initial_value);
+
     // See signatory.signature for documentation
     std::tuple<torch::Tensor, py::object>
     signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,

@@ -225,7 +225,8 @@ def genreadme(args=()):
     reference = re.compile(r'^\.\. [\w-]+:$')
     
     inserts = {'install_from_source': "Installation from source is also possible; please consult the `documentation "
-                                      "<https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__."}
+                                      "<https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__. "
+                                      "This also includes information on how to run the tests and benchmarks"}
 
     def parse_file(filename):
         out_data = []
@@ -268,6 +269,23 @@ def genreadme(args=()):
     outs.append("Documentation\n"
                 "#############\n"
                 "The documentation is available `here <https://signatory.readthedocs.io>`__.")
+
+    outs.append("Example\n"
+                "#######\n"
+                "Usage is straightforward.\n"
+                "\n"
+                ".. code-block:: python\n"
+                "\n"
+                "    import signatory\n"
+                "    import torch\n"
+                "    # batch size is 1\n"
+                "    # length of input stream is 10\n"
+                "    # number of channels is 2\n"
+                "    x = torch.rand(1, 10, 2)\n"
+                "    # Compute signature to depth 4\n"
+                "    signatory.signature(x, 4)\n"
+                "\n"
+                "For further examples, see the `documentation <https://signatory.readthedocs.io/en/latest/pages/examples/examples.html>`__.")
 
     read_from_files([os.path.join(_here, 'docs', 'pages', 'miscellaneous', 'citation.rst'),
                      os.path.join(_here, 'docs', 'pages', 'miscellaneous', 'acknowledgements.rst')])

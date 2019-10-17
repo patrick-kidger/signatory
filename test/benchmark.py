@@ -31,16 +31,6 @@ import iisignature
 import signatory
 import torch
 
-memory_init_str = """import argparse
-import gc
-import time
-import esig.tosig
-import iisignature
-import signatory
-import torch
-self = argparse.Namespace()
-"""
-
 
 class BenchmarkBase(object):
     """Abstract base class. Subclasses should correspond to a particular function to be benchmarked.
@@ -88,21 +78,30 @@ def run(self):
         exec(self.not_include, globals(), local_dict)
         exec(self.run, globals(), local_dict)
         exec(self.mem_include, globals(), local_dict)
+        # Construct the statement to use for speed benchmarking
         self.time_statement = local_dict['run'].__get__(self, type(self))
 
-        self.mem_statement_baseline = '\n'.join([memory_init_str,
-                                                 'self.size = {size}'.format(size=repr(size)),
-                                                 'self.depth = {depth}'.format(depth=repr(depth)),
-                                                 'self.repeat = {repeat}'.format(repeat=repr(repeat)),
-                                                 'self.number = {number}'.format(number=repr(number)),
-                                                 'self.measure = {measure}'.format(measure=repr(measure)),
-                                                 self.not_include,
-                                                 self.run,
-                                                 'gc.collect()',
-                                                 'time.sleep(0.1)'])
-        self.mem_statement = '\n'.join([self.mem_statement_baseline,
+        # Construct the program to run for memory benchmarking
+        self.mem_statement = '\n'.join(["import argparse",
+                                        "import gc",
+                                        "import memory_profiler",
+                                        "import time",
+                                        "import esig.tosig",
+                                        "import iisignature",
+                                        "import signatory",
+                                        "import torch",
+                                        "self = argparse.Namespace()",
+                                        'self.size = {size}'.format(size=repr(size)),
+                                        'self.depth = {depth}'.format(depth=repr(depth)),
+                                        'self.repeat = {repeat}'.format(repeat=repr(repeat)),
+                                        'self.number = {number}'.format(number=repr(number)),
+                                        'self.measure = {measure}'.format(measure=repr(measure)),
+                                        self.not_include,
+                                        self.run,
+                                        'gc.collect()',
+                                        'baseline = min(memory_profiler.memory_usage(proc=-1, interval=.2, timeout=1))',
                                         self.mem_include,
-                                        'run(self)'])
+                                        'used = max(memory_profiler.memory_usage((run, (self,), {})))'])
 
     def action(self):
         if self.measure == 'time':

@@ -186,3 +186,32 @@ class TestSignatureCombine(utils.EnhancedTestCase):
             if not path_grad2.allclose(path2.grad):
                 self.fail(c.diff_fail(path_grad2=path_grad, true_path2_grad=path2.grad))
 
+    def test_multi_signature_combine(self):
+        for c in utils.ConfigIter(requires_grad=True, stream=False):
+            for amount in (1, 2, 3, 10):
+                prev_path = c.path
+                paths = [prev_path]
+                sigs = [c.signature()]
+                for _ in range(amount):
+                    next_path = torch.rand_like(c.path, requires_grad=True)
+                    paths.append(next_path)
+                    sigs.append(c.signature(store=False, path=next_path, basepoint=prev_path[:, -1, :]))
+                    prev_path = next_path
+
+                sig_combined = signatory.signature_combine(sigs, c.C, c.depth, inverse=c.inverse)
+
+                path_combined = torch.cat(paths, dim=1)
+                true_sig_combined = c.signature(store=False, path=path_combined)
+                if not sig_combined.allclose(true_sig_combined):
+                    self.fail(c.diff_fail(sig_combined=sig_combined, true_sig_combined=true_sig_combined))
+
+                grad = torch.rand_like(sig_combined)
+                sig_combined.backward(grad)
+                path_grads = []
+                for path in paths:
+                    path_grads.append(path.grad.clone())
+                    path.grad.zero_()
+                true_sig_combined.backward(grad)
+                for i, (path, path_grad) in enumerate(zip(paths, path_grads)):
+                    if not path.grad.allclose(path_grad):
+                        self.fail(c.diff_fail(path_grad=path_grad, true_path_grad=path.grad, extras={'i': i}))

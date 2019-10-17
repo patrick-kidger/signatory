@@ -26,14 +26,47 @@ from . import _impl
 
 # noinspection PyUnreachableCode
 if False:
-    from typing import Any, Union
+    from typing import Any, List, Union
+
+
+# So coming up we've got the functionality for creating signtures. The system is a little convoluted and unfortunately
+# has a few warts, so we're detailing them here, and why.
+#
+# The thing that actually matters is _impl.signature_forward and _impl.signature_backward, which do exactly what you
+# think they do.
+#
+# Unfortunately it's not at all clear how to bring these together into an autograd.Function in the C++, so we export
+# both to Python and to that here instead, to create _SignatureFunction.
+#
+# (This uses the helpers interpet_forward_args and interpret_backward_grad as the Python signature function and the C++
+# signature_forward don't have exactly the same interface - for some sensible reasons, and some not-so-sensible but now
+# unchangable reasons - and these convert between them.)
+#
+# Moving on, the next wart is that there's some somewhat convoluted logic in the main signature function to test for a
+# more efficient parallelisation case. This has to be done in Python, outside of _SignatureFunction, so that the
+# backward logic is hooked up correctly.
+#
+# And in turn we then have to perform argument checking before that set of logic, which is the purpose of
+# _signature_checkargs.
+#
+# If only we could do autograd in C++ pretty much all of this unpleasantness could be tided up, but the documentation
+# for how to do that is literally non-existent.
+
+
+def interpet_forward_args(ctx, path, basepoint, initial):
+    ctx.basepoint_is_tensor = isinstance(basepoint, torch.Tensor)
+    ctx.initial_is_tenosr = isinstance(initial, torch.Tensor)
+    basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
+    initial, initial_value = backend.interpret_initial(initial)
+    path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
+    return path, basepoint, basepoint_value, initial, initial_value
 
 
 def interpret_backward_grad(ctx, grad_path, grad_basepoint, grad_initial):
     grad_path = grad_path.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
-    if not isinstance(ctx.basepoint_as_passed, torch.Tensor):
+    if not ctx.basepoint_is_tensor:
         grad_basepoint = None
-    if not ctx.initial:
+    if not ctx.initial_is_tenosr:
         grad_initial = None
     return grad_path, grad_basepoint, grad_initial
 
@@ -41,20 +74,23 @@ def interpret_backward_grad(ctx, grad_path, grad_basepoint, grad_initial):
 class _SignatureFunction(autograd.Function):
     @staticmethod
     def forward(ctx, path, depth, stream, basepoint, inverse, initial, open_mp_parallelise):
-        ctx.basepoint_as_passed = basepoint
-        basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
-        path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
-        initial, initial_value = backend.interpret_initial(initial)
-        ctx.initial = initial
+
+        path, basepoint, basepoint_value, initial, initial_value = interpet_forward_args(ctx, path, basepoint, initial)
 
         result, backwards_info = _impl.signature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
                                                          initial, initial_value, open_mp_parallelise)
-        ctx.backwards_info = backwards_info
         ctx.save_for_backward(result)
+        ctx.backwards_info = backwards_info
 
-        # would like to transpose here but we can't because of PyTorch bug 24413, so instead we have to transpose at
-        # every call site instead.
-        return result
+        # Call to detach works around PyTorch bug 25340, which is a won't-fix. Basically, it makes sure that a reference
+        # cycle doesn't occur. No call to detach gives:
+        #   result -> ctx -> backwards_info -> result
+        # Whilst detach gives:
+        #   result.detach()-> ctx -> backwards_info -> result
+        # No cycle!
+        # If a reference cycle is present then a memory leak occurs. (As the result -> ctx reference is in C++ so it's
+        # not handled by Python.)
+        return result.detach()
 
     @staticmethod
     @autograd_function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
@@ -72,6 +108,90 @@ class _SignatureFunction(autograd.Function):
         grad_path, grad_basepoint, grad_initial = interpret_backward_grad(ctx, grad_path, grad_basepoint, grad_initial)
 
         return grad_path, None, None, grad_basepoint, None, grad_initial, None
+
+
+def _signature_checkargs(path, depth, basepoint, initial):
+    basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
+    initial, initial_value = backend.interpret_initial(initial)
+    path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
+    _impl.signature_checkargs(path, depth, basepoint, basepoint_value, initial, initial_value)
+
+
+def _signature_openmp(path, depth, stream, basepoint, inverse, initial):
+    if not stream:
+        grad = False
+        grad = grad or path.requires_grad
+        if isinstance(basepoint, torch.Tensor):
+            grad = grad or basepoint.requires_grad
+        if isinstance(initial, torch.Tensor):
+            grad = grad or initial.requires_grad
+        open_mp_parallelise = _impl.built_with_open_mp() and not grad and not path.is_cuda
+
+        if open_mp_parallelise:
+            # noinspection PyUnresolvedReferences
+            return _SignatureFunction.apply(path, depth, stream, basepoint, inverse, initial, True)
+
+
+def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
+    if not stream:
+        _threshold = _impl.hardware_concurrency()
+        threshold = _threshold if _threshold != 0 else 32
+
+        batch_size, stream_size, channel_size = path.shape
+
+        # Number of chunks to split the stream in to
+        mult = int(round(float(threshold) / batch_size))
+        mult = min(mult, int(stream_size / 2))
+
+        if (batch_size < threshold  # If we have available parallelisation capacity
+                and mult > 1):          # And if the problem is large enough to be worth parallelising
+
+            remainder = stream_size % mult                 # How much of the stream is left over as a remainder
+            reduced_bulk_length = int(stream_size / mult)  # Size of each chunk of the stream
+            bulk_length = stream_size - remainder          # Size of all of the chunks of the stream put together,
+            # excluding the remainder
+            path_bulk = path[:, 0:bulk_length]
+            path_remainder = path[:, bulk_length:]
+
+            try:
+                path_bulk.view(batch_size * mult, reduced_bulk_length, channel_size)
+            except RuntimeError:
+                quasicontiguous = False
+            else:
+                quasicontiguous = True
+
+            # If the data is laid out such that some of the stream dimension can be pushed into the batch dimension
+            if quasicontiguous:
+                # Need to set basepoints to the end of each previous chunk
+                path_bulk = path_bulk.view(batch_size, mult, reduced_bulk_length, channel_size)
+                ends = path_bulk[:, :, -1].roll(shifts=1, dims=-2)
+                if remainder != 0:
+                    basepoint_remainder = ends[:, 0].clone()
+                if isinstance(basepoint, torch.Tensor):
+                    # noinspection PyUnresolvedReferences
+                    ends[:, 0].copy_(basepoint)
+                elif basepoint is True:
+                    ends[:, 0].zero_()
+                else:
+                    # noinspection PyUnresolvedReferences
+                    ends[:, 0].copy_(path_bulk[:, 0, 0])
+                path_bulk = path_bulk.view(batch_size * mult, reduced_bulk_length, channel_size)
+                basepoint = ends.view(batch_size * mult, channel_size)
+
+                # noinspection PyUnresolvedReferences
+                result_bulk = _SignatureFunction.apply(path_bulk, depth, stream, basepoint, inverse, False, False)
+                result_bulk = result_bulk.view(batch_size, mult, result_bulk.size(-1))
+                chunks = []
+                if isinstance(initial, torch.Tensor):
+                    chunks.append(initial)
+                chunks.extend(result_bulk.unbind(dim=-2))
+                if remainder != 0:
+                    # noinspection PyUnresolvedReferences
+                    result_remainder = _SignatureFunction.apply(path_remainder, depth, stream, basepoint_remainder,
+                                                                inverse, False, False)
+                    chunks.append(result_remainder)
+
+                return multi_signature_combine(chunks, channel_size, depth, inverse)
 
 
 def signature(path, depth, stream=False, basepoint=False, inverse=False, initial=None):
@@ -152,12 +272,13 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
 
         Note that the number of output channels may be calculated via the convenience function
         :func:`signatory.signature_channels`.
-
     """
 
-    # This forms part of a somewhat involved set of optimisations via parallelisation.
+    _signature_checkargs(path, depth, basepoint, initial)
+
+    # Coming up is a somewhat involved set of optimisations via parallelisation.
     #
-    # Parallelisation is accomplished via OpenMP in the C++ code in the special case of:
+    # Parallelisation can be accomplished via OpenMP (in the C++ code) in the special case of:
     #     stream==False,
     #     the path is on the CPU,
     #     gradient isn't required,
@@ -169,83 +290,33 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
     #               possible as the OpenMP approach doesn't generate certain information needed for the more-efficient
     #               backward pass.)
     #
-    # Here we try parallelisation with another trick: we split apart the stream dimension into chunks and push them into
-    # the batch dimension. Then afterwards we pull it out and perform the remaining few multiplications. This requires:
+    # So we start off by checking if we can parallelise via OpenMP.
+    #
+    # If not then we try a trick: we split apart the stream dimension into chunks and push them into the batch
+    # dimension. Then afterwards we pull it out and perform the remaining few tensor multiplications. This requires:
     #     stream==False
     #     That the batch size is currently small enough that this will speed things up, not slow things down
     #     That the stream size is currently large enough, for the same reason.
-    #
-    # As a final remark, this is all done in the Python rather than the C++ so that the backward pass is hooked up.
+    #     That the data is laid out in a 'quasicontiguous' manner, so that this moving of dimensions can be done without
+    #         copying the data.
+    # (As a final remark, this optimisation is done in the Python rather than the C++ so that the backward pass is
+    # hooked up.)
 
-    # Test if our problem uses gradients anywhere
-    grad = False
-    grad = grad or path.requires_grad
-    if isinstance(basepoint, torch.Tensor):
-        grad = grad or basepoint.requires_grad
-    if isinstance(initial, torch.Tensor):
-        grad = grad or initial.requires_grad
+    while True:  # switch-case statement
+        # Try to parallelise via OpenMP
+        result = _signature_openmp(path, depth, stream, basepoint, inverse, initial)
+        if result is not None:
+            break
 
-    open_mp_parallelise = _impl.built_with_open_mp() and not grad and not path.is_cuda
+        # Try to parallelise via the push-into-batch-dimension trick
+        result = _signature_batch_trick(path, depth, stream, basepoint, inverse, initial)
+        if result is not None:
+            break
 
-    # If the batch dimension is large then we're probably already getting maximum parallelisation, and this trick will
-    # instead slow things down.
-    _threshold = _impl.hardware_concurrency()
-    threshold = _threshold if _threshold != 0 else 32
-
-    batch_size, stream_size, channel_size = path.shape
-    if (not open_mp_parallelise              # If parallelisation not already provided by OpenMP
-        and batch_size < threshold           # And we have available parallelisation capacity
-        and stream_size > 2 * threshold      # And the problem is large enough that this will improve speed
-                                             #     (Note also that we must have at least stream_size > threshold for the
-                                             #     code below not to throw an error!)
-        and not stream):                     # And the problem isn't inherently serial
-
-        mult = int(round(float(threshold) / batch_size))  # Number of chunks to split the stream in to
-        remainder = stream_size % mult                    # How much of the stream is left over at the end
-        reduced_bulk_length = int(stream_size / mult)     # How large each chunk of the stream is
-        bulk_length = stream_size - remainder             # How large all the chunk of the stream are, except remainder
-
-        path_bulk = path[:, 0:bulk_length]
-        path_remainder = path[:, bulk_length:]
-
-        # Need to set basepoints to the end of each previous chunk
-        path_bulk = path_bulk.view(batch_size, mult, reduced_bulk_length, channel_size)
-        ends = path_bulk[:, -1].roll(shifts=1, dims=-2)
-        if remainder != 0:
-            basepoint_remainder = ends[:, 0].clone()
-        if isinstance(basepoint, torch.Tensor):
-            # noinspection PyUnresolvedReferences
-            ends[:, 0].copy_(basepoint)
-        elif basepoint is True:
-            ends[:, 0].zero_()
-        else:
-            # noinspection PyUnresolvedReferences
-            ends[:, 0].copy_(path_bulk[:, 0, 0])
-        path_bulk = path_bulk.view(batch_size * mult, reduced_bulk_length, channel_size)
-        basepoint = ends.view(batch_size * mult, channel_size)
-
+        # Default case: no parallelisation
         # noinspection PyUnresolvedReferences
-        result_bulk = _SignatureFunction.apply(path_bulk, depth, stream, basepoint, inverse, False, False)
-        result_bulk = result_bulk.view(batch_size, mult, result_bulk.size(-1))
-        if isinstance(initial, torch.Tensor):
-            result = initial
-            chunks = [result_bulk[:, i:i + 1] for i in range(0, mult)]
-        else:
-            result = result_bulk[:, 0:1]
-            chunks = [result_bulk[:, i:i + 1] for i in range(1, mult)]
-
-        if remainder != 0:
-            # noinspection PyUnresolvedReferences
-            result_remainder = _SignatureFunction.apply(path_remainder, depth, stream, basepoint_remainder, inverse,
-                                                        False, False)
-            chunks.append(result_remainder)
-
-        for chunk in chunks:
-            result = signature_combine(result, chunk, channel_size, depth, inverse)
-
-    else:
-        # noinspection PyUnresolvedReferences
-        result = _SignatureFunction.apply(path, depth, stream, basepoint, inverse, initial, open_mp_parallelise)
+        result = _SignatureFunction.apply(path, depth, stream, basepoint, inverse, initial, False)
+        break
 
     # We have to do the transpose outside of autograd.Function.apply to avoid PyTorch bug 24413
     if stream:
@@ -347,17 +418,20 @@ def extract_signature_term(sigtensor, channels, depth):
 
 class _SignatureCombineFunction(autograd.Function):
     @staticmethod
-    def forward(ctx, arg1, arg2, input_channels, depth):
-        ctx.save_for_backward(arg1, arg2)
+    def forward(ctx, input_channels, depth, *sigtensors):
         ctx.input_channels = input_channels
         ctx.depth = depth
-        return _impl.signature_combine_forward(arg1, arg2, input_channels, depth)
+        out = _impl.signature_combine_forward(list(sigtensors), input_channels, depth)
+        ctx.save_for_backward(out, *sigtensors)
+        return out
 
     @staticmethod
     def backward(ctx, grad):
-        arg1, arg2 = ctx.saved_tensors
-        grad_arg1, grad_arg2 = _impl.signature_combine_backward(grad, arg1, arg2, ctx.input_channels, ctx.depth)
-        return grad_arg1, grad_arg2, None, None
+        saved_tensors = ctx.saved_tensors
+        out = saved_tensors[0]
+        sigtensors = saved_tensors[1:]
+        grad = _impl.signature_combine_backward(grad, out, list(sigtensors), ctx.input_channels, ctx.depth)
+        return (None, None) + tuple(grad)
 
 
 def signature_combine(sigtensor1, sigtensor2, input_channels, depth, inverse=False):
@@ -372,12 +446,16 @@ def signature_combine(sigtensor1, sigtensor2, input_channels, depth, inverse=Fal
 
     Usage is most clear by example. See :ref:`examples-combine`.
 
-    Arguments:
-        sigtensor1 (torch.Tensor): The signature of a path, of dimensions :attr:`(batch, signature_channels)`.
+    See also :func:`signatory.multi_signature_combine` for a more general version. (There are no advantages to using
+    :func:`signatory.signature_combine` over :func:`signatory.multi_signature_combine`.)
 
-        sigtensor2 (torch.Tensor): The signature of a second path, of dimensions :attr:`(batch, signature_channels)`.
-            When the signature of the second path was created, it must have been called with :attr:`basepoint` set to
-            the final value of the path that created :attr:`sigtensor1`. (See :ref:`examples-combine`.)
+    Arguments:
+        sigtensor1 (:class:`torch.Tensor`): The signature of a path, of dimensions :attr:`(batch, signature_channels)`.
+
+        sigtensor2 (:class:`torch.Tensor`): The signature of a second path, of dimensions
+            :attr:`(batch, signature_channels)`. When the signature of the second path was created, it must have been
+            called with :attr:`basepoint` set to the final value of the path that created :attr:`sigtensor1`. (See
+            :ref:`examples-combine`.)
 
         input_channels (int): The number of channels in the two paths that were used to compute :attr:`sigtensor1` and
             :attr:`sigtensor2`. This must be the same for both :attr:`sigtensor1` and :attr:`sigtensor2`.
@@ -402,6 +480,42 @@ def signature_combine(sigtensor1, sigtensor2, input_channels, depth, inverse=Fal
 
         If this is not done then the return value of this function will be essentially meaningless numbers.
     """
+    return multi_signature_combine([sigtensor1, sigtensor2], input_channels, depth, inverse)
+
+
+def multi_signature_combine(sigtensors, input_channels, depth, inverse=False):
+    # type: (List[torch.Tensor], int, int, bool) -> torch.Tensor
+    r"""Combines multiple signatures into a single signature.
+
+    This is done by computing multiple tensor products:
+
+    .. math::
+
+        \text{sigtensor}_0 \otimes \text{sigtensor}_1 \otimes \cdots \otimes \text{sigtensor}_k
+
+    where each :attr:`sigtensors` is a list of :math:`\text{sigtensor}_i` for :math:`i = 0, 1, \ldots, k`.
+
+    See also :func:`signatory.signature_combine`.
+
+    Arguments:
+        sigtensors (list of :class:`torch.Tensor`): Signature of multiple paths, each with dimensions
+            :attr:`(batch, signature_channels)`.
+
+        input_channels (int): As :func:`signatory.signature_combine`.
+
+        depth (int): As :func:`signatory.signature_combine`.
+
+        inverse (bool, optional): As :func:`signatory.signature_combine`.
+
+    Returns:
+        Let :math:`\text{path}_i` be the path whose signature is :math:`\text{sigtensor}_i`. Then this function returns
+        the signature of every :math:`\text{path}_i` concatenated together.
+
+    .. danger::
+
+        Make sure that each element of :attr:`sigtensors` is created with an appropriate :attr:`basepoint`, as with
+        :func:`signatory.signature_combine`.
+    """
     if inverse:
-        sigtensor1, sigtensor2 = sigtensor2, sigtensor1
-    return _SignatureCombineFunction.apply(sigtensor1, sigtensor2, input_channels, depth)
+        sigtensors = reversed(sigtensors)
+    return _SignatureCombineFunction.apply(input_channels, depth, *sigtensors)

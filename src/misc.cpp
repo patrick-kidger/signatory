@@ -67,65 +67,6 @@ namespace signatory {
             }
         }
 
-        void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value,
-                       bool initial, torch::Tensor initial_value) {
-            if (path.ndimension() == 2) {
-                // Friendlier help message for a common mess-up.
-                throw std::invalid_argument("Argument 'path' must be a 3-dimensional tensor, with dimensions "
-                                            "corresponding to (batch, stream, channel) respectively. If you just want "
-                                            "the signature or logsignature of a single path then wrap it in a single "
-                                            "batch dimension by replacing e.g. `signature(path, depth)` with "
-                                            "`signature(path.unsqueeze(0), depth).squeeze(0)`.");
-            }
-            if (path.ndimension() != 3) {
-                throw std::invalid_argument("Argument 'path' must be a 3-dimensional tensor, with dimensions "
-                                            "corresponding to (batch, stream, channel) respectively.");
-            }
-            if (path.size(batch_dim) == 0 || path.size(stream_dim) == 0 || path.size(channel_dim) == 0) {
-                throw std::invalid_argument("Argument 'path' cannot have dimensions of size zero.");
-            }
-            if (!basepoint && path.size(stream_dim) == 1) {
-                throw std::invalid_argument("Argument 'path' must have stream dimension of size at least 2. (Need at "
-                                            "least this many points to define a path.)");
-            }
-            if (depth < 1) {
-                throw std::invalid_argument("Argument 'depth' must be an integer greater than or equal to one.");
-            }
-            if (!path.is_floating_point()) {
-                throw std::invalid_argument("Argument 'path' must be of floating point type.");
-            }
-            torch::TensorOptions path_opts = make_opts(path);
-            if (basepoint) {
-                if (basepoint_value.ndimension() != 2) {
-                    throw std::invalid_argument("Argument 'basepoint' must be a 2-dimensional tensor, corresponding to "
-                                                "(batch, channel) respectively.");
-                }
-                if (basepoint_value.size(channel_dim) != path.size(channel_dim) ||
-                    basepoint_value.size(batch_dim) != path.size(batch_dim)) {
-                    throw std::invalid_argument("Arguments 'basepoint' and 'path' must have dimensions of the same "
-                                                "size.");
-                }
-                if (path_opts != make_opts(basepoint_value)) {
-                    throw std::invalid_argument("Argument 'basepoint' does not have the same dtype or device as "
-                                                "'path'.");
-                }
-            }
-            if (initial) {
-                if (initial_value.ndimension() != 2) {
-                    throw std::invalid_argument("Argument 'initial' must be a 2-dimensional tensor, corresponding to "
-                                                "(batch, signature_channels) respectively.");
-                }
-                if (initial_value.size(channel_dim) != signature_channels(path.size(channel_dim), depth) ||
-                    initial_value.size(batch_dim) != path.size(batch_dim)) {
-                    throw std::invalid_argument("Argument 'initial' must have correctly sized batch and channel "
-                                                "dimensions.");
-                }
-                if (path_opts != make_opts(initial_value)) {
-                    throw std::invalid_argument("Argument 'initial' does not have the same dtype or device as 'path'.");
-                }
-            }
-        }
-
         void checkargs_backward(torch::Tensor grad_out, bool stream, int64_t output_stream_size, int64_t batch_size,
                                 int64_t channel_size, torch::TensorOptions opts) {
             if (stream) {

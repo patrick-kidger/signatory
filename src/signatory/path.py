@@ -33,13 +33,13 @@ class _BackwardShortcut(autograd.Function):
     @staticmethod
     def forward(ctx, signature, depth, stream, basepoint, inverse, initial, *path_pieces):
         # Calls to detach work around PyTorch bug 25340, which is a won't-fix.
-        ctx.signature = signature.detach()
-        ctx.path_pieces = [path_piece.detach() for path_piece in path_pieces]
+        ctx.signature = signature
+        ctx.path_pieces = path_pieces
         ctx.depth = depth
         ctx.stream = stream
-        ctx.basepoint = basepoint.detach() if isinstance(basepoint, torch.Tensor) else basepoint
+        ctx.basepoint = basepoint
         ctx.inverse = inverse
-        ctx.initial = initial.detach() if isinstance(initial, torch.Tensor) else initial
+        ctx.initial = initial
 
         # Record the tensors upon which the backward calculation depends
         save_for_backward = list(ctx.path_pieces)
@@ -48,6 +48,14 @@ class _BackwardShortcut(autograd.Function):
             save_for_backward.append(ctx.basepoint)
         ctx.save_for_backward(*save_for_backward)
 
+        # Call to detach works around PyTorch bug 25340, which is a won't-fix. Basically, it makes sure that a reference
+        # cycle doesn't occur. No call to detach gives:
+        #   result -> ctx -> backwards_info -> result
+        # Whilst detach gives:
+        #   result.detach()-> ctx -> backwards_info -> result
+        # No cycle!
+        # If a reference cycle is present then a memory leak occurs. (As the result -> ctx reference is in C++ so it's
+        # not handled by Python.)
         return signature.detach()
 
     @staticmethod
@@ -66,10 +74,10 @@ class _BackwardShortcut(autograd.Function):
         else:
             path = ctx.path_pieces[0]
 
-        ctx.basepoint_as_passed = ctx.basepoint
-        basepoint, basepoint_value = backend.interpret_basepoint(ctx.basepoint, path)
-        path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
-        initial, initial_value = backend.interpret_initial(ctx.initial)
+        path, basepoint, basepoint_value, initial, initial_value = smodule.interpet_forward_args(ctx,
+                                                                                                 path,
+                                                                                                 ctx.basepoint,
+                                                                                                 ctx.initial)
 
         grad_path, grad_basepoint, grad_initial = _impl.signature_backward_custom(grad_result,
                                                                                   ctx.signature,
@@ -133,6 +141,11 @@ class Path(object):
         self._lengths = []
         self._signature_lengths = []
 
+        self._batch_size = path.size(-3)
+        self._channels = path.size(-1)
+        self._signature_channels = smodule.signature_channels(self._channels, self._depth)
+        self._logsignature_channels = lmodule.logsignature_channels(self._channels, self._depth)
+
         use_basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
         if use_basepoint:
             self._length += 1
@@ -141,9 +154,7 @@ class Path(object):
 
         self._update(path, basepoint, None, None)
 
-        self._batch_sizes = self.shape[:-2]
-        self._signature_channels = self.signature_size(-1)
-        self._channels = self.size(-1)
+        self._signature_to_logsignature_instances = {}
 
     def signature(self, start=None, end=None):
         # type: (Union[int, None], Union[int, None]) -> torch.Tensor
@@ -261,7 +272,15 @@ class Path(object):
             :meth:`signatory.Path.signature`.
         """
         signature = self.signature(start, end)
-        return lmodule.signature_to_logsignature(signature, self._channels, self._depth, stream=False, mode=mode)
+        try:
+            signature_to_logsignature_instance = self._signature_to_logsignature_instances[(self._channels,
+                                                                                            self._depth,
+                                                                                            mode)]
+        except KeyError:
+            signature_to_logsignature_instance = lmodule.SignatureToLogSignature(self._channels, self._depth,
+                                                                                 stream=False, mode=mode)
+            self._signature_to_logsignature_instances[(self._channels, self._depth, mode)] = signature_to_logsignature_instance
+        return signature_to_logsignature_instance(signature)
 
     def update(self, path):
         # type: (torch.Tensor) -> None
@@ -275,8 +294,9 @@ class Path(object):
         Arguments:
             path (torch.Tensor): The path to concatenate on. As :func:`signatory.signature`.
         """
-        if path.shape[:-2] != self._batch_sizes:
-            raise ValueError("Cannot append a path with different batch dimensions to what has already been used.")
+        if path.size(-3) != self._batch_size:
+            raise ValueError("Cannot append a path with different number of batch elements to what has already been "
+                             "used.")
         if path.size(-1) != self._channels:
             raise ValueError("Cannot append a path with different number of channels to what has already been used.")
         basepoint = self._path[-1][:, -1, :]
@@ -297,11 +317,6 @@ class Path(object):
         self._signature_length += signature.size(-2)
         self._lengths.append(self._length)
         self._signature_lengths.append(self._signature_length)
-
-        self._shape = list(path.shape)
-        self._shape[-2] = self._length
-        self._signature_shape = list(signature.shape)
-        self._signature_shape[-2] = self._signature_length
 
     @property
     def path(self):
@@ -328,13 +343,19 @@ class Path(object):
         if index is None:
             return self.shape
         else:
-            return self._shape[index]
+            return self.shape[index]
 
     @property
     def shape(self):
         # type: () -> torch.Size
         """The shape of the input path. As :attr:`torch.Tensor.shape`."""
-        return torch.Size(self._shape)
+        return torch.Size([self._batch_size, self._length, self._channels])
+
+    # Method not property for consistency with signature_channels and logsignature_channels
+    def channels(self):
+        # type: () -> int
+        """The number of channels of the input stream."""
+        return self._channels
 
     def signature_size(self, index=None):
         # type: (Union[int, None]) -> Union[int, torch.Size]
@@ -349,16 +370,43 @@ class Path(object):
         if index is None:
             return self.signature_shape
         else:
-            return self._signature_shape[index]
+            return self.signature_shape[index]
 
     @property
     def signature_shape(self):
         # type: () -> torch.Size
         """The shape of the signature of the path. As :attr:`torch.Tensor.shape`."""
-        return torch.Size(self._signature_shape)
+        return torch.Size([self._batch_size, self._signature_length, self._signature_channels])
 
     # Method not property for consistency with signatory.signature_channels
     def signature_channels(self):
         # type: () -> int
         """The number of signature channels; as :func:`signatory.signature_channels`."""
         return self._signature_channels
+
+    def logsignature_size(self, index=None):
+        # type: (Union[int, None]) -> Union[int, torch.Size]
+        """The size of the logsignature of the path. As :meth:`torch.Tensor.size`.
+
+        Arguments:
+            index (int or None, optional): As :meth:`torch.Tensor.size`.
+
+        Returns:
+            As :meth:`torch.Tensor.size`.
+        """
+        if index is None:
+            return self.logsignature_shape
+        else:
+            return self.logsignature_shape[index]
+
+    @property
+    def logsignature_shape(self):
+        # type: () -> torch.Size
+        """The shape of the logsignature of the path. As :attr:`torch.Tensor.shape`."""
+        return torch.Size([self._batch_size, self._signature_length, self._logsignature_channels])
+
+    # Method not property for consistency with signatory.signature_channels
+    def logsignature_channels(self):
+        # type: () -> int
+        """The number of logsignature channels; as :func:`signatory.logsignature_channels`."""
+        return self._logsignature_channels

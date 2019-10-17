@@ -17,7 +17,9 @@
 #include <torch/extension.h>
 #include <cstdint>    // int64_t
 #include <memory>     // std::unique_ptr
-#include <omp.h>
+#ifdef _OPENMP
+    #include <omp.h>
+#endif
 #include <stdexcept>  // std::invalid_argument
 #include <tuple>      // std::tie, std::tuple
 #include <utility>     // std::pair
@@ -72,6 +74,7 @@ namespace signatory {
                 signature{signature_},
                 input_channel_size{input_channel_size_},
                 depth{depth_},
+                stream{stream_},
                 mode{mode_},
                 lyndon_info_capsule{lyndon_info_capsule_},
                 logsignature_channels{logsignature_channels_}
@@ -136,6 +139,36 @@ namespace signatory {
             }
             return grad_expanded;
         }
+
+        void logsignature_checkargs(torch::Tensor signature, int64_t input_channel_size, s_size_type depth, bool stream)
+        {
+            misc::checkargs_channels_depth(input_channel_size, depth);
+            if (stream) {
+                if (signature.ndimension() != 3) {
+                    throw std::invalid_argument("Argument 'signature' must be a 3-dimensional tensor, with dimensions "
+                                                "corresponding to (batch, stream, channel) respectively.");
+                }
+                if (signature.size(stream_dim) == 0) {
+                    throw std::invalid_argument("Argument 'signature' cannot have dimensions of size zero.");
+                }
+            }
+            else {
+                if (signature.ndimension() != 2) {
+                    throw std::invalid_argument("Argument 'signature' must be a 2-dimensional tensor, with dimensions "
+                                                "corresponding to (batch, channel) respectively.");
+                }
+            }
+            if (signature.size(batch_dim) == 0 || signature.size(channel_dim) == 0) {
+                throw std::invalid_argument("Argument 'signature' cannot have dimensions of size zero.");
+            }
+            if (signature.size(channel_dim) != signature_channels(input_channel_size, depth)) {
+                throw std::invalid_argument("Argument 'signature' has the wrong number of channels for the specified "
+                                            "channels and depth.");
+            }
+            if (!signature.is_floating_point()) {
+                throw std::invalid_argument("Argument 'signature' must be of floating point type.");
+            }
+        }
     }  // namespace signatory::detail
 
     py::object make_lyndon_info(int64_t channels, s_size_type depth, LogSignatureMode mode) {
@@ -161,10 +194,25 @@ namespace signatory {
     std::tuple<torch::Tensor, py::object>
     signature_to_logsignature_forward(torch::Tensor signature, int64_t input_channel_size, s_size_type depth,
                                       bool stream, LogSignatureMode mode, py::object lyndon_info_capsule) {
+
+        detail::logsignature_checkargs(signature, input_channel_size, depth, stream);
+
+        // Don't need to track gradients when we have a custom backward
+        signature = signature.detach();
+
         if (depth == 1) {
             // this isn't just a fast return path: we also can't index the reciprocals tensor if depth == 1, so we'd
             // need faffier code below - and it's already quite faffy enough
-            return std::tuple<torch::Tensor, py::object> {signature, py::cast<py::none>(Py_None)};
+            py::object backwards_capsule =
+                    misc::wrap_capsule<detail::LogsignatureBackwardsCapsule>(signature,
+                                                                             input_channel_size,
+                                                                             depth,
+                                                                             stream,
+                                                                             mode,
+                                                                             lyndon_info_capsule,
+                                                                             signature.size(channel_dim));
+
+            return std::tuple<torch::Tensor, py::object> {signature, backwards_capsule};
         }
 
         torch::TensorOptions opts = misc::make_opts(signature);

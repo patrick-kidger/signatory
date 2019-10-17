@@ -18,3 +18,7 @@ Note that if performing many logsignature calculations for the same depth and si
 .. autofunction:: signatory.logsignature_channels
 
 .. autofunction:: signatory.signature_to_logsignature
+
+.. autoclass:: signatory.SignatureToLogSignature
+
+    .. automethod:: signatory.LogSignature.forward

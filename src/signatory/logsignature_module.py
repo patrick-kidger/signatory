@@ -20,8 +20,8 @@ import torch
 from torch import nn
 from torch import autograd
 from torch.autograd import function as autograd_function
+import weakref
 
-from . import compatibility as compat
 from . import signature_module as smodule
 # noinspection PyUnresolvedReferences
 from . import _impl
@@ -51,12 +51,18 @@ class _SignatureToLogsignature(autograd.Function):
 
         logsignature_, backwards_info = _impl.signature_to_logsignature_forward(signature, channels, depth, stream,
                                                                                 mode, lyndon_info)
-        ctx.backwards_info = backwards_info
         ctx.save_for_backward(logsignature_)
+        ctx.backwards_info = backwards_info
 
-        # would like to transpose here but we can't because of PyTorch bug 24413, so instead we have to transpose in the
-        # wrapper instead
-        return logsignature_
+        # Call to detach works around PyTorch bug 25340, which is a won't-fix. Basically, it makes sure that a reference
+        # cycle doesn't occur. No call to detach gives:
+        #   result -> ctx -> backwards_info -> result
+        # Whilst detach gives:
+        #   result.detach()-> ctx -> backwards_info -> result
+        # No cycle!
+        # If a reference cycle is present then a memory leak occurs. (As the result -> ctx reference is in C++ so it's
+        # not handled by Python.)
+        return logsignature_.detach()
 
     @staticmethod
     @autograd_function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
@@ -112,12 +118,68 @@ def signature_to_logsignature(signature, channels, depth, stream=False, mode="wo
     return _signature_to_logsignature(signature, channels, depth, stream, mode, None)
 
 
-def _logsignature(path, depth, stream, basepoint, inverse, mode, lyndon_info):
-    # Deliberately no initial. To support that for logsignatures we'd need to be able to expand a (potentially
-    # compressed) logsignature into a signature first. (Which is certainly possible in principle)
-    signature = smodule.signature(path, depth, stream=stream, basepoint=basepoint, inverse=inverse, initial=None)
-    return _signature_to_logsignature(signature, path.size(-1), depth, stream=stream, mode=mode,
-                                      lyndon_info=lyndon_info)
+class SignatureToLogSignature(nn.Module):
+    """Module wrapper around the :func:`signatory.signature_to_logsignature` function.
+
+    Calling this Module on an input :code:`signature` with the same depth and number of channels as the last input
+    :code:`path` it was called with will be faster than the corresponding :func:`signatory.signature_to_logsignature`
+    function, as this Module caches the result of certain computations which depend only on this value. (For larger
+    depths or numbers of channels, this speedup will be substantial.)
+
+    Arguments:
+        channels (int): as :func:`signatory.signature_to_logsignature`.
+
+        depth (int): as :func:`signatory.signature_to_logsignature`.
+
+        stream (bool, optional): as :func:`signatory.signature_to_logsignature`.
+
+        mode (str, optional): as :func:`signatory.signature_to_logsignature`.
+    """
+
+    _cache = weakref.WeakValueDictionary()
+
+    def __init__(self, channels, depth, stream=False, mode="words", **kwargs):
+        # type: (int, int, bool, str, **Any) -> None
+        super(SignatureToLogSignature).__init__(**kwargs)
+
+        self._channels = channels
+        self._depth = depth
+        self._stream = stream
+        self._mode = mode
+
+        self._lyndon_info = self._lyndon_info_cache(channels, depth, mode)
+
+    @classmethod
+    def _lyndon_info_cache(cls, in_channels, depth, mode):
+        try:
+            # This computation can be pretty slow! We definitely want to reuse it between instances
+            return cls._cache[(in_channels, depth, mode)]
+        except KeyError:
+            mode = _mode_convert(mode)
+            lyndon_info = _impl.make_lyndon_info(in_channels, depth, mode)
+            cls._cache[(in_channels, depth, mode)] = lyndon_info
+            return lyndon_info
+
+    def forward(self, signature):
+        # type: (torch.Tensor) -> torch.Tensor
+        """The forward operation.
+
+        Arguments:
+            signature (torch.Tensor): As :func:`signatory.signature_to_logsignature`.
+
+        Returns:
+            As :func:`signatory.signature_to_logsignature`.
+        """
+        return _signature_to_logsignature(signature, self._channels, self._depth, self._stream, self._mode,
+                                          self._lyndon_info)
+
+    def extra_repr(self):
+        return ('channels={channels}, depth={depth}, stream={stream}, mode{mode}'
+                .format(channels=self._channels, depth=self._depth, stream=self._stream, mode=self._mode))
+
+
+# Alias
+SignatureToLogsignature = SignatureToLogSignature
 
 
 def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode="words"):
@@ -178,13 +240,19 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
         In all cases, the ordering corresponds to the ordering on words given by first ordering the words by length,
         and then ordering each length class lexicographically.
     """
-    return _logsignature(path, depth, stream=stream, basepoint=basepoint, inverse=inverse, mode=mode, lyndon_info=None)
+
+    # Deliberately no 'initial' argument. To support that for logsignatures we'd need to be able to expand a
+    # (potentially compressed) logsignature into a signature first. (Which is certainly possible in principle)
+    signature = smodule.signature(path, depth, stream=stream, basepoint=basepoint, inverse=inverse, initial=None)
+    # lyndon_info=None because that's supported through the LogSignature class.
+    return _signature_to_logsignature(signature, path.size(-1), depth, stream=stream, mode=mode,
+                                      lyndon_info=None)
 
 
 class LogSignature(nn.Module):
     """Module wrapper around the :func:`signatory.logsignature` function.
 
-    Calling this Module on an input :attr:`path` with the same number of channels as the last input :attr:`path` it was
+    Calling this Module on an input :code:`path` with the same number of channels as the last input :code:`path` it was
     called with will be faster than the corresponding :func:`signatory.logsignature` function, as this Module caches the
     result of certain computations which depend only on this value. (For larger depths or numbers of channels, this
     speedup will be substantial.)
@@ -202,22 +270,24 @@ class LogSignature(nn.Module):
     def __init__(self, depth, stream=False, inverse=False, mode="words", **kwargs):
         # type: (int, bool, bool, str, **Any) -> None
         super(LogSignature, self).__init__(**kwargs)
-        self.depth = depth
-        self.stream = stream
-        self.inverse = inverse
-        self.mode = mode
+        self._depth = depth
+        self._stream = stream
+        self._inverse = inverse
+        self._mode = mode
 
-    @staticmethod
-    # This computation can be pretty slow! We definitely want to reuse it between instances
-    @compat.lru_cache(maxsize=None)
-    def _lyndon_info_cache(in_channels, depth, mode):
-        mode = _mode_convert(mode)
-        return _impl.make_lyndon_info(in_channels, depth, mode)
+        self._signature_to_logsignature_instance = None
+        self._last_channels = None
 
-    @classmethod
-    def prepare(cls, in_channels, depth, mode="words"):
-        # type: (int, int, str) -> None
-        """Prepares all instances of this class for computing logsignatures of a certain size.
+    def _get_signature_to_logsignature_instance(self, channels):
+        if self._signature_to_logsignature_instance is None or self._last_channels != channels:
+            self._last_channels = channels
+            self._signature_to_logsignature_instance = SignatureToLogSignature(channels, self._depth, self._stream,
+                                                                               self._mode)
+        return self._signature_to_logsignature_instance
+
+    def prepare(self, in_channels):
+        # type: (int) -> None
+        """Prepares for computing logsignatures of a certain size.
 
         There is some nontrivial computation which must be done for every logsignature computation of a certain size,
         and which is the same for all logsignature computations of that size. (Where 'size' refers to a specific
@@ -230,15 +300,12 @@ class LogSignature(nn.Module):
         computations at all (for example, for benchmarking reasons).
 
         Arguments:
-            in_channels (int): as :func:`signatory.logsignature_channels`.
-
-            depth (int): as :func:`signatory.logsignature`.
-
-            mode (str, optional): as :func:`signatory.logsignature`.
+            in_channels (int): The number of input channels of the path that this instance will subsequently be called
+                with. (corresponding to :code:`path.size(-1)`.)
         """
 
-        # In particular does not return what _lyndon_info_cache returns
-        cls._lyndon_info_cache(in_channels, depth, mode)
+        # In particular does not return anything
+        self._get_signature_to_logsignature_instance(in_channels)
 
     def forward(self, path, basepoint=False):
         # type: (torch.Tensor, Union[bool, torch.Tensor]) -> torch.Tensor
@@ -253,12 +320,15 @@ class LogSignature(nn.Module):
             As :func:`signatory.logsignature`.
         """
 
-        lyndon_info = self._lyndon_info_cache(path.size(-1), self.depth, self.mode)
-        return _logsignature(path, self.depth, self.stream, basepoint, self.inverse, self.mode, lyndon_info)
+        # Deliberately no 'initial' argument. To support that for logsignatures we'd need to be able to expand a
+        # (potentially compressed) logsignature into a signature first. (Which is certainly possible in principle)
+        signature = smodule.signature(path, self._depth, stream=self._stream, basepoint=basepoint,
+                                      inverse=self._inverse, initial=None)
+        return self._get_signature_to_logsignature_instance(path.size(-1))(signature)
 
     def extra_repr(self):
-        return ('depth={depth}, stream={stream}, basepoint={basepoint}, mode{mode}'
-                .format(depth=self.depth, stream=self.stream, basepoint=str(self.basepoint)[:6], mode=self.mode))
+        return ('depth={depth}, stream={stream}, inverse={inverse}, mode{mode}'
+                .format(depth=self._depth, stream=self._stream, inverse=self._inverse, mode=self._mode))
 
 
 # Alias

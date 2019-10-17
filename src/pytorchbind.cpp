@@ -51,6 +51,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
             .value("Expand", signatory::LogSignatureMode::Expand)
             .value("Brackets", signatory::LogSignatureMode::Brackets)
             .value("Words", signatory::LogSignatureMode::Words);
+    m.def("signature_checkargs",
+          &signatory::signature_checkargs);
     m.def("signature_forward",
           &signatory::signature_forward);
     m.def("signature_backward",
