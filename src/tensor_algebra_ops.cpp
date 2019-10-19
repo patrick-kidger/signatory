@@ -16,7 +16,7 @@
 
 #include <torch/extension.h>
 #include <cstdint>    // int64_t
-#include <stdexcept>    // std::invalid_argument
+#include <stdexcept>  // std::invalid_argument
 #include <utility>    // std::pair
 #include <vector>     // std::vector
 
@@ -530,7 +530,6 @@ namespace signatory {
     }
 
     std::vector<torch::Tensor> signature_combine_backward(torch::Tensor grad_out,
-                                                          torch::Tensor out,
                                                           std::vector<torch::Tensor> sigtensors,
                                                           int64_t input_channels,
                                                           s_size_type depth) {
@@ -551,7 +550,14 @@ namespace signatory {
 
         // Recompute the inputs to each tensor multiplication
         std::vector<std::vector<torch::Tensor>> scratch_vector_vector;
-        scratch_vector_vector.reserve(sigtensors.size() - 2);
+        auto reserve_amount = sigtensors.size();
+        if (reserve_amount < 2) {
+            reserve_amount = 0;
+        }
+        else {
+            reserve_amount -= 2;
+        }
+        scratch_vector_vector.reserve(reserve_amount);
         torch::Tensor scratch = sigtensors[0];  // no clone necessary here, we're going to do it in the loop below
         // -1 to the size because we don't need to store the final output
         for (u_size_type sigtensor_index = 1; sigtensor_index < sigtensors.size() - 1; ++sigtensor_index) {

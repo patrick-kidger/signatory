@@ -4,7 +4,7 @@ Installation
 ############
 Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7 and Linux, Mac, Windows.
 
-Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.2.0, but should work with all recent versions.
+Requires `PyTorch <http://pytorch.org/>`__. If you are using Linux or compiling Signatory from source (see below) then Signatory should work with all recent versions of PyTorch. If you are using the precompiled binaries for Mac or Windows then you will have to use PyTorch 1.2.0 specifically.
 
 Install via ``pip install signatory``. Then just ``import signatory`` inside Python.
 
@@ -18,7 +18,7 @@ Install via ``pip install signatory``. Then just ``import signatory`` inside Pyt
 
 .. genreadme on
 
-If you have any problems with installation then check the `FAQ <https://signatory.readthedocs.io/en/latest/pages/miscellaneous/faq.html>`__. If that doesn't help then feel free to `open an issue <https://github.com/patrick-kidger/signatory/issues>`__.
+If you have any problems with installation then check the `FAQ <https://signatory.readthedocs.io/en/latest/pages/miscellaneous/faq.html#miscellaneous-faq-importing>`__. If that doesn't help then feel free to `open an issue <https://github.com/patrick-kidger/signatory/issues>`__.
 
 .. genreadme off
 

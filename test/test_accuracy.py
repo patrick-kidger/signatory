@@ -105,33 +105,43 @@ class TestSignatureAccuracy(utils.EnhancedTestCase):
             grad = torch.rand_like(true_sig)
             true_sig.backward(grad)
             true_path_grad = c.path.grad.clone()
-            true_basepoint_grad = c.basepoint.grad.clone()
             c.path.grad.zero_()
-            c.basepoint.grad.zero_()
+
+            if isinstance(c.basepoint, torch.Tensor) and c.basepoint.requires_grad:
+                true_basepoint_grad = c.basepoint.grad.clone()
+                c.basepoint.grad.zero_()
 
             basepoint_detached = c.basepoint
             if isinstance(basepoint_detached, torch.Tensor):
-                basepoint_detached = basepoint_detached.detach()
-            openmp_sig = signatory.signature.__globals__['_signature_openmp'](c.path.detach(), c.depth, c.stream,
-                                                                              basepoint_detached, c.inverse, None)
+                basepoint_detached = basepoint_detached.detach().cpu()
+            openmp_sig = signatory.signature.__globals__['_signature_openmp'](c.path.detach().cpu(), c.depth, c.stream,
+                                                                              basepoint_detached, c.inverse,
+                                                                              None).to(c.device)
             batch_trick_sig = signatory.signature.__globals__['_signature_batch_trick'](c.path, c.depth, c.stream,
                                                                                         c.basepoint, c.inverse, None)
             if openmp_sig is None:
                 raise RuntimeError(c.fail())
+            test_batch_trick = True
             if batch_trick_sig is None:
-                raise RuntimeError(c.fail())
-
-            batch_trick_sig.backward(grad)
+                if c.L < 4:
+                    # The batch trick only triggers for paths of length at least 4
+                    test_batch_trick = False
+                else:
+                    raise RuntimeError(c.fail())
 
             if not true_sig.allclose(openmp_sig):
                 self.fail(c.diff_fail(true_sig=true_sig, openmp_sig=openmp_sig))
-            if not true_sig.allclose(batch_trick_sig):
-                self.fail(c.diff_fail(true_sig=true_sig, batch_trick_sig=batch_trick_sig))
-            if not true_path_grad.allclose(c.path.grad):
-                self.fail(c.diff_fail(true_path_grad=true_path_grad, batch_trick_path_grad=c.path.grad))
-            if not true_basepoint_grad.allclose(c.basepoint.grad):
-                self.fail(c.diff_fail(true_basepoint_grad=true_basepoint_grad,
-                                      batch_trick_basepoint_grad=c.basepoint.grad))
+
+            if test_batch_trick:
+                batch_trick_sig.backward(grad)
+                if not true_sig.allclose(batch_trick_sig):
+                    self.fail(c.diff_fail(true_sig=true_sig, batch_trick_sig=batch_trick_sig))
+                if not true_path_grad.allclose(c.path.grad):
+                    self.fail(c.diff_fail(true_path_grad=true_path_grad, batch_trick_path_grad=c.path.grad))
+                if isinstance(c.basepoint, torch.Tensor) and c.basepoint.requires_grad:
+                    if not true_basepoint_grad.allclose(c.basepoint.grad):
+                        self.fail(c.diff_fail(true_basepoint_grad=true_basepoint_grad,
+                                              batch_trick_basepoint_grad=c.basepoint.grad))
 
 
 class TestLogSignatureAccuracy(utils.EnhancedTestCase):
@@ -204,3 +214,81 @@ class TestLogSignatureAccuracy(utils.EnhancedTestCase):
             # have to reduce the tolerance slightly (https://github.com/bottler/iisignature/issues/7)
             if not signatory_grad.allclose(iisignature_grad, atol=5e-6):
                 self.fail(c.diff_fail(signatory_grad=signatory_grad, iisignature_grad=iisignature_grad))
+
+
+class TestSignatureCombine(utils.EnhancedTestCase):
+    def test_signature_combine(self):
+        # stream=True is very important. If stream=False then we may attempt to parallelise signatory.signature, which
+        # may involve signature_combine. Then we're just testing signature_combine against itself, and that's no good!
+        for c in utils.ConfigIter(requires_grad=True, stream=True):
+            path2 = torch.rand_like(c.path, requires_grad=True)
+            sig = c.signature()[:, -1]
+            sig2 = c.signature(store=False, path=path2, basepoint=c.path[:, -1, :])[:, -1]
+            sig_combined = signatory.signature_combine(sig, sig2, c.C, c.depth, inverse=c.inverse)
+
+            path_combined = torch.cat([c.path, path2], dim=1)
+            true_sig_combined = c.signature(store=False, path=path_combined)[:, -1]
+            if 'combine' in type(true_sig_combined.grad_fn).__name__.lower():
+                raise RuntimeError("True signature seems to have been computed by using a combine function.")
+            if not sig_combined.allclose(true_sig_combined):
+                self.fail(c.diff_fail(sig_combined=sig_combined, true_sig_combined=true_sig_combined))
+
+            grad = torch.rand_like(sig_combined)
+            sig_combined.backward(grad)
+            if isinstance(c.basepoint, torch.Tensor) and c.basepoint.requires_grad:
+                basepoint_grad = c.basepoint.grad.clone()
+                c.basepoint.grad.zero_()
+            path_grad = c.path.grad.clone()
+            c.path.grad.zero_()
+            path_grad2 = path2.grad.clone()
+            path2.grad.zero_()
+            true_sig_combined.backward(grad)
+            if isinstance(c.basepoint, torch.Tensor) and c.basepoint.requires_grad:
+                if not basepoint_grad.allclose(c.basepoint.grad):
+                    self.fail(c.diff_fail(basepoint_grad=basepoint_grad, true_basepoint_grad=c.basepoint.grad))
+            if not path_grad.allclose(c.path.grad):
+                self.fail(c.diff_fail(path_grad=path_grad, true_path_grad=c.path.grad))
+            if not path_grad2.allclose(path2.grad):
+                self.fail(c.diff_fail(path_grad2=path_grad, true_path2_grad=path2.grad))
+
+    def test_multi_signature_combine(self):
+        for amount in (1, 2, 3, 10):
+            # stream=True is very important. If stream=False then we may attempt to parallelise signatory.signature,
+            # which may involve multi_signature_combine. Then we're just testing multi_signature_combine against itself,
+            # and that's no good!
+            for c in utils.ConfigIter(requires_grad=True, stream=True):
+                prev_path = c.path
+                paths = [prev_path]
+                sigs = [c.signature()[:, -1]]
+                for _ in range(amount - 1):
+                    next_path = torch.rand_like(c.path, requires_grad=True)
+                    paths.append(next_path)
+                    sigs.append(c.signature(store=False, path=next_path, basepoint=prev_path[:, -1, :])[:, -1])
+                    prev_path = next_path
+
+                sig_combined = signatory.multi_signature_combine(sigs, c.C, c.depth, inverse=c.inverse)
+
+                path_combined = torch.cat(paths, dim=1)
+                true_sig_combined = c.signature(store=False, path=path_combined)[:, -1]
+                if 'combine' in type(true_sig_combined.grad_fn).__name__.lower():
+                    raise RuntimeError("True signature seems to have been computed by using a combine function.")
+                if not sig_combined.allclose(true_sig_combined):
+                    self.fail(c.diff_fail(sig_combined=sig_combined, true_sig_combined=true_sig_combined))
+
+                grad = torch.rand_like(sig_combined)
+                sig_combined.backward(grad)
+                if isinstance(c.basepoint, torch.Tensor) and c.basepoint.requires_grad:
+                    basepoint_grad = c.basepoint.grad.clone()
+                    c.basepoint.grad.zero_()
+                path_grads = []
+                for path in paths:
+                    path_grads.append(path.grad.clone())
+                    path.grad.zero_()
+                true_sig_combined.backward(grad)
+                if isinstance(c.basepoint, torch.Tensor) and c.basepoint.requires_grad:
+                    if not basepoint_grad.allclose(c.basepoint.grad):
+                        self.fail(c.diff_fail(basepoint_grad=basepoint_grad, true_basepoint_grad=c.basepoint.grad))
+                for i, (path, path_grad) in enumerate(zip(paths, path_grads)):
+                    if not path.grad.allclose(path_grad):
+                        self.fail(c.diff_fail(path_grad=path_grad, true_path_grad=path.grad,
+                                              extras={'i': i, 'amount': amount}))

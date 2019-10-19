@@ -42,7 +42,7 @@ def _mode_convert(mode):
         raise ValueError("Invalid values for argument 'mode'. Valid values are 'expand', 'brackets', or 'words'.")
 
 
-class _SignatureToLogsignature(autograd.Function):
+class _SignatureToLogsignatureFunction(autograd.Function):
     @staticmethod
     def forward(ctx, signature, channels, depth, stream, mode, lyndon_info):
         mode = _mode_convert(mode)
@@ -51,8 +51,9 @@ class _SignatureToLogsignature(autograd.Function):
 
         logsignature_, backwards_info = _impl.signature_to_logsignature_forward(signature, channels, depth, stream,
                                                                                 mode, lyndon_info)
-        ctx.save_for_backward(logsignature_)
+        ctx.save_for_backward(signature.detach())
         ctx.backwards_info = backwards_info
+        ctx.stream = stream
 
         # Call to detach works around PyTorch bug 25340, which is a won't-fix. Basically, it makes sure that a reference
         # cycle doesn't occur. No call to detach gives:
@@ -70,17 +71,20 @@ class _SignatureToLogsignature(autograd.Function):
         # Because in the forward pass we transpose in the wrapper, our grad_result comes to us here
         # already-transposed. so we don't need to do it here.
 
-        # Just to check that the result of the forward pass hasn't been modified in-place. (Which would make the result
+        # Just to check that the input of the forward pass hasn't been modified in-place. (Which would make the result
         # of the backwards calculation be incorrect!)
         _ = ctx.saved_tensors
 
         grad_signature = _impl.signature_to_logsignature_backward(grad_logsignature, ctx.backwards_info)
 
+        if ctx.stream:
+            grad_signature = grad_signature.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
+
         return grad_signature, None, None, None, None, None
 
 
 def _signature_to_logsignature(signature, channels, depth, stream, mode, lyndon_info):
-    logsignature_ = _SignatureToLogsignature.apply(signature, channels, depth, stream, mode, lyndon_info)
+    logsignature_ = _SignatureToLogsignatureFunction.apply(signature, channels, depth, stream, mode, lyndon_info)
     if stream:
         logsignature_ = logsignature_.transpose(0, 1)
     return logsignature_
@@ -136,28 +140,33 @@ class SignatureToLogSignature(nn.Module):
         mode (str, optional): as :func:`signatory.signature_to_logsignature`.
     """
 
-    _cache = weakref.WeakValueDictionary()
+    _lyndon_info_cache = weakref.WeakValueDictionary()
+
+    # Many objects - in particular PyCapsules - aren't weakref-able, so we wrap them in this.
+    class _RefHolder(object):
+        def __init__(self, item):
+            self.item = item
 
     def __init__(self, channels, depth, stream=False, mode="words", **kwargs):
         # type: (int, int, bool, str, **Any) -> None
-        super(SignatureToLogSignature).__init__(**kwargs)
+        super(SignatureToLogSignature, self).__init__(**kwargs)
 
         self._channels = channels
         self._depth = depth
         self._stream = stream
         self._mode = mode
 
-        self._lyndon_info = self._lyndon_info_cache(channels, depth, mode)
+        self._lyndon_info = self._get_lyndon_info(channels, depth, mode)
 
     @classmethod
-    def _lyndon_info_cache(cls, in_channels, depth, mode):
+    def _get_lyndon_info(cls, in_channels, depth, mode):
         try:
             # This computation can be pretty slow! We definitely want to reuse it between instances
-            return cls._cache[(in_channels, depth, mode)]
+            return cls._lyndon_info_cache[(in_channels, depth, mode)]
         except KeyError:
             mode = _mode_convert(mode)
-            lyndon_info = _impl.make_lyndon_info(in_channels, depth, mode)
-            cls._cache[(in_channels, depth, mode)] = lyndon_info
+            lyndon_info = cls._RefHolder(_impl.make_lyndon_info(in_channels, depth, mode))
+            cls._lyndon_info_cache[(in_channels, depth, mode)] = lyndon_info
             return lyndon_info
 
     def forward(self, signature):
@@ -171,7 +180,7 @@ class SignatureToLogSignature(nn.Module):
             As :func:`signatory.signature_to_logsignature`.
         """
         return _signature_to_logsignature(signature, self._channels, self._depth, self._stream, self._mode,
-                                          self._lyndon_info)
+                                          self._lyndon_info.item)
 
     def extra_repr(self):
         return ('channels={channels}, depth={depth}, stream={stream}, mode{mode}'

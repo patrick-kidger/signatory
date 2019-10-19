@@ -28,6 +28,7 @@ jobs:
       matrix:
         os: [ubuntu-16.04]
         python-version: [3.7.0]
+        pytorch-version: [1.2.0]
     
     steps:
     - name: Checkout code
@@ -53,7 +54,7 @@ jobs:
         conda create -n myenv python=$PYTHON_VERSION -y
         conda activate myenv
         python -m pip install --upgrade pip
-        conda install pytorch -c pytorch -y
+        conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
         python command.py should_not_import
         python setup.py sdist
         pip install twine
@@ -66,6 +67,7 @@ jobs:
       matrix:
         os: [windows-2016, ubuntu-16.04, macOS-10.14]
         python-version: [2.7.13, 3.5.4, 3.6.2, 3.7.0]
+        pytorch-version: [1.2.0]
         exclude:
           # PyTorch doesn't support this combination
           - os: windows-2016
@@ -98,7 +100,7 @@ jobs:
         %CONDA%/Scripts/conda create -n myenv python=%PYTHON_VERSION% -y &&
         %CONDA%/Scripts/activate myenv &&
         python -m pip install --upgrade pip &&
-        conda install pytorch -c pytorch -y &&
+        conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y &&
         python command.py should_not_import &&
         python setup.py bdist_wheel &&
         pip install twine &&
@@ -134,7 +136,7 @@ jobs:
         conda create -n myenv python=$PYTHON_VERSION -y
         conda activate myenv
         python -m pip install --upgrade pip
-        conda install pytorch -c pytorch -y
+        conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
         python command.py should_not_import
         retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
         SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
@@ -161,7 +163,7 @@ jobs:
         conda create -n myenv python=$PYTHON_VERSION -y
         conda activate myenv
         python -m pip install --upgrade pip
-        conda install pytorch -c pytorch -y
+        conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
         python command.py should_not_import
         MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ python setup.py bdist_wheel
         pip install twine

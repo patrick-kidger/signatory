@@ -21,20 +21,37 @@ Installation
 ############
 Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7 and Linux, Mac, Windows.
 
-Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.2.0, but should work with all recent versions.
+Requires `PyTorch <http://pytorch.org/>`__. If you are using Linux or compiling Signatory from source (see below) then Signatory should work with all recent versions of PyTorch. If you are using the precompiled binaries for Mac or Windows then you will have to use PyTorch 1.2.0 specifically.
 
 Install via ``pip install signatory``. Then just ``import signatory`` inside Python.
 
-Installation from source is also possible; please consult the `documentation <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__.
+Installation from source is also possible; please consult the `documentation <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__. This also includes information on how to run the tests and benchmarks
 
 
-If you have any problems with installation then check the `FAQ <https://signatory.readthedocs.io/en/latest/pages/miscellaneous/faq.html>`__. If that doesn't help then feel free to `open an issue <https://github.com/patrick-kidger/signatory/issues>`__.
+If you have any problems with installation then check the `FAQ <https://signatory.readthedocs.io/en/latest/pages/miscellaneous/faq.html#miscellaneous-faq-importing>`__. If that doesn't help then feel free to `open an issue <https://github.com/patrick-kidger/signatory/issues>`__.
 
 
 
 Documentation
 #############
 The documentation is available `here <https://signatory.readthedocs.io>`__.
+
+Example
+#######
+Usage is straightforward.
+
+.. code-block:: python
+
+    import signatory
+    import torch
+    # batch size is 1
+    # length of input stream is 10
+    # number of channels is 2
+    x = torch.rand(1, 10, 2)
+    # Compute signature to depth 4
+    signatory.signature(x, 4)
+
+For further examples, see the `documentation <https://signatory.readthedocs.io/en/latest/pages/examples/examples.html>`__.
 
 
 Citation

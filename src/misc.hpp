@@ -77,11 +77,6 @@ namespace signatory {
         // Checks the arguments for a bunch of functions only depending on channels and depth.
         void checkargs_channels_depth(int64_t channels, s_size_type depth);
 
-        // Checks the arguments for the forwards pass in the signature function (kept here for consistency with the
-        // other checkarg functions).
-        void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value,
-                       bool initial, torch::Tensor initial_value);
-
         // Checks the arguments for the backwards pass in the signature and logsignature function. Only grad_out is
         // checked to make sure it is as expected. The objects we get from the PyCapsule-wrapped BackwardsInfo object
         // are assumed to be correct.

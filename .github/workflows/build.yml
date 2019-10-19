@@ -28,6 +28,7 @@ jobs:
       matrix:
         os: [ubuntu-16.04]
         python-version: [3.7.0]
+        pytorch-version: [1.2.0]
     
     steps:
     - name: Checkout code
@@ -48,7 +49,7 @@ jobs:
         import subprocess
         import sys
         import metadata
-        version_msg = subprocess.run('pip install --index-url https://test.pypi.org/simple/ signatory==', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        version_msg = subprocess.run('pip install signatory==', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         print('Version msg: ', version_msg)
         version_re = re.compile(rb'from versions: ([0-9\. ,]*)\)')
         last_version = version_re.search(version_msg.stderr).group(1).split(b', ')[-1]
@@ -68,6 +69,7 @@ jobs:
       matrix:
         os: [ubuntu-16.04]
         python-version: [3.7.0]
+        pytorch-version: [1.2.0]
     
     steps:
     - name: Checkout code
@@ -99,6 +101,7 @@ jobs:
       matrix:
         os: [windows-2016, ubuntu-16.04, macOS-10.14]
         python-version: [2.7.13, 3.5.4, 3.6.2, 3.7.0]
+        pytorch-version: [1.2.0]
         exclude:
           # PyTorch doesn't support this combination
           - os: windows-2016
@@ -129,7 +132,7 @@ jobs:
         %CONDA%/Scripts/conda create -n myenv python=%PYTHON_VERSION% -y &&
         %CONDA%/Scripts/activate myenv &&
         python -m pip install --upgrade pip &&
-        conda install pytorch -c pytorch -y &&
+        conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y &&
         python command.py should_not_import &&
         python setup.py bdist_wheel &&
         for %%f in (./dist/*) do (python -m pip install ./dist/%%~nxf) &&
@@ -155,7 +158,7 @@ jobs:
         conda create -n myenv python=$PYTHON_VERSION -y
         conda activate myenv
         python -m pip install --upgrade pip
-        conda install pytorch -c pytorch -y
+        conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
         python command.py should_not_import
         python setup.py sdist
         SIGNATORY_INSTALLED=$(python -c "import os
@@ -186,7 +189,7 @@ jobs:
         conda create -n myenv python=$PYTHON_VERSION -y
         conda activate myenv
         python -m pip install --upgrade pip
-        conda install pytorch -c pytorch -y
+        conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
         python command.py should_not_import
         MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ python setup.py bdist_wheel
         SIGNATORY_INSTALLED=$(python -c "import os

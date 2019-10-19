@@ -114,7 +114,6 @@ namespace signatory {
 
     // See signatory.signature_combine
     std::vector<torch::Tensor> signature_combine_backward(torch::Tensor grad_out,
-                                                          torch::Tensor out,
                                                           std::vector<torch::Tensor> sigtensors,
                                                           int64_t input_channels,
                                                           s_size_type depth);

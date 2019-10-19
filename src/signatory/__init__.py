@@ -23,8 +23,11 @@ try:
     from . import _impl
 except ImportError as e:
     if 'specified procedure could not be found' in str(e):
-        raise ImportError('Caught ImportError: {}. This can probably be fixed by updating your version of Python, '
-                          'e.g. from 3.6.6 to 3.6.9'.format(str(e)))
+        raise ImportError('Caught ImportError:\n```\n{}\n```\nThis can probably be fixed by updating your version of '
+                          'Python, e.g. from 3.6.6 to 3.6.9. See the FAQ in the documentation.'.format(str(e)))
+    elif 'Symbol not found' in str(e):
+        raise ImportError('Caught Import Error:\n```\n{}\n```\nThis can probably be fixed by changing your version of '
+                          'PyTorch. See the FAQ in the documentation.'.format(str(e)))
     else:
         raise
 

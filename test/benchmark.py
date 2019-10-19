@@ -101,7 +101,8 @@ def run(self):
                                         'gc.collect()',
                                         'baseline = min(memory_profiler.memory_usage(proc=-1, interval=.2, timeout=1))',
                                         self.mem_include,
-                                        'used = max(memory_profiler.memory_usage((run, (self,), {})))'])
+                                        'used = max(memory_profiler.memory_usage((run, (self,), {})))',
+                                        'print(used - baseline)'])
 
     def action(self):
         if self.measure == 'time':
@@ -118,59 +119,23 @@ def run(self):
             return [math.inf]
         return min(timeit.Timer(stmt=self.time_statement).repeat(repeat=self.repeat, number=self.number))
 
-    @staticmethod
-    def _memory(commands, peak):
+    def memory(self):
         files = os.listdir('.')
-        memory_out = 'memory.out'
         memory_tmp = 'memory.tmp'
 
-        if memory_out in files or memory_tmp in files:
+        if memory_tmp in files:
             raise RuntimeError('Could not write due to existing memory files.')
         with open(memory_tmp, 'w') as f:
-            f.write(commands)
+            f.write(self.mem_statement)
 
         try:
-            subprocess.run('valgrind --tool=massif --threshold=100.0 -q --massif-out-file={} python {}'
-                           .format(memory_out, memory_tmp), shell=True)
-            ms_print = subprocess.run('ms_print {}'.format(memory_out), stdout=subprocess.PIPE,
-                                      shell=True).stdout.decode()
-            lines = ms_print.split('\n')
-            for line in lines:
-                if 'Detailed snapshots' in line:
-                    if peak:
-                        line = line[:line.index(' (peak)')]
-                    else:
-                        line = line[:line.rindex(']')]
-                    comma = line.rindex(',')
-                    line = line[comma + 2:]
-                    if 'peak' in line:
-                        line = line[:-7]
-                    int(line)  # Just to check
-                    selected_line = re.compile('^ +' + line + ' +[0-9,]+ +([0-9,]+) +[0-9,]+ +[0-9,]+ +[0-9,]+$')
-                    break
-            else:
-                raise RuntimeError('Could not find which snapshot to select')
-
-            for line in lines:
-                match = selected_line.match(line)
-                if match:
-                    return int(match.group(1).replace(',', ''))
-            else:
-                raise RuntimeError('Could not locate selected snapshot')
+            return int(subprocess.run('python {}'.format(memory_tmp), stdout=subprocess.PIPE,
+                                      shell=True).stdout.decode())
         finally:
-            try:
-                os.remove(memory_out)
-            except FileNotFoundError:
-                pass
             try:
                 os.remove(memory_tmp)
             except FileNotFoundError:
                 pass
-
-    def memory(self):
-        baseline = self._memory(self.mem_statement_baseline, peak=False)
-        memory_used = self._memory(self.mem_statement, peak=True)
-        return memory_used - baseline
 
 
 class esig_signature_forward(BenchmarkBase):

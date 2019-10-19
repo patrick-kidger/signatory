@@ -59,11 +59,13 @@ namespace signatory {
              */
             void to_lyndon_basis(std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>>& transforms,
                                  std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>>& transforms_backward);
+
             /* Deletes the ExtraLyndonInformation associated with each word, if it is present. This is to reclaim memory
              * when we know we don't need it any more.
              */
             void delete_extra();
 
+            // Should be treated as read-only attributes.
             int64_t amount;
             int64_t input_channel_size;
             s_size_type depth;

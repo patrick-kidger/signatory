@@ -44,7 +44,7 @@ class TestSignatureMemory(utils.EnhancedTestCase):
                                   size=utils.random_size(5)):
             signatory_out = c.signature()
             signatory_out += 1
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(RuntimeError, msg=c.fail()):
                 c.signature_backward()
 
     def test_ctx_dies(self):
@@ -101,7 +101,7 @@ class TestLogSignatureMemory(utils.EnhancedTestCase):
                                   size=utils.random_size(5)):
             signatory_out = c.logsignature()
             signatory_out += 1
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(RuntimeError, msg=c.fail()):
                 c.logsignature_backward()
 
     def test_ctx_dies(self):

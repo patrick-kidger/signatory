@@ -122,6 +122,9 @@ py35 = '3.5.4',
 py36 = '3.6.2',
 py37 = '3.7.0',
 
+# Versions of PyTorch
+pytorch12 = '1.2.0',
+
 # Run on repository_dispatch and precisely one other event
 on = \
 """on:
@@ -140,6 +143,7 @@ strategy:
   matrix:
     os: [<<windows>>, <<linux>>, <<mac>>]
     python-version: [<<py27>>, <<py35>>, <<py36>>, <<py37>>]
+    pytorch-version: [<<pytorch12>>]
     exclude:
       # PyTorch doesn't support this combination
       - os: <<windows>>
@@ -153,6 +157,7 @@ strategy:
   matrix:
     os: [<<linux>>]
     python-version: [<<py37>>]
+    pytorch-version: [<<pytorch12>>]
 """,
 
 # Tests whether a repository_dispatch-triggered action is triggered at all
@@ -220,7 +225,7 @@ run: >
   %CONDA%/Scripts/conda create -n myenv python=%PYTHON_VERSION% -y &&
   %CONDA%/Scripts/activate myenv &&
   python -m pip install --upgrade pip &&
-  conda install pytorch -c pytorch -y &&
+  conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y &&
   python command.py should_not_import &&""",
   
 # Builds a bdist_wheel on Windows
@@ -269,7 +274,7 @@ run: |
   conda create -n myenv python=$PYTHON_VERSION -y
   conda activate myenv
   python -m pip install --upgrade pip
-  conda install pytorch -c pytorch -y
+  conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
   python command.py should_not_import""",
 
 # 'Builds' on Linux
@@ -319,7 +324,7 @@ run: |
   conda create -n myenv python=$PYTHON_VERSION -y
   conda activate myenv
   python -m pip install --upgrade pip
-  conda install pytorch -c pytorch -y
+  conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
   python command.py should_not_import""",
 
 # Builds bdist_wheel on Mac
