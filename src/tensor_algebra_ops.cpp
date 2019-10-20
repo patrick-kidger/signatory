@@ -61,9 +61,13 @@ namespace signatory {
                 }
             }
 
+            bool is_even(s_size_type index) {
+                return (index % 2) == 0;
+            }
+
             // The coefficient of a term in the power series of the logarithm
             torch::Scalar log_coefficient_at_depth(s_size_type depth_index, torch::Tensor reciprocals) {
-                return ((misc::is_even(depth_index) ? -1 : 1) * reciprocals[depth_index]).item();
+                return ((is_even(depth_index) ? -1 : 1) * reciprocals[depth_index]).item();
             }
 
             // Computes (sort of) multiplication in the tensor algebra.
@@ -417,12 +421,17 @@ namespace signatory {
 
         void log(std::vector<torch::Tensor>& output_vector, const std::vector<torch::Tensor>& input_vector,
                  torch::Tensor reciprocals) {
-            auto depth = input_vector.size();
+            s_size_type depth = input_vector.size();
+            if (depth == 1) {
+                output_vector[0].copy_(input_vector[0]);
+                return;
+            }
             output_vector[0].copy_(input_vector[0] * detail::log_coefficient_at_depth(depth - 2, reciprocals));
             for (s_size_type depth_index = depth - 3; depth_index >= 0; --depth_index) {
                 detail::mult_partial(output_vector,
                                      input_vector,
-                                     /*scalar_value_term=*/detail::log_coefficient_at_depth(depth_index, reciprocals),
+                                     /*scalar_value_term=*/detail::log_coefficient_at_depth(depth_index,
+                                                                                            reciprocals),
                                      /*top_terms_to_skip=*/depth_index + 1);
             }
             detail::mult_partial(output_vector, input_vector, /*scalar_value_term=*/1, /*top_terms_to_skip=*/0);
@@ -433,6 +442,10 @@ namespace signatory {
                           const std::vector<torch::Tensor>& input_vector,
                           torch::Tensor reciprocals) {
             s_size_type depth = input_vector.size();
+            if (depth == 1) {
+                grad_input_vector[0].copy_(grad_output_vector[0]);
+                return;
+            }
 
             // Will have the logarithm progressively computed in it
             std::vector<torch::Tensor> scratch_vector;
@@ -489,7 +502,8 @@ namespace signatory {
         }
     }  // namespace signatory::ta_ops
 
-    torch::Tensor signature_combine_forward(std::vector<torch::Tensor> sigtensors, int64_t input_channels,
+    torch::Tensor signature_combine_forward(std::vector<torch::Tensor> sigtensors,  // copy not reference as we modify it
+                                            int64_t input_channels,
                                             s_size_type depth) {
         misc::checkargs_channels_depth(input_channels, depth);
         if (sigtensors.size() == 0) {
@@ -530,12 +544,12 @@ namespace signatory {
     }
 
     std::vector<torch::Tensor> signature_combine_backward(torch::Tensor grad_out,
-                                                          std::vector<torch::Tensor> sigtensors,
+                                                          std::vector<torch::Tensor> sigtensors,  // copy not reference as we modify it
                                                           int64_t input_channels,
                                                           s_size_type depth) {
-        if (grad_out.size(batch_dim) != sigtensors[0].size(batch_dim) ||
-                grad_out.size(channel_dim) != sigtensors[0].size(channel_dim)) {
-            throw std::invalid_argument("grad_out is of the wrong size.");
+        grad_out = grad_out.detach();
+        for (auto& elem : sigtensors) {
+            elem = elem.detach();
         }
 
         // Allocate memory for the output gradients

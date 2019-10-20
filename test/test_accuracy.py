@@ -23,13 +23,14 @@ import utils_testing as utils
 
 
 class TestSignatureAccuracy(utils.EnhancedTestCase):
-    def test_forward(self):
+    def test_forward_no_inverse(self):
         for c in utils.ConfigIter(inverse=False):
             signatory_out = c.signature()
             iisignature_out = c.sig()
             if not signatory_out.allclose(iisignature_out):
                 self.fail(c.fail(signatory_out=signatory_out, iisignature_out=iisignature_out))
 
+    # The backward operation is tested in two ways. This test, and gradchecks
     def test_backward(self):
         for c in utils.ConfigIter(stream=False,  # iisignature doesn't support backwards with stream=True
                                   requires_grad=True,
@@ -46,13 +47,14 @@ class TestSignatureAccuracy(utils.EnhancedTestCase):
 
     @staticmethod
     def _reverse_path(path, basepoint):
-        basepoint, basepoint_value = signatory.backend.interpret_basepoint(basepoint, path)
+        basepoint, basepoint_value = signatory.backend.interpret_basepoint(basepoint, path.size(0), path.size(2),
+                                                                           path.dtype, path.device)
         reverse_path = path.flip(-2)
         if basepoint:
             reverse_path = torch.cat([reverse_path, basepoint_value.unsqueeze(-2)], dim=-2)
         return reverse_path
 
-    def test_inverse(self):
+    def test_inverse_no_stream(self):
         for c in utils.ConfigIter(inverse=True, stream=False):
             inverse_sig = c.signature(store=False)
             reverse_path = self._reverse_path(c.path, c.basepoint)

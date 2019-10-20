@@ -46,47 +46,35 @@ class _SignatureToLogsignatureFunction(autograd.Function):
     @staticmethod
     def forward(ctx, signature, channels, depth, stream, mode, lyndon_info):
         mode = _mode_convert(mode)
-        if stream:
-            signature = signature.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
 
-        logsignature_, backwards_info = _impl.signature_to_logsignature_forward(signature, channels, depth, stream,
-                                                                                mode, lyndon_info)
+        logsignature_, lyndon_info_capsule = _impl.signature_to_logsignature_forward(signature, channels, depth, stream,
+                                                                                     mode, lyndon_info)
         ctx.save_for_backward(signature.detach())
-        ctx.backwards_info = backwards_info
+        ctx.channels = channels
+        ctx.depth = depth
         ctx.stream = stream
+        ctx.mode = mode
+        ctx.lyndon_info_capsule = lyndon_info_capsule
 
-        # Call to detach works around PyTorch bug 25340, which is a won't-fix. Basically, it makes sure that a reference
-        # cycle doesn't occur. No call to detach gives:
-        #   result -> ctx -> backwards_info -> result
-        # Whilst detach gives:
-        #   result.detach()-> ctx -> backwards_info -> result
-        # No cycle!
-        # If a reference cycle is present then a memory leak occurs. (As the result -> ctx reference is in C++ so it's
-        # not handled by Python.)
-        return logsignature_.detach()
+        return logsignature_
 
     @staticmethod
     @autograd_function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
     def backward(ctx, grad_logsignature):
-        # Because in the forward pass we transpose in the wrapper, our grad_result comes to us here
-        # already-transposed. so we don't need to do it here.
+        signature, = ctx.saved_tensors
 
-        # Just to check that the input of the forward pass hasn't been modified in-place. (Which would make the result
-        # of the backwards calculation be incorrect!)
-        _ = ctx.saved_tensors
-
-        grad_signature = _impl.signature_to_logsignature_backward(grad_logsignature, ctx.backwards_info)
-
-        if ctx.stream:
-            grad_signature = grad_signature.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
+        grad_signature = _impl.signature_to_logsignature_backward(grad_logsignature, signature, ctx.channels, ctx.depth,
+                                                                  ctx.stream, ctx.mode, ctx.lyndon_info_capsule)
 
         return grad_signature, None, None, None, None, None
 
 
 def _signature_to_logsignature(signature, channels, depth, stream, mode, lyndon_info):
+    if stream:
+        signature = signature.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
     logsignature_ = _SignatureToLogsignatureFunction.apply(signature, channels, depth, stream, mode, lyndon_info)
     if stream:
-        logsignature_ = logsignature_.transpose(0, 1)
+        logsignature_ = logsignature_.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
     return logsignature_
 
 
@@ -140,7 +128,7 @@ class SignatureToLogSignature(nn.Module):
         mode (str, optional): as :func:`signatory.signature_to_logsignature`.
     """
 
-    _lyndon_info_cache = weakref.WeakValueDictionary()
+    _lyndon_info_capsule_cache = weakref.WeakValueDictionary()
 
     # Many objects - in particular PyCapsules - aren't weakref-able, so we wrap them in this.
     class _RefHolder(object):
@@ -156,18 +144,18 @@ class SignatureToLogSignature(nn.Module):
         self._stream = stream
         self._mode = mode
 
-        self._lyndon_info = self._get_lyndon_info(channels, depth, mode)
+        self._lyndon_info_capsule = self._get_lyndon_info(channels, depth, mode)
 
     @classmethod
     def _get_lyndon_info(cls, in_channels, depth, mode):
         try:
             # This computation can be pretty slow! We definitely want to reuse it between instances
-            return cls._lyndon_info_cache[(in_channels, depth, mode)]
+            return cls._lyndon_info_capsule_cache[(in_channels, depth, mode)]
         except KeyError:
             mode = _mode_convert(mode)
-            lyndon_info = cls._RefHolder(_impl.make_lyndon_info(in_channels, depth, mode))
-            cls._lyndon_info_cache[(in_channels, depth, mode)] = lyndon_info
-            return lyndon_info
+            lyndon_info_capsule = cls._RefHolder(_impl.make_lyndon_info(in_channels, depth, mode))
+            cls._lyndon_info_capsule_cache[(in_channels, depth, mode)] = lyndon_info_capsule
+            return lyndon_info_capsule
 
     def forward(self, signature):
         # type: (torch.Tensor) -> torch.Tensor
@@ -180,7 +168,7 @@ class SignatureToLogSignature(nn.Module):
             As :func:`signatory.signature_to_logsignature`.
         """
         return _signature_to_logsignature(signature, self._channels, self._depth, self._stream, self._mode,
-                                          self._lyndon_info.item)
+                                          self._lyndon_info_capsule.item)
 
     def extra_repr(self):
         return ('channels={channels}, depth={depth}, stream={stream}, mode{mode}'

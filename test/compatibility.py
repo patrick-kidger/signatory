@@ -12,15 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
-"""Provides Python 2/3 compatibility for tests.
-
-Builds on the compatibility file for the main Signatory project. (But is not included in it so as not to pollute the
-main project with things only needed for the tests).
-"""
+"""Provides Python 2/3 compatibility for tests."""
 
 
 import functools as ft
-import signatory.compatibility as compat
 import sys
 import unittest
 
@@ -37,6 +32,21 @@ try:
     lru_cache = ft.lru_cache
 except AttributeError:
     # Python 2
+
+    class LruCacheSizeNone:
+        """# A poor man's lru_cache. No maxsize argument for simplicity (hardcoded to None)"""
+
+        def __init__(self, fn):
+            self.memodict = {}
+            self.fn = fn
+
+        def __call__(self, *args):
+            try:
+                return self.memodict[args]
+            except KeyError:
+                out = self.fn(*args)
+                self.memodict[args] = out
+                return out
     
     class LruCacheSizeOne:
         """# A poor man's lru_cache. No maxsize argument for simplicity (hardcoded to one)"""
@@ -55,17 +65,17 @@ except AttributeError:
                 return out
     
     def lru_cache(maxsize=128, typed=False):
-        try:
-            return compat.lru_cache(maxsize, typed)
-        except ValueError:
-            if maxsize != 1:
-                raise ValueError("Only maxsize=1 supported.")
-            if typed:
-                raise ValueError("Only type=False supported.")
-            # If we ever need to support either of those then we can modify this
-            return LruCacheSizeOne
+        if typed:
+            raise ValueError("Only typed=False supported.")
 
-       
+        if maxsize is None:
+            return LruCacheSizeNone
+        elif maxsize == 1:
+            return LruCacheSizeOne
+        else:
+            raise ValueError("Only maxsize=1 or maxsize=None are supported.")
+
+
 def skip(fn):
     """Python 2/3-compatible skip function."""
     

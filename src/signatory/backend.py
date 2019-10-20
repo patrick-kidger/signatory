@@ -18,9 +18,9 @@
 import torch
 
 
-def interpret_basepoint(basepoint, path):
+def interpret_basepoint(basepoint, batch_size, channel_size, dtype, device):
     if basepoint is True:
-        basepoint_value = torch.zeros((path.shape[0], path.shape[2]), dtype=path.dtype, device=path.device)
+        basepoint_value = torch.zeros((batch_size, channel_size), dtype=dtype, device=device)
     elif isinstance(basepoint, torch.Tensor):
         basepoint_value = basepoint
         basepoint = True

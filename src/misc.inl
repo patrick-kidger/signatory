@@ -59,9 +59,5 @@ namespace signatory {
                 out.push_back(elem[stream_index]);
             }
         }
-
-        inline bool is_even(s_size_type index) {
-            return (((index) % 2) == 0);
-        }
     }  // namespace signatory::misc
 }  // namespace signatory

@@ -24,7 +24,6 @@
 #include <vector>     // std::vector
 
 #include "misc.hpp"
-#include "pycapsule.hpp"
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
 #
@@ -126,29 +125,6 @@ namespace signatory {
             }
         }
 
-        struct SignatureBackwardsCapsule{
-            SignatureBackwardsCapsule(torch::Tensor signature_, torch::Tensor path_increments_, s_size_type depth_,
-                                      bool stream_, bool basepoint_, bool inverse_, bool initial_) :
-                signature{signature_},
-                path_increments{path_increments_},
-                depth{depth_},
-                stream{stream_},
-                basepoint{basepoint_},
-                inverse{inverse_},
-                initial{initial_}
-            {};
-
-            torch::Tensor signature;
-            torch::Tensor path_increments;
-            s_size_type depth;
-            bool stream;
-            bool basepoint;
-            bool inverse;
-            bool initial;
-
-            constexpr static auto capsule_name = "signatory.SignatureBackwardsCapsule";
-        };
-
         struct bool_wrapper { bool value; };
     }  // namespace signatory::detail
 
@@ -211,7 +187,7 @@ namespace signatory {
         }
     }
 
-    std::tuple<torch::Tensor, py::object>
+    std::tuple<torch::Tensor, torch::Tensor>
     signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
                       bool inverse, bool initial, torch::Tensor initial_value, bool open_mp_parallelise) {
         signature_checkargs(path, depth, basepoint, basepoint_value, initial, initial_value);
@@ -324,37 +300,20 @@ namespace signatory {
             }
         }
 
-        py::object backwards_capsule = misc::wrap_capsule<detail::SignatureBackwardsCapsule>(signature,
-                                                                                             path_increments,
-                                                                                             depth,
-                                                                                             stream,
-                                                                                             basepoint,
-                                                                                             inverse,
-                                                                                             initial);
-
-        return std::tuple<torch::Tensor, py::object> {signature, backwards_capsule};
+        return std::tuple<torch::Tensor, torch::Tensor> {signature, path_increments};
     }
 
     std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
-    signature_backward(torch::Tensor grad_signature, py::object backwards_capsule) {
-        detail::SignatureBackwardsCapsule* backwards_info =
-                misc::unwrap_capsule<detail::SignatureBackwardsCapsule>(backwards_capsule);
-        torch::Tensor signature = backwards_info->signature;
-        torch::Tensor path_increments = backwards_info->path_increments;
-        s_size_type depth = backwards_info->depth;
-        bool stream = backwards_info->stream;
-        bool basepoint = backwards_info->basepoint;
-        bool inverse = backwards_info->inverse;
-        bool initial = backwards_info->initial;
+    signature_backward(torch::Tensor grad_signature, torch::Tensor signature, torch::Tensor path_increments,
+                       s_size_type depth, bool stream, bool basepoint, bool inverse, bool initial) {
+        grad_signature = grad_signature.detach();
+        signature = signature.detach();
+        path_increments = path_increments.detach();
 
         torch::TensorOptions opts = misc::make_opts(signature);
         torch::Tensor reciprocals = misc::make_reciprocals(depth, opts);
         int64_t output_stream_size = path_increments.size(stream_dim);
-        int64_t batch_size = path_increments.size(batch_dim);
         int64_t input_channel_size = path_increments.size(channel_dim);
-        int64_t output_channel_size = signature.size(channel_dim);
-
-        misc::checkargs_backward(grad_signature, stream, output_stream_size, batch_size, output_channel_size, opts);
 
         std::vector<torch::Tensor> signature_by_term;
         misc::slice_by_term(signature, signature_by_term, input_channel_size, depth);
@@ -470,17 +429,10 @@ namespace signatory {
     signature_backward_custom(torch::Tensor grad_signature, torch::Tensor signature, torch::Tensor path,
                               s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
                               bool inverse, bool initial) {
-
+        path = path.detach();
+        basepoint_value = basepoint_value.detach();
         torch::Tensor path_increments = detail::compute_path_increments(path, basepoint, basepoint_value, inverse);
-
-        py::object backwards_info_capsule = misc::wrap_capsule<detail::SignatureBackwardsCapsule>(signature,
-                                                                                                  path_increments,
-                                                                                                  depth,
-                                                                                                  stream,
-                                                                                                  basepoint,
-                                                                                                  inverse,
-                                                                                                  initial);
-
-        return signature_backward(grad_signature, backwards_info_capsule);
+        return signature_backward(grad_signature, signature, path_increments, depth, stream, basepoint, inverse,
+                initial);
     }
 }  // namespace signatory

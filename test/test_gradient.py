@@ -20,7 +20,6 @@ import signatory
 import torch
 from torch import autograd
 
-import compatibility as compat
 import utils_testing as utils
 
 
@@ -39,27 +38,9 @@ class TestSignatureGrad(utils.EnhancedTestCase):
             except RuntimeError:
                 self.fail(c.fail())
 
-    @compat.skip  # takes forever
-    def test_gradcheck_grid(self):
-        for c in utils.ConfigIter(requires_grad=True):
-            try:
-                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.inverse)
-            except RuntimeError:
-                self.fail(c.fail())
-
     def test_gradcheck_random(self):
         for c in utils.ConfigIter(requires_grad=True,
                                   size=utils.random_size()):
-            try:
-                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.inverse)
-            except RuntimeError:
-                self.fail(c.fail())
-
-    @compat.skip  # takes forever
-    def test_gradcheck_large(self):
-        for c in utils.ConfigIter(requires_grad=True,
-                                  size=utils.large_size(),
-                                  depth=utils.large_depth()):
             try:
                 self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.inverse)
             except RuntimeError:
@@ -85,30 +66,10 @@ class TestLogSignatureGrad(utils.EnhancedTestCase):
             except RuntimeError:
                 self.fail(c.fail())
 
-    @compat.skip  # takes forever
-    def test_gradcheck_grid(self):
-        for c in utils.ConfigIter(mode=utils.all_modes,
-                                  requires_grad=True):
-            try:
-                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.inverse, c.signatory_mode)
-            except RuntimeError:
-                self.fail(c.fail())
-
     def test_gradcheck_random(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   requires_grad=True,
                                   size=utils.random_size()):
-            try:
-                self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.inverse, c.signatory_mode)
-            except RuntimeError:
-                self.fail(c.fail())
-
-    @compat.skip  # takes forever
-    def test_gradcheck_large(self):
-        for c in utils.ConfigIter(mode=utils.all_modes,
-                                  requires_grad=True,
-                                  size=utils.large_size(),
-                                  depth=utils.large_depth()):
             try:
                 self.gradcheck(c.path, c.depth, c.stream, c.basepoint, c.inverse, c.signatory_mode)
             except RuntimeError:

@@ -70,8 +70,8 @@ class Config(object):
     call these functions in an appropriate, comparable, manner.
     """
 
-    def __init__(self, mode, logsignature_class, stream, size, depth, prep, basepoint, inverse, requires_grad, device,
-                 rep):
+    def __init__(self, mode, logsignature_class, stream, size, depth, prep, basepoint, inverse, initial, requires_grad,
+                 device, rep):
         self.signature_or_logsignature = None
         if mode is expand:
             self.signatory_mode = "expand"
@@ -115,10 +115,14 @@ class Config(object):
             basepoint = torch.rand(self.basepoint_size, requires_grad=False, dtype=torch.double, device=device)
             basepoint_cpu = basepoint.detach().cpu()
         else:  # isinstance(basepoint, bool) == True
-            def raise_error(self):
-                raise NotImplementedError
-            basepoint_cpu = property(raise_error)
+            basepoint_cpu = bool  # don't need it in this case
 
+        if initial is with_grad:
+            initial = signatory.signature(torch.rand(N, 2, C), depth).requires_grad_()
+        elif initial is without_grad:
+            initial = signatory.signature(torch.rand(N, 2, C), depth)
+
+        self.initial = initial
         self.basepoint = basepoint
         self.basepoint_cpu = basepoint_cpu
 
@@ -212,6 +216,8 @@ class Config(object):
             basepoint = self.basepoint
         if inverse is None:
             inverse = self.inverse
+        if initial is None:
+            initial = self.initial
         if random.choice([True, False]):
             signatory_out = signatory.signature(path, self.depth, stream=stream, basepoint=basepoint, inverse=inverse,
                                                 initial=initial)
@@ -269,14 +275,18 @@ class Config(object):
         self.iisignature_grad = iisignature_grad
         return iisignature_grad
 
-    def logsignature(self, store=True):
+    def logsignature(self, path=None, basepoint=None, store=True):
         """Calls signatory.logsignature"""
         self._using_logsignature()
+        if path is None:
+            path = self.path
+        if basepoint is None:
+            basepoint = self.basepoint
         if self.logsignature_class:
             signatory_out = signatory.LogSignature(self.depth, stream=self.stream, inverse=self.inverse,
-                                                   mode=self.signatory_mode)(self.path, self.basepoint, )
+                                                   mode=self.signatory_mode)(path, basepoint)
         else:
-            signatory_out = signatory.logsignature(self.path, self.depth, stream=self.stream, basepoint=self.basepoint,
+            signatory_out = signatory.logsignature(path, self.depth, stream=self.stream, basepoint=basepoint,
                                                    inverse=self.inverse, mode=self.signatory_mode)
         if store:
             self.signatory_out = signatory_out
@@ -387,6 +397,9 @@ class Config(object):
         return self.fail(**out_dict)
 
 
+initial_sentinel = object()
+
+
 class ConfigIter(object):
     """Iterates over a prescibed collection of inputs."""
 
@@ -404,7 +417,8 @@ class ConfigIter(object):
                  mode=None,              # what logsignature modes to operate in, if using logsignatures
                  requires_grad=False,    # set to True if wanting to do backwards calls
                  repeats=1,
-                 inverse=(False, True)):
+                 inverse=(False, True),
+                 initial=None):
 
         if basepoint is None:
             if requires_grad:
@@ -413,6 +427,14 @@ class ConfigIter(object):
                 basepoint = (False, True, without_grad)
         elif basepoint in (False, True, with_grad, without_grad):
             basepoint = (basepoint,)
+
+        if initial is initial_sentinel:
+            if requires_grad:
+                initial = (None, with_grad, without_grad)
+            else:
+                initial = (None, without_grad)
+        elif initial in (None, with_grad, without_grad):
+            initial = (initial,)
 
         if stream in (True, False):
             stream = (stream,)
@@ -449,6 +471,7 @@ class ConfigIter(object):
         self.basepoint = basepoint
         self.repeats = repeats
         self.inverse = inverse
+        self.initial = initial
 
     def size_iter(self):
         if self.size is not None:
@@ -473,9 +496,11 @@ class ConfigIter(object):
                             for stream in self.stream:
                                 for basepoint in self.basepoint:
                                     for inverse in self.inverse:
-                                        for rep in range(self.repeats):
-                                            yield Config(mode, logsignature_class, stream, size, depth, prepare,
-                                                         basepoint, inverse, self.requires_grad, device, rep)
+                                        for initial in self.initial:
+                                            for rep in range(self.repeats):
+                                                yield Config(mode, logsignature_class, stream, size, depth, prepare,
+                                                             basepoint, inverse, initial, self.requires_grad, device,
+                                                             rep)
 
     @staticmethod
     @compat.lru_cache(maxsize=1)

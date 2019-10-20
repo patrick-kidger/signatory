@@ -66,34 +66,5 @@ namespace signatory {
                 throw std::invalid_argument("Argument 'depth' must be an integer greater than or equal to one.");
             }
         }
-
-        void checkargs_backward(torch::Tensor grad_out, bool stream, int64_t output_stream_size, int64_t batch_size,
-                                int64_t channel_size, torch::TensorOptions opts) {
-            if (stream) {
-                if (grad_out.ndimension() != 3) {
-                    throw std::invalid_argument("Gradient must be a 3-dimensional tensor, with dimensions "
-                                                "corresponding to (batch, stream, channel) respectively.");
-                }
-                if (grad_out.size(batch_dim) != batch_size ||
-                    grad_out.size(stream_dim) != output_stream_size ||
-                    grad_out.size(channel_dim) != channel_size) {
-                    throw std::invalid_argument("Gradient has the wrong size.");
-                }
-            }
-            else {
-                if (grad_out.ndimension() != 2) {
-                    throw std::invalid_argument("Gradient must be a 2-dimensional tensor, with dimensions"
-                                                "corresponding to (batch, channel) respectively.");
-                }
-                if (grad_out.size(batch_dim) != batch_size ||
-                    grad_out.size(channel_dim) != channel_size) {
-                    throw std::invalid_argument("Gradient has the wrong size.");
-                }
-            }
-
-            if (opts != make_opts(grad_out)) {
-                throw std::invalid_argument("Argument 'grad_signature' does not have the correct dtype or device.");
-            }
-        }
     }  // namespace signatory::misc
 }  // namespace signatory

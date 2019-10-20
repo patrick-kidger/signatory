@@ -72,16 +72,8 @@ namespace signatory {
         inline void slice_at_stream(const std::vector<torch::Tensor>& in, std::vector<torch::Tensor>& out,
                                     int64_t stream_index);
 
-        inline bool is_even(s_size_type index);
-
         // Checks the arguments for a bunch of functions only depending on channels and depth.
         void checkargs_channels_depth(int64_t channels, s_size_type depth);
-
-        // Checks the arguments for the backwards pass in the signature and logsignature function. Only grad_out is
-        // checked to make sure it is as expected. The objects we get from the PyCapsule-wrapped BackwardsInfo object
-        // are assumed to be correct.
-        void checkargs_backward(torch::Tensor grad_out, bool stream, int64_t output_stream_size, int64_t batch_size,
-                                int64_t channel_size, torch::TensorOptions opts);
     }  // namespace signatory::misc
 }  // namespace signatory
 

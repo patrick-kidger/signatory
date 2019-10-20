@@ -63,34 +63,6 @@ namespace signatory {
             constexpr static auto capsule_name = "signatory.LyndonInfoCapsule";
         };
 
-        struct LogsignatureBackwardsCapsule{
-            LogsignatureBackwardsCapsule(torch::Tensor signature_,
-                                         int64_t input_channel_size_,
-                                         s_size_type depth_,
-                                         bool stream_,
-                                         LogSignatureMode mode_,
-                                         py::object lyndon_info_capsule_,
-                                         int64_t logsignature_channels_) :
-                signature{signature_},
-                input_channel_size{input_channel_size_},
-                depth{depth_},
-                stream{stream_},
-                mode{mode_},
-                lyndon_info_capsule{lyndon_info_capsule_},
-                logsignature_channels{logsignature_channels_}
-            {};
-
-            torch::Tensor signature;
-            int64_t input_channel_size;
-            s_size_type depth;
-            bool stream;
-            LogSignatureMode mode;
-            py::object lyndon_info_capsule;
-            int64_t logsignature_channels;
-
-            constexpr static auto capsule_name = "signatory.LogsignatureBackwardsCapsule";
-        };
-
         // Compresses a representation of a member of the free Lie algebra.
         // In the tensor algebra it is represented by coefficients of all words. This just extracts the coefficients of
         // all the Lyndon words.
@@ -194,26 +166,10 @@ namespace signatory {
     std::tuple<torch::Tensor, py::object>
     signature_to_logsignature_forward(torch::Tensor signature, int64_t input_channel_size, s_size_type depth,
                                       bool stream, LogSignatureMode mode, py::object lyndon_info_capsule) {
-
         detail::logsignature_checkargs(signature, input_channel_size, depth, stream);
 
         // Don't need to track gradients when we have a custom backward
         signature = signature.detach();
-
-        if (depth == 1) {
-            // this isn't just a fast return path: we also can't index the reciprocals tensor if depth == 1, so we'd
-            // need faffier code below - and it's already quite faffy enough
-            py::object backwards_capsule =
-                    misc::wrap_capsule<detail::LogsignatureBackwardsCapsule>(signature,
-                                                                             input_channel_size,
-                                                                             depth,
-                                                                             stream,
-                                                                             mode,
-                                                                             lyndon_info_capsule,
-                                                                             signature.size(channel_dim));
-
-            return std::tuple<torch::Tensor, py::object> {signature, backwards_capsule};
-        }
 
         torch::TensorOptions opts = misc::make_opts(signature);
         torch::Tensor reciprocals = misc::make_reciprocals(depth, opts);
@@ -286,44 +242,25 @@ namespace signatory {
             }
         }
 
-        // Important: the capsule, not the lyndon_info itself! Then the resource (i.e. the lyndon_info) is managed
-        // Python-style, so it doesn't matter whether this is a capsule that was given to us, or that we generated
-        // ourselves.
-        py::object backwards_capsule =
-                misc::wrap_capsule<detail::LogsignatureBackwardsCapsule>(signature,
-                                                                         input_channel_size,
-                                                                         depth,
-                                                                         stream,
-                                                                         mode,
-                                                                         lyndon_info_capsule,
-                                                                         logsignature.size(channel_dim));
-
-        return std::tuple<torch::Tensor, py::object> {logsignature, backwards_capsule};
+        return std::tuple<torch::Tensor, py::object> {logsignature, lyndon_info_capsule};
     }
 
-    torch::Tensor signature_to_logsignature_backward(torch::Tensor grad_logsignature, py::object backwards_capsule) {
-        detail::LogsignatureBackwardsCapsule* backwards_info =
-                misc::unwrap_capsule<detail::LogsignatureBackwardsCapsule>(backwards_capsule);
-        s_size_type depth = backwards_info->depth;
-        if (depth == 1) {
-            return grad_logsignature;
-        }
-        torch::Tensor signature = backwards_info->signature;
-        int64_t input_channel_size = backwards_info->input_channel_size;
-        bool stream = backwards_info->stream;
-        LogSignatureMode mode = backwards_info->mode;
-        detail::LyndonInfo* lyndon_info = misc::unwrap_capsule<detail::LyndonInfo>(backwards_info->lyndon_info_capsule);
-        int64_t logsignature_channels = backwards_info->logsignature_channels;
+    torch::Tensor signature_to_logsignature_backward(torch::Tensor grad_logsignature,
+                                                     torch::Tensor signature,
+                                                     int64_t input_channel_size,
+                                                     s_size_type depth,
+                                                     bool stream,
+                                                     LogSignatureMode mode,
+                                                     py::object lyndon_info_capsule) {
 
+        grad_logsignature = grad_logsignature.detach();
+        signature = signature.detach();
+
+        detail::LyndonInfo* lyndon_info = misc::unwrap_capsule<detail::LyndonInfo>(lyndon_info_capsule);
         torch::TensorOptions opts = misc::make_opts(signature);
         torch::Tensor reciprocals = misc::make_reciprocals(depth, opts);
         int64_t output_stream_size = stream ? signature.size(stream_dim) : -1;
-        int64_t batch_size = signature.size(batch_dim);
         int64_t output_channel_size = signature.size(channel_dim);
-
-        misc::checkargs_backward(grad_logsignature, stream, output_stream_size, batch_size, logsignature_channels,
-                                 opts);
-
 
         std::vector<torch::Tensor> signature_by_term;
         misc::slice_by_term(signature, signature_by_term, input_channel_size, depth);

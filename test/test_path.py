@@ -64,7 +64,7 @@ class TestPath(utils.EnhancedTestCase):
                     if not true_sig.allclose(sig):
                         self.fail(c.diff_fail({'start': start, 'end': end}, sig=sig, true_sig=true_sig))
 
-                    if path_obj.signature_shape != true_sig.shape:
+                    if (path_obj.signature_size(-3), path_obj.signature_size(-1)) != true_sig.shape:
                         self.fail(c.fail(path_signature_shape=path_obj.signature_shape,
                                          true_signature_shape=true_sig.shape))
 
@@ -101,7 +101,7 @@ class TestPath(utils.EnhancedTestCase):
             for start in range(-2 * path_obj.size(1), 2 * path_obj.size(1)):
                 for end in range(-2 * path_obj.size(1), 2 * path_obj.size(1)):
                     try:
-                        logsig = path_obj.logsignature(start, end, mode=c.mode)
+                        logsig = path_obj.logsignature(start, end, mode=c.signatory_mode)
                     except ValueError:
                         try:
                             c.logsignature(store=False, path=basepointed_path[:, start:end, :], basepoint=False)
@@ -184,7 +184,7 @@ class TestPath(utils.EnhancedTestCase):
                     for end in range(start + 2, length + 1):
                         try:
                             autograd.gradcheck(gradchecked, (c.path, c.depth, c.basepoint, update(), start, end,
-                                                             c.mode))
+                                                             c.signatory_mode))
                         except Exception:
                             self.fail(c.fail(base_length=base_length, length=length, update_length=update_length))
 
@@ -194,6 +194,7 @@ class TestPath(utils.EnhancedTestCase):
                                   requires_grad=True,
                                   size=utils.random_size(5)):
             path_obj = signatory.Path(c.path, c.depth, basepoint=c.basepoint)
+            # TODO: this can fail if length is 2
             signatory_out = path_obj.signature(1, None)
             ctx = signatory_out.grad_fn
             ref = weakref.ref(ctx)
@@ -209,6 +210,7 @@ class TestPath(utils.EnhancedTestCase):
                                   requires_grad=True,
                                   size=utils.random_size(5)):
             path_obj = signatory.Path(c.path, c.depth, basepoint=c.basepoint)
+            # TODO: this can fail if length is 2
             signatory_out = path_obj.logsignature(1, None, mode=c.signatory_mode)
             ctx = signatory_out.grad_fn
             ref = weakref.ref(ctx)

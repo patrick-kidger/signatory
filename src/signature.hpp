@@ -24,13 +24,14 @@ namespace signatory {
                              bool initial, torch::Tensor initial_value);
 
     // See signatory.signature for documentation
-    std::tuple<torch::Tensor, py::object>
+    std::tuple<torch::Tensor, torch::Tensor>
     signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
                       bool inverse, bool initial, torch::Tensor initial_value, bool open_mp_parallelise);
 
     // See signatory.signature for documentation
     std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
-    signature_backward(torch::Tensor grad_signature, py::object backwards_capsule);
+    signature_backward(torch::Tensor grad_signature, torch::Tensor signature, torch::Tensor path_increments,
+                       s_size_type depth, bool stream, bool basepoint, bool inverse, bool initial);
 
     // Allows for calling a custom backward operation. To be used with care!
     std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>

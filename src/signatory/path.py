@@ -32,31 +32,36 @@ if False:
 class _BackwardShortcut(autograd.Function):
     @staticmethod
     def forward(ctx, signature, depth, stream, basepoint, inverse, initial, *path_pieces):
-        # Calls to detach work around PyTorch bug 25340, which is a won't-fix.
-        ctx.signature = signature
-        ctx.path_pieces = path_pieces
-        ctx.depth = depth
-        ctx.stream = stream
-        ctx.basepoint = basepoint
-        ctx.inverse = inverse
-        ctx.initial = initial
+        if len(path_pieces) == 0:
+            raise ValueError('path_pieces must have nonzero length')
 
         # Record the tensors upon which the backward calculation depends
-        save_for_backward = list(ctx.path_pieces)
-        save_for_backward.append(ctx.signature)
-        if isinstance(ctx.basepoint, torch.Tensor):
-            save_for_backward.append(ctx.basepoint)
+        save_for_backward = list(path_pieces)
+        ctx.path_pieces_end = len(save_for_backward)
+        ctx.signature_index = len(save_for_backward)
+        save_for_backward.append(signature)
+        if isinstance(basepoint, torch.Tensor):
+            ctx.basepoint_is_tensor = True
+            ctx.basepoint_index = len(save_for_backward)
+            save_for_backward.append(basepoint)
+        else:
+            ctx.basepoint_is_tensor = False
+            ctx.basepoint = basepoint
+        if isinstance(initial, torch.Tensor):
+            ctx.initial_is_tensor = True
+            ctx.initial_index = len(save_for_backward)
+            save_for_backward.append(initial)
+        else:
+            ctx.initial_is_tensor = False
+            ctx.initial = initial
+
+        ctx.depth = depth
+        ctx.stream = stream
+        ctx.inverse = inverse
+
         ctx.save_for_backward(*save_for_backward)
 
-        # Call to detach works around PyTorch bug 25340, which is a won't-fix. Basically, it makes sure that a reference
-        # cycle doesn't occur. No call to detach gives:
-        #   result -> ctx -> backwards_info -> result
-        # Whilst detach gives:
-        #   result.detach()-> ctx -> backwards_info -> result
-        # No cycle!
-        # If a reference cycle is present then a memory leak occurs. (As the result -> ctx reference is in C++ so it's
-        # not handled by Python.)
-        return signature.detach()
+        return signature
 
     @staticmethod
     @autograd_function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
@@ -64,23 +69,31 @@ class _BackwardShortcut(autograd.Function):
         # Test for any in-place changes
         # This isn't perfect. If any of the stored tensors do not own their own storage (which is possible) then
         # this check will always pass, even if they've been modified in-place. (PyTorch bug 24413)
-        _ = ctx.saved_tensors
+        saved_tensors = ctx.saved_tensors
+        path_pieces = saved_tensors[:ctx.path_pieces_end]
+        signature = saved_tensors[ctx.signature_index]
+        if ctx.basepoint_is_tensor:
+            basepoint = saved_tensors[ctx.basepoint_index]
+        else:
+            basepoint = ctx.basepoint
+        if ctx.initial_is_tensor:
+            initial = saved_tensors[ctx.initial_index]
+        else:
+            initial = ctx.initial
 
-        if len(ctx.path_pieces) > 1:
+        if len(path_pieces) > 1:
             # TODO: This concatenation isn't really necessary. Pretty much the only thing we do with this is to compute
             #       the increments. Not sure what the most elegant way to adjust _impl.signature_backward_custom to take
             #       advantage of that is, though.
-            path = torch.cat(ctx.path_pieces, dim=-2)  # along stream dim
+            path = torch.cat(path_pieces, dim=-3)  # along stream dim
         else:
-            path = ctx.path_pieces[0]
+            path = path_pieces[0]
 
-        path, basepoint, basepoint_value, initial, initial_value = smodule.interpet_forward_args(ctx,
-                                                                                                 path,
-                                                                                                 ctx.basepoint,
-                                                                                                 ctx.initial)
+        basepoint, basepoint_value, initial, initial_value = smodule.interpet_forward_args(ctx, path, basepoint,
+                                                                                           initial)
 
         grad_path, grad_basepoint, grad_initial = _impl.signature_backward_custom(grad_result,
-                                                                                  ctx.signature,
+                                                                                  signature,
                                                                                   path,
                                                                                   ctx.depth,
                                                                                   ctx.stream,
@@ -89,28 +102,32 @@ class _BackwardShortcut(autograd.Function):
                                                                                   ctx.inverse,
                                                                                   initial)
 
-        grad_path, grad_basepoint, grad_initial = smodule.interpret_backward_grad(ctx, grad_path, grad_basepoint,
-                                                                                  grad_initial)
+        grad_basepoint, grad_initial = smodule.interpret_backward_grad(ctx, grad_basepoint, grad_initial)
 
         result = [None, None, None, grad_basepoint, None, grad_initial]
         start = 0
         end = 0
-        for elem in ctx.path_pieces:
-            end += elem.size(-2)  # stream dimension
+        for elem in path_pieces:
+            end += elem.size(-3)  # stream dimension
             result.append(grad_path[:, start:end, :])
             start = end
         return tuple(result)
 
 
+# This wires up a shortcut through the backward operation.
+# The already-computed signature is just returned during the forward operation.
+# And the backward operation through signature is not computed in favour of shortcutting through path_pieces. (Which
+# is assumed to be the path which has this signature!)
 def _backward_shortcut(signature, path_pieces, depth, stream, basepoint, inverse, initial):
+    # (batch, stream, channel) to (stream, batch, channel)
+    path_pieces = [path_piece.transpose(0, 1) for path_piece in path_pieces]
     # .detach() so that no gradients are taken through this argument
     result = _BackwardShortcut.apply(signature.detach(), depth, stream, basepoint, inverse, initial, *path_pieces)
 
-    # We have to do the transpose outside of autograd.Function.apply to avoid PyTorch bug 24413
     if stream:
-        result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere and we
-                                         # don't want to change it.
-    return result
+        return result.transpose(0, 1)
+    else:
+        return result
 
 
 class Path(object):
@@ -146,7 +163,8 @@ class Path(object):
         self._signature_channels = smodule.signature_channels(self._channels, self._depth)
         self._logsignature_channels = lmodule.logsignature_channels(self._channels, self._depth)
 
-        use_basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
+        use_basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path.size(0), path.size(2), path.dtype,
+                                                                     path.device)
         if use_basepoint:
             self._length += 1
             self._lengths.append(1)
@@ -223,7 +241,7 @@ class Path(object):
         inverse_sig_at_start = self._inverse_signature[index_sig_start][:, sig_start, :]
 
         # Find the signature on [start:end]
-        signature = smodule.signature_combine(inverse_sig_at_start, sig_at_end, self._channels, self.depth)
+        signature = smodule.multi_signature_combine([inverse_sig_at_start, sig_at_end], self._channels, self.depth)
 
         # Find path[start:end]
         path_pieces = []

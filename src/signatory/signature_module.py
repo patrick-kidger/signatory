@@ -42,6 +42,13 @@ if False:
 # signature_forward don't have exactly the same interface - for some sensible reasons, and some not-so-sensible but now
 # unchangable-because-of-backwards-compatability reasons - and these convert between them.)
 #
+# In particular one annoying wart that I would definitely change if I could is the order of dimensions. For speed
+# reasons this is (stream, batch, channel) in C++. For convention reasons it is (batch, stream, channel) in the visible
+# API. Somewhere a transpose has to be performed. Unfortunately, some transposes cannot be performed in anything within
+# the autograd machinery, as else certain correctness checks don't trigger. (PyTorch bug 24413). So for simplicity we
+# put all transposes outside the autograd framework.
+# If I could I would just make (stream, batch, channel) the convention throughout.
+#
 # Moving on, the next wart is that there's some somewhat convoluted logic in the main signature function to test for
 # more efficient parallelisation cases. This has to be done outside of _SignatureFunction (and thus in Python), so that
 # the backward logic is hooked up correctly.
@@ -56,64 +63,56 @@ if False:
 def interpet_forward_args(ctx, path, basepoint, initial):
     ctx.basepoint_is_tensor = isinstance(basepoint, torch.Tensor)
     ctx.initial_is_tensor = isinstance(initial, torch.Tensor)
-    basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
+    basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path.size(-2), path.size(-1), path.dtype,
+                                                             path.device)
     initial, initial_value = backend.interpret_initial(initial)
-    path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
-    return path, basepoint, basepoint_value, initial, initial_value
+    return basepoint, basepoint_value, initial, initial_value
 
 
-def interpret_backward_grad(ctx, grad_path, grad_basepoint, grad_initial):
-    grad_path = grad_path.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
+def interpret_backward_grad(ctx, grad_basepoint, grad_initial):
     if not ctx.basepoint_is_tensor:
         grad_basepoint = None
     if not ctx.initial_is_tensor:
         grad_initial = None
-    return grad_path, grad_basepoint, grad_initial
+    return grad_basepoint, grad_initial
 
 
 class _SignatureFunction(autograd.Function):
     @staticmethod
     def forward(ctx, path, depth, stream, basepoint, inverse, initial, open_mp_parallelise):
 
-        path, basepoint, basepoint_value, initial, initial_value = interpet_forward_args(ctx, path, basepoint, initial)
+        basepoint, basepoint_value, initial, initial_value = interpet_forward_args(ctx, path, basepoint, initial)
 
-        result, backwards_info = _impl.signature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
-                                                         initial, initial_value, open_mp_parallelise)
-        ctx.save_for_backward(result)
-        ctx.backwards_info = backwards_info
+        signature_, path_increments = _impl.signature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
+                                                              initial, initial_value, open_mp_parallelise)
+        ctx.save_for_backward(signature_, path_increments)
+        ctx.depth = depth
+        ctx.stream = stream
+        ctx.basepoint = basepoint
+        ctx.inverse = inverse
+        ctx.initial = initial
 
-        # Call to detach works around PyTorch bug 25340, which is a won't-fix. Basically, it makes sure that a reference
-        # cycle doesn't occur. No call to detach gives:
-        #   result -> ctx -> backwards_info -> result
-        # Whilst detach gives:
-        #   result.detach() -> ctx -> backwards_info -> result
-        # No cycle!
-        # If a reference cycle is present then a memory leak occurs. (As the result -> ctx reference is in C++ so it's
-        # not handled by Python.)
-        return result.detach()
+        return signature_
 
     @staticmethod
     @autograd_function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
     def backward(ctx, grad_result):
-        # Because in the forward pass we transpose at every call site, our grad_result comes to us here
-        # already-transposed. so we don't need to do it here.
+        signature_, path_increments = ctx.saved_tensors
 
-        # Just to check that the result of the forward pass hasn't been modified in-place. (Which would make the result
-        # of the backwards calculation be incorrect!) The reason we don't actually use the tensor is because another
-        # handle to it is already saved in ctx.backwards_info, which we do use.
-        _ = ctx.saved_tensors
+        grad_path, grad_basepoint, grad_initial = _impl.signature_backward(grad_result, signature_, path_increments,
+                                                                           ctx.depth, ctx.stream, ctx.basepoint,
+                                                                           ctx.inverse, ctx.initial)
 
-        grad_path, grad_basepoint, grad_initial = _impl.signature_backward(grad_result, ctx.backwards_info)
-
-        grad_path, grad_basepoint, grad_initial = interpret_backward_grad(ctx, grad_path, grad_basepoint, grad_initial)
+        grad_basepoint, grad_initial = interpret_backward_grad(ctx, grad_basepoint, grad_initial)
 
         return grad_path, None, None, grad_basepoint, None, grad_initial, None
 
 
 def _signature_checkargs(path, depth, basepoint, initial):
-    basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
-    initial, initial_value = backend.interpret_initial(initial)
     path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
+    basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path.size(-2), path.size(-1), path.dtype,
+                                                             path.device)
+    initial, initial_value = backend.interpret_initial(initial)
     _impl.signature_checkargs(path, depth, basepoint, basepoint_value, initial, initial_value)
 
 
@@ -133,7 +132,7 @@ def _signature_openmp(path, depth, stream, basepoint, inverse, initial):
         return
 
     # noinspection PyUnresolvedReferences
-    return _SignatureFunction.apply(path, depth, stream, basepoint, inverse, initial, True)
+    return _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, True)
 
 
 def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
@@ -187,7 +186,7 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
     basepoint = ends.view(batch_size * mult, channel_size)
 
     # noinspection PyUnresolvedReferences
-    result_bulk = _SignatureFunction.apply(path_bulk, depth, stream, basepoint, inverse, False, False)
+    result_bulk = _SignatureFunction.apply(path_bulk.transpose(0, 1), depth, stream, basepoint, inverse, False, False)
     result_bulk = result_bulk.view(batch_size, mult, result_bulk.size(-1))
     chunks = []
     if isinstance(initial, torch.Tensor):
@@ -195,7 +194,7 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
     chunks.extend(result_bulk.unbind(dim=-2))
     if remainder != 0:
         # noinspection PyUnresolvedReferences
-        result_remainder = _SignatureFunction.apply(path_remainder, depth, stream, basepoint_remainder,
+        result_remainder = _SignatureFunction.apply(path_remainder.transpose(0, 1), depth, stream, basepoint_remainder,
                                                     inverse, False, False)
         chunks.append(result_remainder)
 
@@ -317,8 +316,10 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
             break
     else:
         # Default case: no parallelisation
+        # transpose to go from Python convention of (batch, stream, channel) to autograd/C++ convention of
+        # (stream, batch, channel)
         # noinspection PyUnresolvedReferences
-        result = _SignatureFunction.apply(path, depth, stream, basepoint, inverse, initial, False)
+        result = _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, False)
 
     # We have to do the transpose outside of autograd.Function.apply to avoid PyTorch bug 24413
     if stream:

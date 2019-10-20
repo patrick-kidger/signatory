@@ -18,6 +18,7 @@ checking that that doesn't occur is the purpose of these tests."""
 
 
 import gc
+import signatory
 import torch
 import weakref
 
@@ -39,14 +40,6 @@ class TestSignatureMemory(utils.EnhancedTestCase):
             self.assertTrue(c.signatory_out.allclose(signatory_out_copy))
             self.assertTrue(c.grad.allclose(grad_copy))
 
-    def test_inplace_caught(self):
-        for c in utils.ConfigIter(requires_grad=True,
-                                  size=utils.random_size(5)):
-            signatory_out = c.signature()
-            signatory_out += 1
-            with self.assertRaises(RuntimeError, msg=c.fail()):
-                c.signature_backward()
-
     def test_ctx_dies(self):
         for c in utils.ConfigIter(requires_grad=True,
                                   size=utils.random_size(5)):
@@ -54,6 +47,8 @@ class TestSignatureMemory(utils.EnhancedTestCase):
             ctx = signatory_out.grad_fn
             if c.stream:
                 ctx = ctx.next_functions[0][0]
+            if type(ctx).__name__ not in ('_SignatureFunctionBackward', '_SignatureCombineFunctionBackward'):
+                self.fail(c.fail(name=type(ctx).__name__))
             ref = weakref.ref(ctx)
             del ctx
             del signatory_out
@@ -95,15 +90,6 @@ class TestLogSignatureMemory(utils.EnhancedTestCase):
             self.assertTrue(c.signatory_out.allclose(signatory_out_copy))
             self.assertTrue(c.grad.allclose(grad_copy))
 
-    def test_inplace_caught(self):
-        for c in utils.ConfigIter(mode=utils.all_modes,
-                                  requires_grad=True,
-                                  size=utils.random_size(5)):
-            signatory_out = c.logsignature()
-            signatory_out += 1
-            with self.assertRaises(RuntimeError, msg=c.fail()):
-                c.logsignature_backward()
-
     def test_ctx_dies(self):
         for c in utils.ConfigIter(mode=utils.all_modes,
                                   requires_grad=True,
@@ -112,6 +98,8 @@ class TestLogSignatureMemory(utils.EnhancedTestCase):
             ctx = signatory_out.grad_fn
             if c.stream:
                 ctx = ctx.next_functions[0][0]
+            if '_SignatureToLogsignatureFunctionBackward' != type(ctx).__name__:
+                self.fail(c.fail(name=type(ctx).__name__))
             ref = weakref.ref(ctx)
             del ctx
             del signatory_out
@@ -136,3 +124,42 @@ class TestLogSignatureMemory(utils.EnhancedTestCase):
             del signatory_out
             del back
             gc.collect()
+
+
+class TestSignatureToLogSignatureMemory(utils.EnhancedTestCase):
+    def test_no_adjustments(self):
+        for c in utils.ConfigIter(mode=utils.all_modes,
+                                  size=utils.random_size(5),
+                                  requires_grad=True):
+            signature = signatory.signature(c.path, c.depth, c.stream, c.basepoint, c.inverse)
+            signature_clone = signature.clone()
+
+            logsignature = signatory.signature_to_logsignature(signature, c.C, c.depth, c.stream, c.signatory_mode)
+
+            self.assertTrue(signature.allclose(signature_clone))
+            logsignature_clone = logsignature.clone()
+            grad = torch.rand_like(logsignature)
+            grad_clone = grad.clone()
+
+            logsignature.backward(grad)
+
+            self.assertTrue(signature.allclose(signature_clone))
+            self.assertTrue(logsignature.allclose(logsignature_clone))
+            self.assertTrue(grad.allclose(grad_clone))
+
+    def test_ctx_dies(self):
+        for c in utils.ConfigIter(mode=utils.all_modes,
+                                  requires_grad=True,
+                                  size=utils.random_size(5)):
+            signature = signatory.signature(c.path, c.depth, c.stream, c.basepoint, c.inverse)
+            logsignature = signatory.signature_to_logsignature(signature, c.C, c.depth, c.stream, c.signatory_mode)
+            ctx = logsignature.grad_fn
+            if c.stream:
+                ctx = ctx.next_functions[0][0]
+            if '_SignatureToLogsignatureFunctionBackward' != type(ctx).__name__:
+                self.fail(c.fail(name=type(ctx).__name__))
+            ref = weakref.ref(ctx)
+            del ctx
+            del logsignature
+            gc.collect()
+            self.assertIsNone(ref(), c.fail())
