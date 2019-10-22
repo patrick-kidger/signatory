@@ -1,3 +1,17 @@
+# Copyright 2019 Patrick Kidger. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =========================================================================
 """This file generates GitHub Actions from templates.
 
 The template system is pretty simple at the moment. That's probably for the best!
@@ -124,6 +138,7 @@ py37 = '3.7.0',
 
 # Versions of PyTorch
 pytorch12 = '1.2.0',
+pytorch13 = '1.3.0',
 
 # Run on repository_dispatch and precisely one other event
 on = \
@@ -143,7 +158,7 @@ strategy:
   matrix:
     os: [<<windows>>, <<linux>>, <<mac>>]
     python-version: [<<py27>>, <<py35>>, <<py36>>, <<py37>>]
-    pytorch-version: [<<pytorch12>>]
+    pytorch-version: [<<pytorch12>>, <<pytorch13>>]
     exclude:
       # PyTorch doesn't support this combination
       - os: <<windows>>
@@ -229,7 +244,7 @@ run: >
   python command.py should_not_import &&""",
   
 # Builds a bdist_wheel on Windows
-build_windows = "  python setup.py bdist_wheel &&",
+build_windows = '  python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel &&',
 
 # Install from sdist or bdist_wheel on Windows
 install_local_windows = '  for %%f in (./dist/*) do (python -m pip install ./dist/%%~nxf) &&',
@@ -242,7 +257,7 @@ install_remote_windows = \
   import metadata;
   sleep = lambda t: time.sleep(t) or True;
   retry = lambda fn: fn() or (sleep(20) and fn()) or (sleep(40) and fn()) or (sleep(120) and fn()) or (sleep(240) and fn());
-  ret = retry(lambda: not subprocess.run('python -m pip install signatory=={} --only-binary signatory'.format(metadata.version)).returncode);
+  ret = retry(lambda: not subprocess.run('python -m pip install signatory_installer=={}'.format(metadata.version)).returncode);
   sys.exit(not ret)
   " &&""",
 
@@ -278,7 +293,7 @@ run: |
   python command.py should_not_import""",
 
 # 'Builds' on Linux
-build_linux = "  python setup.py sdist",
+build_linux = '  python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" sdist',
 
 # Install from sdist or bdist_wheel on Linux
 install_local_linux = \
@@ -293,7 +308,7 @@ install_local_linux = \
 install_remote_linux = \
 """  retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
   SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-  retry python -m pip install signatory==$SIGNATORY_VERSION --no-binary signatory""",
+  retry python -m pip install signatory_installer==$SIGNATORY_VERSION""",
 
 # Runs tests on Linux
 test_linux = \
@@ -328,7 +343,7 @@ run: |
   python command.py should_not_import""",
 
 # Builds bdist_wheel on Mac
-build_mac = "  MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ python setup.py bdist_wheel",
+build_mac = '  MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel',
 
 # Install from sdist or bdist_wheel on Mac
 install_local_mac = \
@@ -343,7 +358,7 @@ install_local_mac = \
 install_remote_mac = \
 """  retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
   SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-  retry python -m pip install signatory==$SIGNATORY_VERSION --only-binary signatory""",
+  retry python -m pip install signatory_installer==$SIGNATORY_VERSION""",
 
 # Runs tests on Mac
 test_mac = \
@@ -367,15 +382,25 @@ terminate_mac = \
   chmod +x $GITHUB_WORKSPACE/to_run.sh
   sudo -s -H -E $GITHUB_WORKSPACE/to_run.sh""",
 
-# Uploads dist/* to PyPI for Windows
+# Uploads dist/* to PyPI for Windows, and uploads the installer script
 upload_windows = \
-"""  pip install twine &&
-  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/* &&""",
+r"""  pip install twine &&
+  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/* &&
+  cd installer &&
+  python -c "import command.py; command.set_up()" &&
+  python setup.py sdist &&
+  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/* &&
+  cd .. &&""",
 
-# Uploads dist/* to PyPI for Unix
+# Uploads dist/* to PyPI for Unix, and uploads the installer script
 upload_unix = \
 """  pip install twine
-  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/*""",
+  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/*
+  cd installer
+  python -c "import command; command.set_up()"
+  python setup.py sdist
+  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/*
+  cd ..""",
 )  # end of global_subs
 global_subs['upload_mac'] = global_subs['upload_linux'] = global_subs['upload_unix']
 

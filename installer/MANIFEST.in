@@ -1,0 +1,4 @@
+include LICENSE
+include metadata.py
+include version.py
+exclude command.py

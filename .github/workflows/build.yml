@@ -51,7 +51,7 @@ jobs:
         import metadata
         version_msg = subprocess.run('pip install signatory==', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         print('Version msg: ', version_msg)
-        version_re = re.compile(rb'from versions: ([0-9\. ,]*)\)')
+        version_re = re.compile(rb'from versions: ([-0-9\. ,torch]*)\)')
         last_version = version_re.search(version_msg.stderr).group(1).split(b', ')[-1]
         print('Last version: ', last_version)
         print('This version: ', metadata.version)
@@ -101,7 +101,7 @@ jobs:
       matrix:
         os: [windows-2016, ubuntu-16.04, macOS-10.14]
         python-version: [2.7.13, 3.5.4, 3.6.2, 3.7.0]
-        pytorch-version: [1.2.0]
+        pytorch-version: [1.2.0, 1.3.0]
         exclude:
           # PyTorch doesn't support this combination
           - os: windows-2016
@@ -134,7 +134,7 @@ jobs:
         python -m pip install --upgrade pip &&
         conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y &&
         python command.py should_not_import &&
-        python setup.py bdist_wheel &&
+        python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel &&
         for %%f in (./dist/*) do (python -m pip install ./dist/%%~nxf) &&
         python -m pip install iisignature &&
         python -c "import os;
@@ -160,7 +160,7 @@ jobs:
         python -m pip install --upgrade pip
         conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
         python command.py should_not_import
-        python setup.py sdist
+        python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" sdist
         SIGNATORY_INSTALLED=$(python -c "import os
         import sys
         x = os.listdir('dist')
@@ -191,7 +191,7 @@ jobs:
         python -m pip install --upgrade pip
         conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
         python command.py should_not_import
-        MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ python setup.py bdist_wheel
+        MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel
         SIGNATORY_INSTALLED=$(python -c "import os
         import sys
         x = os.listdir('\''dist'\'')

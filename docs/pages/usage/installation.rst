@@ -4,9 +4,13 @@ Installation
 ############
 Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7 and Linux, Mac, Windows.
 
-Requires `PyTorch <http://pytorch.org/>`__. If you are using Linux or compiling Signatory from source (see below) then Signatory should work with all recent versions of PyTorch. If you are using the precompiled binaries for Mac or Windows then you will have to use PyTorch 1.2.0 specifically.
+Requires `PyTorch <http://pytorch.org/>`__.
 
-Install via ``pip install signatory``. Then just ``import signatory`` inside Python.
+Install via ``pip install signatory_installer``. Then just ``import signatory`` inside Python.
+
+.. note::
+
+    The ``installer`` is because this command actually downloads a script which detects the version of PyTorch that is currently installed, and then downloads the corresponding version of Signatory. If you already know that you are using e.g. PyTorch 1.2.0 and want Signatory 1.1.4, then you can just run ``pip install signatory==1.1.4-torch1.2.0``.
 
 .. genreadme insert install_from_source
 

@@ -1,7 +1,8 @@
 # The sdist includes only the minimum amount of files required to build (but not test) from source
-# However if users want a 'true' source distribution then the supported way to get it is via GitHub, not PyPI.
+# Get it from GitHub, not PyPI, if that's what's desired.
 include LICENSE
 include metadata.py
 recursive-include src *.hpp
 recursive-include src *.inl
 prune test
+prune installer

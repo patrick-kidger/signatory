@@ -48,6 +48,8 @@ def main():
     benchmark_parser = subparsers.add_parser('benchmark', parents=[deviceparser], description="Run speed benchmarks")
     docs_parser = subparsers.add_parser('docs', description="Build documentation")
     genreadme_parser = subparsers.add_parser('genreadme', description="Generate the README from the documentation.")
+    genworkflows_parser = subparsers.add_parser('genworkflows', description="Generate the GitHub workflows from "
+                                                                            "templates.")
     should_not_import_parser = subparsers.add_parser('should_not_import', description="Tests that Signatory _cannot_ "
                                                                                       "be imported.")
 
@@ -55,6 +57,7 @@ def main():
     benchmark_parser.set_defaults(cmd=benchmark)
     docs_parser.set_defaults(cmd=docs)
     genreadme_parser.set_defaults(cmd=genreadme)
+    genworkflows_parser.set_defaults(cmd=genworkflows)
     should_not_import_parser.set_defaults(cmd=should_not_import)
 
     test_parser.add_argument('-f', '--failfast', action='store_true', help='Stop tests on first failure.')
@@ -212,6 +215,14 @@ def docs(args=()):
     subprocess.Popen("sphinx-build -M html {} {}".format(os.path.join(_here, "docs"), os.path.join(_here, "docs", "_build"))).wait()
     if args.open:
         webbrowser.open_new_tab('file:///{}'.format(os.path.join(_here, 'docs', '_build', 'html', 'index.html')))
+
+
+def genworkflows(args=()):
+    """The GitHub workflows are generated from templates."""
+    sys.path.insert(0, os.path.join(_here, '.github', 'workflows_templates'))
+    import from_template
+    from_template.main()
+    sys.path = sys.path[1:]
 
     
 def genreadme(args=()):
