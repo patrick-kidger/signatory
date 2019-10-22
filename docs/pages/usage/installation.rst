@@ -8,19 +8,14 @@ Requires `PyTorch <http://pytorch.org/>`__.
 
 Install via ``pip install signatory_installer``. Then just ``import signatory`` inside Python.
 
+.. genreadme off (GitHub doesn't support using admonitions this way, and just uses indented text.)
 .. note::
 
-    The ``installer`` is because this command actually downloads a script which detects the version of PyTorch that is currently installed, and then downloads the corresponding version of Signatory. If you already know that you are using e.g. PyTorch 1.2.0 and want Signatory 1.1.4, then you can just run ``pip install signatory==1.1.4-torch1.2.0``.
+    .. genreadme on
 
-.. genreadme insert install_from_source
+    The ``installer`` is because this command actually downloads a script which detects the version of PyTorch that is currently installed, and then downloads the corresponding version of Signatory. If you already know that you are using e.g. PyTorch 1.2.0 and want Signatory 1.1.4, then you can just run ``pip install signatory==1.1.4-torch1.2.0``. Check `here <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#all-supported-versions>`__ for the definitive list of all supported combinations.
 
-.. genreadme off
-
-..
-    The FAQ link has to be a direct link, not a reference, so that it works on the GitHub README.
-    And furthermore GitHub's READMEs don't like comments, so we have to toggle genreadme either side of this comment.
-
-.. genreadme on
+.. genreadme insert Installation from source is also possible; please consult the `documentation <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__. This also includes information on how to run the tests and benchmarks.
 
 If you have any problems with installation then check the `FAQ <https://signatory.readthedocs.io/en/latest/pages/miscellaneous/faq.html#miscellaneous-faq-importing>`__. If that doesn't help then feel free to `open an issue <https://github.com/patrick-kidger/signatory/issues>`__.
 
@@ -30,19 +25,31 @@ If you have any problems with installation then check the `FAQ <https://signator
 
 Install from source
 ^^^^^^^^^^^^^^^^^^^
-For most use-cases, the prebuilt binaries available as described above should be sufficient. If installing a binary fails, or you want to run the tests yourself, or you want to try eking out a little extra speed with a specific-to-you compilation, then you'll need to install from source. You'll need to be able to compile C++. You must have already installed `PyTorch <http://pytorch.org/>`__, as this is a requirement to run ``setup.py``. Then:
+For most use-cases, the prebuilt binaries available as described above should be sufficient. If installing a binary fails, or you want to try eking out a little extra speed with a specific-to-you compilation, then you'll need to install from source. You'll need to have a C++ compiler installed and known to ``pip``. (This may already be the case; see the notes below.) You must have already installed `PyTorch <http://pytorch.org/>`__, as this is a requirement to run ``setup.py``.
+
+Then run **either**
+
+.. code-block:: bash
+
+    pip install signatory --no-binary signatory
+
+**or**
 
 .. code-block:: bash
 
     git clone https://github.com/patrick-kidger/signatory.git
     cd signatory
     python setup.py install
-    
-Subsequent to this,
+
+In either case, the actual compilation should automatically occur for you.
+
+If you chose the first option then you'll get just the files necessary to run Signatory.
+
+If you choose the second option then tests, benchmarking code, and code to build the documentation will also be provided. Subsequent to this,
 
 - Tests can be run, see ``python command.py test --help``. This requires installing `iisignature <https://github.com/bottler/iisignature>`__.
 - Speed and memory  benchmarks can be performed, see ``python command.py benchmark --help``. This requires installing `iisignature <https://github.com/bottler/iisignature>`__, `esig <https://pypi.org/project/esig/>`__, and `memory profiler <https://pypi.org/project/memory-profiler/su>`__.
-- Documentation built via ``python command.py docs``. This requires installing `Sphinx <https://pypi.org/project/Sphinx/>`__, `sphinx_rtd_theme <https://pypi.org/project/sphinx-rtd-theme/>`__ and `py2annotate <https://github.com/patrick-kidger/py2annotate>`__.
+- Documentation can be built via ``python command.py docs``. This requires installing `Sphinx <https://pypi.org/project/Sphinx/>`__, `sphinx_rtd_theme <https://pypi.org/project/sphinx-rtd-theme/>`__ and `py2annotate <https://github.com/patrick-kidger/py2annotate>`__.
 
 .. note::
     
@@ -65,3 +72,28 @@ Subsequent to this,
 .. note::
 
     Your C++ compiler must be the same as the one used to compile PyTorch for your platform. (If this is not the case then a large warning will appear during compilation of Signatory, and the installation will probably fail.)
+
+A helpful point of reference for getting this work might be the `official build scripts <https://github.com/patrick-kidger/signatory/blob/master/.github/workflows/build.yml>`__ for Signatory.
+
+.. _usage-all-supported-versions:
+
+All supported versions
+^^^^^^^^^^^^^^^^^^^^^^
+
+Signatory aims to support essentially every possible combination of operating system, Python version, and PyTorch version. In particular we provide explicit support for:
+
++----------------------------------------------+
+| **PyTorch 1.2.0 and 1.3.0:**                 |
++------------+----------+----------+-----------+
+|            | Linux    | Mac      | Windows   |
++------------+----------+----------+-----------+
+| Python 2.7 | ✓        | ✓        | ✗*        |
++------------+----------+----------+-----------+
+| Python 3.5 | ✓        | ✓        | ✓         |
++------------+----------+----------+-----------+
+| Python 3.6 | ✓        | ✓        | ✓         |
++------------+----------+----------+-----------+
+| Python 3.7 | ✓        | ✓        | ✓         |
++------------+----------+----------+-----------+
+| \* PyTorch does not support this combination |
++----------------------------------------------+

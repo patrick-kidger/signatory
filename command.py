@@ -234,10 +234,6 @@ def genreadme(args=()):
     off = '.. genreadme off'
     insert = '.. genreadme insert '  # space at end is important
     reference = re.compile(r'^\.\. [\w-]+:$')
-    
-    inserts = {'install_from_source': "Installation from source is also possible; please consult the `documentation "
-                                      "<https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__. "
-                                      "This also includes information on how to run the tests and benchmarks"}
 
     def parse_file(filename):
         out_data = []
@@ -246,9 +242,9 @@ def genreadme(args=()):
             skipping = False
             for line in data:
                 stripline = line.strip()
-                if stripline == on:
+                if stripline.startswith(on):
                     skipping = False
-                elif stripline == off:
+                elif stripline.startswith(off):
                     skipping = True
                 elif skipping:
                     pass
@@ -256,7 +252,8 @@ def genreadme(args=()):
                     pass
                 else:
                     if stripline.startswith(insert):
-                        out_line = inserts[stripline[len(insert):]] + '\n'
+                        indent = line.find(insert)
+                        out_line = line[:indent] + line[indent + len(insert):]
                     elif stripline.startswith(includestr):
                         # [1:] to remove the leading / at the start; otherwise ends up being parsed as root
                         subfilename = stripline[len(includestr):].strip()[1:]

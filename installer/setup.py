@@ -77,12 +77,18 @@ if sys.platform in ('win32', 'darwin'):
                               "To solve this issue you will probably have to install Signatory from source, by "
                               "running:\n"
                               "    pip install signatory --no-binary signatory\n"
-                              "Note that you must have a C++ compiler installed and known to pip."
+                              "Note that you must have a C++ compiler installed and known to pip.\n"
+                              "You may find the documentation (including how to install from source) at "
+                              "signatory.readthedocs.io helpful."
                               .format(torch_version=torch.__version__,
                                       signatory_version=version.version,
                                       signatory_version_to_install=signatory_version_to_install,
                                       available_signatory_versions=available_signatory_versions))
     check_signatory_version_exists()
+
+src_dir = os.path.realpath(os.path.join(here, 'src'))
+if not os.path.isdir(src_dir):
+    os.mkdir(src_dir)
 
 
 setuptools.setup(name=installer_name,
@@ -98,5 +104,6 @@ setuptools.setup(name=installer_name,
                  keywords=metadata.keywords,
                  classifiers=metadata.classifiers,
                  zip_safe=False,
+                 package_dir={'': 'src'},  # which doesn't exist; ie install nothing
                  python_requires=metadata.python_requires,
                  install_requires=['signatory=={}'.format(signatory_version_to_install)])

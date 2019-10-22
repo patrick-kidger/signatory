@@ -58,8 +58,6 @@ class TestPath(utils.EnhancedTestCase):
                     try:
                         true_sig = c.signature(store=False, path=basepointed_path[:, start:end, :], basepoint=False)
                     except ValueError:
-                        # path_obj.signature did not throw an error when this did, which is consistent, and thus
-                        # error-worthy.
                         self.fail(c.fail(start=start, end=end))
                     if not true_sig.allclose(sig):
                         self.fail(c.diff_fail({'start': start, 'end': end}, sig=sig, true_sig=true_sig))
@@ -72,7 +70,7 @@ class TestPath(utils.EnhancedTestCase):
                         self.fail(c.fail(path_signature_channels=path_obj.signature_channels(),
                                          true_signature_channels=true_sig.size(-1)))
 
-                    if path_obj.shape != basepointed_path.shape:
+                    if (path_obj.size(-3), path_obj.size(-1)) != basepointed_path.shape:
                         self.fail(c.fail(path_shape=path_obj.shape,
                                          true_shape=basepointed_path.shape))
 
@@ -112,13 +110,11 @@ class TestPath(utils.EnhancedTestCase):
                     try:
                         true_logsig = c.logsignature(store=False, path=basepointed_path[:, start:end, :], basepoint=False)
                     except ValueError:
-                        # path_obj.signature did not throw an error when this did, which is consistent, and thus
-                        # error-worthy.
                         self.fail(c.fail(start=start, end=end))
                     if not true_logsig.allclose(logsig):
                         self.fail(c.diff_fail({'start': start, 'end': end}, logsig=logsig, true_logsig=true_logsig))
 
-                    if path_obj.logsignature_shape != true_logsig.shape:
+                    if (path_obj.logsignature_size(-3), path_obj.logsignature_size(-1)) != true_logsig.shape:
                         self.fail(c.fail(path_logsignature_shape=path_obj.logsignature_shape,
                                          true_logsignature_shape=true_logsig.shape))
 
@@ -186,7 +182,8 @@ class TestPath(utils.EnhancedTestCase):
                             autograd.gradcheck(gradchecked, (c.path, c.depth, c.basepoint, update(), start, end,
                                                              c.signatory_mode))
                         except Exception:
-                            self.fail(c.fail(base_length=base_length, length=length, update_length=update_length))
+                            self.fail(c.fail(base_length=base_length, length=length, update_length=update_length,
+                                             start=start, end=end))
 
     def test_ctx_dies_signature(self):
         for c in utils.ConfigIter(inverse=False,

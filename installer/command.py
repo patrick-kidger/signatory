@@ -23,7 +23,7 @@ import sys
 here = os.path.realpath(os.path.dirname(__file__))
 
 
-def set_up():
+def setup():
     sys.path.append(os.path.realpath(os.path.join(here, '..')))
     import metadata
 
@@ -40,7 +40,21 @@ def clean():
     os.remove(os.path.realpath(os.path.join(here, 'metadata.py')))
     os.remove(os.path.realpath(os.path.join(here, 'version.py')))
     os.remove(os.path.realpath(os.path.join(here, 'LICENSE')))
-    try:
-        shutil.rmtree(os.path.realpath(os.path.join(here, 'signatory_installer.egg-info')))
-    except FileNotFoundError:
-        pass
+    egg_info_dir = os.path.realpath(os.path.join(here, 'signatory_installer.egg-info'))
+    if os.path.isdir(egg_info_dir):
+        shutil.rmtree(egg_info_dir)
+    dist_dir = os.path.realpath(os.path.join(here, 'dist'))
+    if os.path.isdir(dist_dir):
+        shutil.rmtree(dist_dir)
+    src_dir = os.path.realpath(os.path.join(here, 'src'))
+    if os.path.isdir(src_dir):
+        os.rmdir(src_dir)
+
+
+if __name__ == '__main__':
+    if 'setup' in sys.argv:
+        setup()
+    elif 'clean' in sys.argv:
+        clean()
+    else:
+        raise ValueError(sys.argv)

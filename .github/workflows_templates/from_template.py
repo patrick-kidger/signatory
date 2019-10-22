@@ -387,7 +387,7 @@ upload_windows = \
 r"""  pip install twine &&
   twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/* &&
   cd installer &&
-  python -c "import command.py; command.set_up()" &&
+  python command.py setup &&
   python setup.py sdist &&
   twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/* &&
   cd .. &&""",
@@ -397,7 +397,7 @@ upload_unix = \
 """  pip install twine
   twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/*
   cd installer
-  python -c "import command; command.set_up()"
+  python command.py setup
   python setup.py sdist
   twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/*
   cd ..""",
