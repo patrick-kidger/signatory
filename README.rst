@@ -21,7 +21,7 @@ Installation
 ############
 Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7 and Linux, Mac, Windows.
 
-Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.2.0, but should work with all recent versions.
+Requires `PyTorch <http://pytorch.org/>`__. The Mac and Windows precompiled binaries currently require PyTorch version 1.2.0. Version 1.3.0 support coming soon!
 
 Install via ``pip install signatory``. Then just ``import signatory`` inside Python.
 
