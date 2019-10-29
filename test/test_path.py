@@ -189,9 +189,8 @@ class TestPath(utils.EnhancedTestCase):
         for c in utils.ConfigIter(inverse=False,
                                   stream=False,
                                   requires_grad=True,
-                                  size=utils.random_size(5)):
+                                  size=utils.random_size(5, min_length=3)):
             path_obj = signatory.Path(c.path, c.depth, basepoint=c.basepoint)
-            # TODO: this can fail if length is 2
             signatory_out = path_obj.signature(1, None)
             ctx = signatory_out.grad_fn
             ref = weakref.ref(ctx)
@@ -205,9 +204,8 @@ class TestPath(utils.EnhancedTestCase):
                                   inverse=False,
                                   stream=False,
                                   requires_grad=True,
-                                  size=utils.random_size(5)):
+                                  size=utils.random_size(5, min_length=3)):
             path_obj = signatory.Path(c.path, c.depth, basepoint=c.basepoint)
-            # TODO: this can fail if length is 2
             signatory_out = path_obj.logsignature(1, None, mode=c.signatory_mode)
             ctx = signatory_out.grad_fn
             ref = weakref.ref(ctx)

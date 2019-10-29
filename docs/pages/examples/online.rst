@@ -21,13 +21,18 @@ In code, this problem can be solved like this:
     # Generate some more data for the path
     Y = torch.rand(1, 7, 5)
     # Calculate the signature of the overall path
-    sig_XY = signatory.signature(Y, 3, basepoint=X[:, -1, :], initial=sig_X)
+    final_X = X[:, -1, :]
+    sig_XY = signatory.signature(Y, 3, basepoint=final_X, initial=sig_X)
 
     # This is equivalent to
     XY = torch.cat([X, Y], dim=1)
     sig_XY = signatory.signature(XY, 3)
 
-As can be seen, two pieces of information need to be provided: the final value of :attr:`X` along the stream dimension, and the signature of :attr:`X`.
+As can be seen, two pieces of information need to be provided: the final value of :attr:`X` along the stream dimension, and the signature of :attr:`X`. But not :attr:`X` itself.
+
+The first method (using the :attr:`initial` argument) will be much quicker than the second (simpler) method. The first
+method efficiently uses just the new information :attr:`Y`, whilst the second method unnecessarily iterates over all of
+the old information :attr:`X`.
 
 In particular note that we only needed the last value of :attr:`X`. If memory efficiency is a concern, then by using the first method we can discard the other 999 terms of :attr:`X` without an issue!
 

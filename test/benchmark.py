@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
-"""This module provides speed benchmarks against esig and iisignature. Can be called separately, as well as being part
-of some tests."""
+"""This module provides speed benchmarks against esig and iisignature."""
 
 
 import collections as co
@@ -22,7 +21,6 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-import re
 import subprocess
 import timeit
 
@@ -57,14 +55,14 @@ class BenchmarkBase(object):
     # Not counted for either timing or memory
     not_include = ""
 
-    # Counted for memory but not timing
-    mem_include = ""
-
     # Defines a 'run' function which is counted for memory and timing
     run = """
 def run(self):
     raise NotImplementedError
 """
+
+    # Counted for memory but not timing
+    mem_include = ""
 
     def __init__(self, size, depth, repeat, number, measure):
         self.size = size
@@ -98,10 +96,20 @@ def run(self):
                                         'self.measure = {measure}'.format(measure=repr(measure)),
                                         self.not_include,
                                         self.run,
+                                        '',
+                                        'def run_wrapper():',
+                                        # store result to make sure it's in memory
+                                        '    result = run(self)',
+                                        '    if result is None:',
+                                        '        raise RuntimeError("run did not return anything, so the thing to "',
+                                        '                           "measure might not be held in memory.")',
+                                        # wait to make sure we measure it
+                                        '    time.sleep(0.5)',
+                                        '',
                                         'gc.collect()',
                                         'baseline = min(memory_profiler.memory_usage(proc=-1, interval=.2, timeout=1))',
                                         self.mem_include,
-                                        'used = max(memory_profiler.memory_usage((run, (self,), {})))',
+                                        'used = max(memory_profiler.memory_usage((run_wrapper, (), {})))',
                                         'print(used - baseline)'])
 
     def action(self):
@@ -129,8 +137,23 @@ def run(self):
             f.write(self.mem_statement)
 
         try:
-            return int(subprocess.run('python {}'.format(memory_tmp), stdout=subprocess.PIPE,
-                                      shell=True).stdout.decode())
+            p = subprocess.run('python {}'.format(memory_tmp), stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, shell=True)
+            stderr = p.stderr.decode()
+            if stderr != '':
+                print('Error:')
+                print('------')
+                print(stderr)
+                print('File:')
+                print('-----')
+                print(self.mem_statement)
+                print('')
+                print('=========================')
+                print('Raising an error to stop.')
+                print('=========================')
+                raise RuntimeError
+            else:
+                return float(p.stdout.decode().strip())
         finally:
             try:
                 os.remove(memory_tmp)
@@ -148,8 +171,10 @@ def run(self):
     if not len(esig.tosig.stream2logsig(self.path[0], self.depth)):
         raise Exception
     
+    result = []
     for batch_elem in self.path:
-        esig.tosig.stream2sig(batch_elem, self.depth)
+        result.append(esig.tosig.stream2sig(batch_elem, self.depth))
+    return result
 """
 
 
@@ -163,8 +188,10 @@ def run(self):
     if not len(esig.tosig.stream2logsig(self.path[0], self.depth)):
         raise Exception
 
+    result = []
     for batch_elem in self.path:
-        esig.tosig.stream2logsig(batch_elem, self.depth)
+        result.append(esig.tosig.stream2logsig(batch_elem, self.depth))
+    return result
 """
 
 
@@ -191,7 +218,7 @@ self.path = torch.rand(self.size, dtype=torch.float).numpy()
 
     run = """
 def run(self):
-    iisignature.sig(self.path, self.depth)
+    return iisignature.sig(self.path, self.depth)
 """
 
 
@@ -200,13 +227,13 @@ class iisignature_logsignature_forward(BenchmarkBase):
 self.path = torch.rand(self.size, dtype=torch.float).numpy()
 """
 
-    mem_include = """
-self.prep = iisignature.prepare(self.path.shape[-1], self.depth)
-"""
-
     run = """
 def run(self):
-    iisignature.logsig(self.path, self.prep)
+    return iisignature.logsig(self.path, self.prep)
+"""
+
+    mem_include = """
+self.prep = iisignature.prepare(self.path.shape[-1], self.depth)
 """
 
 
@@ -219,7 +246,7 @@ self.grad = torch.rand(shape).numpy()
 
     run = """
 def run(self):
-    iisignature.sigbackprop(self.grad, self.path, self.depth)
+    return iisignature.sigbackprop(self.grad, self.path, self.depth)
 """
 
 
@@ -230,13 +257,13 @@ shape = self.size[-3], iisignature.logsiglength(self.size[-1], self.depth)
 self.grad = torch.rand(shape).numpy()
 """
 
-    mem_include = """
-self.prep = iisignature.prepare(self.path.shape[-1], self.depth)
-"""
-
     run = """
 def run(self):
-    iisignature.logsigbackprop(self.grad, self.path, self.prep)
+    return iisignature.logsigbackprop(self.grad, self.path, self.prep)
+"""
+
+    mem_include = """
+self.prep = iisignature.prepare(self.path.shape[-1], self.depth)
 """
 
 
@@ -247,7 +274,7 @@ self.path = torch.rand(self.size, dtype=torch.float)
 
     run = """
 def run(self):
-    signatory.signature(self.path, self.depth)
+    return signatory.signature(self.path, self.depth)
 """
 
 
@@ -258,8 +285,9 @@ self.path = torch.rand(self.size, dtype=torch.float, device='cuda')
 
     run = """
 def run(self):
-    signatory.signature(self.path, self.depth)
+    result = signatory.signature(self.path, self.depth)
     torch.cuda.synchronize()
+    return result
 """
 
 
@@ -268,13 +296,13 @@ class signatory_logsignature_forward(BenchmarkBase):
 self.path = torch.rand(self.size, dtype=torch.float)
 """
 
-    mem_include = """
-signatory.LogSignature.prepare(self.size[-1], self.depth)
-"""
-
     run = """
 def run(self):
-    signatory.LogSignature(self.depth)(self.path)
+    return self.logsignature_instance(self.path)
+"""
+
+    mem_include = """
+self.logsignature_instance = signatory.LogSignature(self.depth)
 """
 
 
@@ -283,14 +311,15 @@ class signatory_logsignature_forward_gpu(BenchmarkBase):
 self.path = torch.rand(self.size, dtype=torch.float, device='cuda')
 """
 
-    mem_include = """
-signatory.LogSignature.prepare(self.size[-1], self.depth)
-"""
-
     run = """
 def run(self):
-    signatory.LogSignature(self.depth)(self.path)
+    result = self.logsignature_instance(self.path)
     torch.cuda.synchronize()
+    return result
+"""
+
+    mem_include = """
+self.logsignature_instance = signatory.LogSignature(self.depth)
 """
 
 
@@ -301,13 +330,14 @@ shape = self.size[-3], signatory.signature_channels(self.size[-1], self.depth)
 self.grad = torch.rand(shape)
 """
 
-    mem_include = """
-self.signature = signatory.signature(self.path, self.depth)
-"""
-
     run = """
 def run(self):
     self.signature.backward(self.grad, retain_graph=self.measure == 'time')
+    return self.path.grad
+"""
+
+    mem_include = """
+self.signature = signatory.signature(self.path, self.depth)
 """
 
 
@@ -318,14 +348,15 @@ shape = self.size[-3], signatory.signature_channels(self.size[-1], self.depth)
 self.grad = torch.rand(shape, device='cuda')
 """
 
-    mem_include = """
-self.signature = signatory.signature(self.path, self.depth)
-"""
-
     run = """
 def run(self):
     self.signature.backward(self.grad, retain_graph=self.measure == 'time')
     torch.cuda.synchronize()
+    return self.path.grad
+"""
+
+    mem_include = """
+self.signature = signatory.signature(self.path, self.depth)
 """
 
 
@@ -336,13 +367,14 @@ shape = self.size[-3], signatory.logsignature_channels(self.size[-1], self.depth
 self.grad = torch.rand(shape)
 """
 
-    mem_include = """
-self.logsignature = signatory.LogSignature(self.depth)(self.path)
-"""
-
     run = """
 def run(self):
     self.logsignature.backward(self.grad, retain_graph=self.measure == 'time')
+    return self.path.grad
+"""
+
+    mem_include = """
+self.logsignature = signatory.LogSignature(self.depth)(self.path)
 """
 
 
@@ -353,14 +385,15 @@ shape = self.size[-3], signatory.logsignature_channels(self.size[-1], self.depth
 self.grad = torch.rand(shape, device='cuda')
 """
 
-    mem_include = """
-self.logsignature = signatory.LogSignature(self.depth)(self.path)
-"""
-
     run = """
 def run(self):
     self.logsignature.backward(self.grad, retain_graph=self.measure == 'time')
     torch.cuda.synchronize()
+    return self.path.grad
+"""
+
+    mem_include = """
+self.logsignature = signatory.LogSignature(self.depth)(self.path)
 """
 
 

@@ -4,8 +4,9 @@ Added logsignature calculations to Path.
 Added the signature_to_logsignature function.
 Added the multi_signature_combine function.
 Improved speed and stability of the backwards operation through Path.
-Added (fixed) memory profiling.
-Dramatically improved the speed of several calculations, in particular the the forward calculation of signatures and logsignatures, via parallelisation
+Dramatically improved the speed of several calculations, in particular the the forward calculation of signatures and logsignatures, via parallelisation.
+Added support for multiple versions of PyTorch via a custom install script.
+The usual documentation improvements.
 
 1.1.3
 -----

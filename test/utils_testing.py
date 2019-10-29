@@ -41,11 +41,11 @@ words = object()
 all_modes = (expand, brackets, words)
 
 
-def random_size(num=10):
+def random_size(num=10, min_length=2):
     """Creates some random sizes to test with."""
     for _ in range(num):
         batch_size = int(torch.randint(low=1, high=10, size=(1,)))
-        stream_size = int(torch.randint(low=2, high=10, size=(1,)))
+        stream_size = int(torch.randint(low=min_length, high=10, size=(1,)))
         channel_size = int(torch.randint(low=1, high=10, size=(1,)))
         yield batch_size, stream_size, channel_size
 
