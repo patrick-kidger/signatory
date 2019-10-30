@@ -46,14 +46,16 @@ if False:
 #
 # In particular one annoying wart that I would definitely change if I could is the order of dimensions. For speed
 # reasons this is (stream, batch, channel) in C++. For convention reasons it is (batch, stream, channel) in the visible
-# API. Somewhere a transpose has to be performed. Unfortunately, some transposes cannot be performed in anything within
-# the autograd machinery, as else certain correctness checks don't trigger. (PyTorch bug 24413). So for simplicity we
-# put all transposes outside the autograd framework.
+# API. Somewhere a transpose has to be performed. Unfortunately, some transposes cannot be performed inside the
+# autograd machinery, as else certain correctness checks don't trigger. (PyTorch bug 24413). So for simplicity we put
+# all transposes outside the autograd framework.
 # If I could I would just make (stream, batch, channel) the convention throughout.
 #
 # Moving on, the next wart is that there's some somewhat convoluted logic in the main signature function to test for
 # more efficient parallelisation cases. This has to be done outside of _SignatureFunction (and thus in Python), so that
 # the backward logic is hooked up correctly.
+# In particular the C++ code checks that the proposed strategy is valid (it's part of the design philosophy that the C++
+# code isn't unsafe), so both the Python and the C++ code are performing the same checks twice. Which is another wart.
 #
 # And in turn we then have to perform argument checking before that set of logic, which is the purpose of
 # _signature_checkargs.
@@ -79,14 +81,26 @@ def interpret_backward_grad(ctx, grad_basepoint, grad_initial):
     return grad_basepoint, grad_initial
 
 
+def _interpret_strategy(strategy):
+    if strategy == "simple":
+        return _impl.SignatureComputationStrategy.Simple
+    elif strategy == "openmp":
+        return _impl.SignatureComputationStrategy.OpenMP
+    elif strategy == "default":
+        return _impl.SignatureComputationStrategy.Default
+    else:
+        raise ValueError("Invalid values for argument 'strategy'. Valid values are 'simple', 'openmp', or 'default'.")
+
+
 class _SignatureFunction(autograd.Function):
     @staticmethod
-    def forward(ctx, path, depth, stream, basepoint, inverse, initial, open_mp_parallelise):
+    def forward(ctx, path, depth, stream, basepoint, inverse, initial, strategy):
 
         basepoint, basepoint_value, initial, initial_value = interpet_forward_args(ctx, path, basepoint, initial)
+        strategy = _interpret_strategy(strategy)
 
         signature_, path_increments = _impl.signature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
-                                                              initial, initial_value, open_mp_parallelise)
+                                                              initial, initial_value, strategy)
         ctx.save_for_backward(signature_, path_increments)
         ctx.depth = depth
         ctx.stream = stream
@@ -118,25 +132,50 @@ def _signature_checkargs(path, depth, basepoint, initial):
     _impl.signature_checkargs(path, depth, basepoint, basepoint_value, initial, initial_value)
 
 
+def _signature_simple(path, depth, stream, basepoint, inverse, initial):
+    if path.is_cuda:
+        # Only works for CPU tensors
+        return
+    if inverse:
+        # We haven't bothered to implement it in the reasonably-niche inverse=True case
+        return
+    if path.size(-3) * path.size(-2) * signature_channels(path.size(-1), depth) > 5586943:
+        # The signature must be sufficiently small that a single thread will be quicker than multiple ones
+        return
+    # transpose to go from Python convention of (batch, stream, channel) to autograd/C++ convention of
+    # (stream, batch, channel)
+    # noinspection PyUnresolvedReferences
+    return _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, 'simple')
+
+
 def _signature_openmp(path, depth, stream, basepoint, inverse, initial):
     if stream:
+        # The problem musn't be inherently unparallelisable
         return
-
-    grad = False
-    grad = grad or path.requires_grad
+    if not _impl.built_with_open_mp():
+        # We must have built with OpenMP
+        return
+    if path.is_cuda:
+        # For some reason this is slower when using the GPU. Don't know why!
+        return
+    if path.requires_grad:
+        # If we need gradients then the batch trick method, coming up next, is likely to be quicker for the overall
+        # forward+backward pass. (And we can't use this one just for the forward because it doesn't compute certain
+        # quantities needed for the backward pass.)
+        # Note that if for whatever reason the batch trick method isn't available then we'll try this method again,
+        # without worrying about the gradients this time.
+        return
     if isinstance(basepoint, torch.Tensor):
-        grad = grad or basepoint.requires_grad
+        if basepoint.requires_grad:
+            return
     if isinstance(initial, torch.Tensor):
-        grad = grad or initial.requires_grad
-    open_mp_parallelise = _impl.built_with_open_mp() and not grad and not path.is_cuda
-
-    if not open_mp_parallelise:
-        return
+        if initial.requires_grad:
+            return
 
     # transpose to go from Python convention of (batch, stream, channel) to autograd/C++ convention of
     # (stream, batch, channel)
     # noinspection PyUnresolvedReferences
-    return _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, True)
+    return _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, 'openmp')
 
 
 def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
@@ -193,7 +232,8 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
     basepoint = ends.view(batch_size * mult, channel_size)
 
     # noinspection PyUnresolvedReferences
-    result_bulk = _SignatureFunction.apply(path_bulk.transpose(0, 1), depth, stream, basepoint, inverse, False, False)
+    result_bulk = _SignatureFunction.apply(path_bulk.transpose(0, 1), depth, stream, basepoint, inverse, False,
+                                           'default')
     result_bulk = result_bulk.view(batch_size, mult, result_bulk.size(-1))
     chunks = []
     if isinstance(initial, torch.Tensor):
@@ -210,17 +250,31 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
     return multi_signature_combine(chunks, channel_size, depth, inverse)
 
 
+def _signature_openmp_allow_grad(path, depth, stream, basepoint, inverse, initial):
+    # As _signature_openmp, except that we allow ourselves to use it even if a gradient is required. Typically the
+    # batch trick method will be utilised in this case, but if for whatever reason it's not used. (e.g. discontiguous
+    # data) then this may still be a sensible option.
+    if stream:
+        return
+    if not _impl.built_with_open_mp():
+        return
+    if path.is_cuda:
+        return
+
+    return _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, 'openmp')
+
+
 def _signature_default(path, depth, stream, basepoint, inverse, initial):
     # transpose to go from Python convention of (batch, stream, channel) to autograd/C++ convention of
     # (stream, batch, channel)
     # noinspection PyUnresolvedReferences
-    return _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, False)
+    return _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, 'default')
 
 
 _signature_calculation_methods = ()
 
 
-def set_signature_calculation_methods(openmp=None, batch_trick=None, default=None):
+def set_signature_calculation_methods(simple=None, openmp=None, batch_trick=None, openmp_allow_grad=None, default=None):
     if default is False:
         warnings.warn('You are setting the default method of signature calculation off. You may find that the '
                       'signature calculations may sometimes not be computable without this as an option.')
@@ -240,8 +294,10 @@ def set_signature_calculation_methods(openmp=None, batch_trick=None, default=Non
 
     # The order of these matters. It's the order that the methods will be tried in; the first matching method will be
     # used.
+    _add_method(simple, _signature_simple)
     _add_method(openmp, _signature_openmp)
     _add_method(batch_trick, _signature_batch_trick)
+    _add_method(openmp_allow_grad, _signature_openmp_allow_grad)
     _add_method(default, _signature_default)
 
     global _signature_calculation_methods
@@ -341,26 +397,6 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
     # There's a few ways to compute signatures, basically differing on how to parallelise.
     # The methods are ranked in a preferential order.
     # We iterate through them and select the first one that works.
-
-    # Parallelisation can be accomplished via OpenMP (in the C++ code) in the special case of:
-    #     stream==False,
-    #     the path is on the CPU,
-    #     gradient isn't required,
-    #     and Signatory was compiled with OpenMP.
-    # Rationale: stream==False is an inherently serial problem, so we can't parallelise at all then.
-    #            If the problem is on the GPU then OpenMP slows things down. I don't know why.
-    #            If a gradient is required then whilst OpenMP would be quicker on the forward pass, it would be slower
-    #               on the backward pass than our second parallelisation approach, below. (And a hybrid approach is not
-    #               possible as the OpenMP approach doesn't generate certain information needed for the more-efficient
-    #               backward pass.)
-    #
-    # If not then we try a trick: we split apart the stream dimension into chunks and push them into the batch
-    # dimension. Then afterwards we pull it out and perform the remaining few tensor multiplications. This requires:
-    #     stream==False
-    #     That the batch size is currently small enough that this will speed things up, not slow things down
-    #     That the stream size is currently large enough, for the same reason.
-    #     That the data is laid out in a 'quasicontiguous' manner, so that this moving of dimensions can be done without
-    #         copying the data.
     # (As a final remark, this optimisation is done in the Python rather than the C++ so that the backward pass is
     # hooked up.)
 

@@ -25,6 +25,10 @@
 #include "misc.hpp"
 
 namespace signatory {
+    // Modes for the return value of logsignature
+    // See signatory.logsignature for further documentation
+    enum class LogSignatureMode { Expand, Brackets, Words };
+
     // Makes a LyndonInfo PyCapsule
     py::object make_lyndon_info(int64_t channels, s_size_type depth, LogSignatureMode mode);
 

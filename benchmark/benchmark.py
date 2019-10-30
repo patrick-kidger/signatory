@@ -653,11 +653,11 @@ class BenchmarkRunner(object):
             tag = '_channels'
         elif len(self.depths) > 1:
             ax.set_xlabel("Depth")
-            if log:
-                ax.set_yscale('log')
             tag = '_depths'
         else:
             raise RuntimeError
+        if log:
+            ax.set_yscale('log')
         start, end = ax.get_xlim()
         ax.xaxis.set_ticks(range(int(math.ceil(start)), int(math.floor(end)) + 1))
         plt.tight_layout()

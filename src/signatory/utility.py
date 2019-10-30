@@ -88,12 +88,3 @@ def all_words(channels, depth):
     # Just returning the generator would be much nicer, programmatically speaking, but then this is inconsistent with
     # the lyndon_words function. This isn't expected to use a lot of memory so this is acceptable.
     return list(generator())
-
-
-# This is deliberately an undocumented function as it's pretty esoteric
-def lyndon_words_to_basis_transform(channels, depth):
-    # type: (int, int) -> List[Tuple[int, int, int]]
-    """Computes the collection of transforms needed to go from a basis of the free Lie algebra in terms of Lyndon words
-    to a basis of the free Lie algebra in terms of the Lyndon basis."""
-
-    return _impl.lyndon_words_to_basis_transform(channels, depth)

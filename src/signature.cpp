@@ -189,7 +189,7 @@ namespace signatory {
 
     std::tuple<torch::Tensor, torch::Tensor>
     signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
-                      bool inverse, bool initial, torch::Tensor initial_value, bool open_mp_parallelise) {
+                      bool inverse, bool initial, torch::Tensor initial_value, SignatureComputationStrategy strategy) {
         signature_checkargs(path, depth, basepoint, basepoint_value, initial, initial_value);
 
         // No sense keeping track of gradients when we have a dedicated backwards function (and in-place operations mean
@@ -198,6 +198,7 @@ namespace signatory {
         basepoint_value = basepoint_value.detach();
         initial_value = initial_value.detach();
 
+        // Some constants to pass around
         int64_t batch_size = path.size(batch_dim);
         int64_t input_channel_size = path.size(channel_dim);
         int64_t output_stream_size = path.size(stream_dim) - (basepoint ? 0 : 1);
@@ -205,11 +206,10 @@ namespace signatory {
         torch::TensorOptions opts = misc::make_opts(path);
         torch::Tensor reciprocals = misc::make_reciprocals(depth, opts);
 
+        // Compute path increments. Obviously.
         torch::Tensor path_increments = detail::compute_path_increments(path, basepoint, basepoint_value, inverse);
 
-        // We allocate memory for certain things upfront.
-        // We want to construct things in-place wherever possible. Signatures get large; this saves a lot of time.
-
+        // Allocate memory for the computation.
         torch::Tensor first_term;
         torch::Tensor signature;
         std::vector<torch::Tensor> signature_by_term;
@@ -226,7 +226,7 @@ namespace signatory {
         }
         misc::slice_by_term(first_term, signature_by_term_at_stream, input_channel_size, depth);
 
-        // compute the first term
+        // Compute the first term.
         if (initial) {
             first_term.copy_(initial_value);
             ta_ops::mult_fused_restricted_exp(path_increments[0],
@@ -240,18 +240,34 @@ namespace signatory {
                                    reciprocals);
         }
 
+        // Now actually do the computation! This is a little involved as it's possible to optimise various cases.
+        // We use the 'strategy' argument as a hint for what the most efficient method of computation will be.
+        // If the argument doesn't align with what's possible then we'll fall back to the default method. (We could also
+        // throw an error, but the precise cases in which each strategy is possible can be a little convoluted so we
+        // prefer not to.)
         if (stream) {
-            for (int64_t stream_index = 1; stream_index < output_stream_size; ++stream_index) {
-                signature[stream_index].copy_(signature[stream_index - 1]);
-                misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index);
-                ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
-                                                  signature_by_term_at_stream,
-                                                  inverse,
-                                                  reciprocals);
+            if (strategy == SignatureComputationStrategy::Simple && !path.is_cuda() && !inverse) {
+                for (int64_t stream_index = 1; stream_index < output_stream_size; ++stream_index) {
+                    signature[stream_index].copy_(signature[stream_index - 1]);
+                    misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index);
+                    ta_ops::mult_fused_restricted_exp_simple(path_increments[stream_index],
+                                                             signature_by_term_at_stream,
+                                                             reciprocals);
+                }
+            }
+            else {
+                for (int64_t stream_index = 1; stream_index < output_stream_size; ++stream_index) {
+                    signature[stream_index].copy_(signature[stream_index - 1]);
+                    misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index);
+                    ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
+                                                      signature_by_term_at_stream,
+                                                      inverse,
+                                                      reciprocals);
+                }
             }
         }
         else {
-            if (open_mp_parallelise && open_mp) {
+            if (strategy == SignatureComputationStrategy::OpenMP && open_mp) {
                 int64_t nthreads = omp_get_max_threads();
                 std::vector<std::vector<torch::Tensor>> omp_results(nthreads);
                 // There's no guarantee that we actually get the maximum number of threads, so we have to check
@@ -291,11 +307,20 @@ namespace signatory {
                 }
             }
             else {
-                for (int64_t stream_index = 1; stream_index < output_stream_size; ++stream_index) {
-                    ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
-                                                      signature_by_term_at_stream,
-                                                      inverse,
-                                                      reciprocals);
+                if (strategy == SignatureComputationStrategy::Simple && !path.is_cuda() && !inverse) {
+                    for (int64_t stream_index = 1; stream_index < output_stream_size; ++stream_index) {
+                        ta_ops::mult_fused_restricted_exp_simple(path_increments[stream_index],
+                                                                 signature_by_term_at_stream,
+                                                                 reciprocals);
+                    }
+                }
+                else {
+                    for (int64_t stream_index = 1; stream_index < output_stream_size; ++stream_index) {
+                        ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
+                                                          signature_by_term_at_stream,
+                                                          inverse,
+                                                          reciprocals);
+                    }
                 }
             }
         }

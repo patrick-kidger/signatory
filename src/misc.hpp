@@ -49,10 +49,6 @@ namespace signatory {
     constexpr auto batch_dim = -2;
     constexpr auto channel_dim = -1;
 
-    // Modes for the return value of logsignature
-    // See signatory.logsignature for further documentation
-    enum class LogSignatureMode { Expand, Brackets, Words };
-
     // See signatory.signature_channels for documentation
     int64_t signature_channels(int64_t input_channel_size, int64_t depth);
 

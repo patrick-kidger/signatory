@@ -31,7 +31,7 @@ if False:
     from typing import Any, Union
 
 
-def _mode_convert(mode):
+def _interpret_mode(mode):
     if mode == "expand":
         return _impl.LogSignatureMode.Expand
     elif mode == "brackets":
@@ -45,7 +45,7 @@ def _mode_convert(mode):
 class _SignatureToLogsignatureFunction(autograd.Function):
     @staticmethod
     def forward(ctx, signature, channels, depth, stream, mode, lyndon_info):
-        mode = _mode_convert(mode)
+        mode = _interpret_mode(mode)
 
         logsignature_, lyndon_info_capsule = _impl.signature_to_logsignature_forward(signature, channels, depth, stream,
                                                                                      mode, lyndon_info)
@@ -152,7 +152,7 @@ class SignatureToLogSignature(nn.Module):
             # This computation can be pretty slow! We definitely want to reuse it between instances
             return cls._lyndon_info_capsule_cache[(in_channels, depth, mode)]
         except KeyError:
-            mode = _mode_convert(mode)
+            mode = _interpret_mode(mode)
             lyndon_info_capsule = cls._RefHolder(_impl.make_lyndon_info(in_channels, depth, mode))
             cls._lyndon_info_capsule_cache[(in_channels, depth, mode)] = lyndon_info_capsule
             return lyndon_info_capsule

@@ -23,4 +23,5 @@ hasn't been worth documenting and exposing.
 from .signature_module import (set_signature_calculation_methods,
                                reset_signature_calculation_methods)
 
-from .utility import (lyndon_words_to_basis_transform,)
+from ._impl import (lyndon_words_to_basis_transform,
+                    built_with_open_mp,)

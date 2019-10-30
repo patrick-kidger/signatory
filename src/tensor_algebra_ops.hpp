@@ -71,6 +71,13 @@ namespace signatory {
                                      torch::Tensor in, const std::vector<torch::Tensor>& out,
                                      torch::Tensor reciprocals);
 
+        // As mult_fused_restricted_exp.
+        // However it requires that its inputs be CPU tensors, isn't quite as general, and explicitly only uses a single
+        // thread without parallelism. The idea is to just do the simple thing without any overhead, when the problem is
+        // small.
+        void mult_fused_restricted_exp_simple(torch::Tensor next, std::vector<torch::Tensor>& prev,
+                                              torch::Tensor reciprocals)
+
         // Computes a fused multiply-exponentiate.
         // 'next' should be a member of the lowest nonscalar level of the tensor algebra.
         // 'prev' should be a general member of the tensor algebra.

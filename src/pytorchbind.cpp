@@ -18,15 +18,17 @@
 #include <torch/extension.h>  // to get the pybind11 stuff
 #include <thread>             // std::thread::hardware_concurrency
 
-#include "logsignature.hpp"  // signatory::signature_to_logsignature_forward,
+#include "logsignature.hpp"  // signatory::LogSignatureMode,
+                             // signatory::signature_to_logsignature_forward,
                              // signatory::signature_to_logsignature_backward,
                              // signatory::make_lyndon_info
 
 #include "misc.hpp"          // signatory::built_with_open_mp,
-                             // signatory::LogSignatureMode,
                              // signatory::signature_channels
 
-#include "signature.hpp"     // signatory::signature_forward,
+#include "signature.hpp"     // signatory::signature_checkargs
+                             // signatory::SignatureComputationStrategy,
+                             // signatory::signature_forward,
                              // signatory::signature_backward,
 
 #include "lyndon.hpp"        // signatory::lyndon_words,
@@ -53,6 +55,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
             .value("Words", signatory::LogSignatureMode::Words);
     m.def("signature_checkargs",
           &signatory::signature_checkargs);
+    py::enum_<signatory::SignatureComputationStrategy>(m, "SignatureComputationStrategy")
+            .value("Simple", signatory::SignatureComputationStrategy::Simple)
+            .value("OpenMP", signatory::SignatureComputationStrategy::OpenMP)
+            .value("Default", signatory::SignatureComputationStrategy::Default);
     m.def("signature_forward",
           &signatory::signature_forward);
     m.def("signature_backward",
