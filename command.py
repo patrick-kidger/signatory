@@ -47,17 +47,17 @@ def main():
     test_parser = subparsers.add_parser('test', parents=[deviceparser], description="Run tests")
     benchmark_parser = subparsers.add_parser('benchmark', parents=[deviceparser], description="Run speed benchmarks")
     docs_parser = subparsers.add_parser('docs', description="Build documentation")
-    genreadme_parser = subparsers.add_parser('genreadme', description="Generate the README from the documentation.")
-    genworkflows_parser = subparsers.add_parser('genworkflows', description="Generate the GitHub workflows from "
-                                                                            "templates.")
+    readme_parser = subparsers.add_parser('readme', description="Generate the README from the documentation.")
+    workflows_parser = subparsers.add_parser('workflows', description="Generate the GitHub workflows from "
+                                                                         "templates.")
     should_not_import_parser = subparsers.add_parser('should_not_import', description="Tests that Signatory _cannot_ "
                                                                                       "be imported.")
 
     test_parser.set_defaults(cmd=test)
     benchmark_parser.set_defaults(cmd=benchmark)
     docs_parser.set_defaults(cmd=docs)
-    genreadme_parser.set_defaults(cmd=genreadme)
-    genworkflows_parser.set_defaults(cmd=genworkflows)
+    readme_parser.set_defaults(cmd=readme)
+    workflows_parser.set_defaults(cmd=workflows)
     should_not_import_parser.set_defaults(cmd=should_not_import)
 
     test_parser.add_argument('-f', '--failfast', action='store_true', help='Stop tests on first failure.')
@@ -152,7 +152,7 @@ def benchmark(args):
         raise ImportError("The esig package is required for running tests. It can be installed via 'pip "
                           "install esig'")
                           
-    import test.benchmark as bench
+    import benchmark.benchmark as bench
     import torch
     with torch.cuda.device(args.device) if args.device != -1 else _NullContext():
         print('Using ' + _get_device())
@@ -217,7 +217,7 @@ def docs(args=()):
         webbrowser.open_new_tab('file:///{}'.format(os.path.join(_here, 'docs', '_build', 'html', 'index.html')))
 
 
-def genworkflows(args=()):
+def workflows(args=()):
     """The GitHub workflows are generated from templates."""
     sys.path.insert(0, os.path.join(_here, '.github', 'workflows_templates'))
     import from_template
@@ -225,14 +225,14 @@ def genworkflows(args=()):
     sys.path = sys.path[1:]
 
     
-def genreadme(args=()):
+def readme(args=()):
     """The readme is generated automatically from the documentation."""
     
     outs = []
     includestr = '.. include::'
-    on = '.. genreadme on'
-    off = '.. genreadme off'
-    insert = '.. genreadme insert '  # space at end is important
+    on = '.. command.readme on'
+    off = '.. command.readme off'
+    insert = '.. command.readme insert '  # space at end is important
     reference = re.compile(r'^\.\. [\w-]+:$')
 
     def parse_file(filename):

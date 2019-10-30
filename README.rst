@@ -23,10 +23,13 @@ Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7 and Linux, Mac, Win
 
 Requires `PyTorch <http://pytorch.org/>`__.
 
-Install via ``pip install signatory_installer``. Then just ``import signatory`` inside Python.
+Install via ``pip install signatory==<SIGNATORY_VERSION>-torch<TORCH_VERSION>``, where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.1.4) and ``<TORCH_VERSION>`` is the version of PyTorch you are using (supported versions are PyTorch 1.2.0 and 1.3.0). Then just ``import signatory`` inside Python.
 
 
-    The ``installer`` is because this command actually downloads a script which detects the version of PyTorch that is currently installed, and then downloads the corresponding version of Signatory. If you already know that you are using e.g. PyTorch 1.2.0 and want Signatory 1.1.4, then you can just run ``pip install signatory==1.1.4-torch1.2.0``.
+    For example, if you are using PyTorch 1.2.0 and want Signatory 1.1.4, then you should run ``pip install signatory==1.1.4-torch1.2.0``.
+
+
+    Take care **not** to run ``pip install signatory``, as this will likely download the wrong version. This care is needed due to a `limitation of PyTorch <https://github.com/pytorch/pytorch/issues/28754>`__.
 
 Installation from source is also possible; please consult the `documentation <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__. This also includes information on how to run the tests and benchmarks.
 

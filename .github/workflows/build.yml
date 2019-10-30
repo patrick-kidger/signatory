@@ -11,7 +11,7 @@ name: Build and test
 # Arguments:
 # event_name: pull_request
 # event_cond: true
-# trigger: -not-available-  # not available via repository_dispatch (there's no pull request to test!)
+# trigger: -not-available-  # not available via repository_dispatch (we'd need a way to specify which pull request we want tested; not obvious if that's possible)
 
 
 on:
@@ -19,7 +19,6 @@ on:
   pull_request:
     branches:
       - master
-    
 
 jobs:
   check_version:
@@ -86,7 +85,7 @@ jobs:
       if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
       run: |
         cp README.rst README.rst.old
-        python command.py genreadme
+        python command.py readme
         python -c "import io
         import sys
         readme = io.open('README.rst', 'r', encoding='utf-8')

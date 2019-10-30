@@ -124,7 +124,7 @@ def run(self):
         try:
             self.time_statement()  # warm up
         except Exception:
-            return [math.inf]
+            return math.inf
         return min(timeit.Timer(stmt=self.time_statement).repeat(repeat=self.repeat, number=self.number))
 
     def memory(self):
@@ -604,7 +604,7 @@ class BenchmarkRunner(object):
     def depths(cls, **kwargs):
         """Tests depths for a fixed number of channels."""
         new_kwargs = dict(sizes=((32, 128, 4),),
-                          depths=(5, 6, 7, 8, 9))
+                          depths=(4, 5, 6, 7, 8, 9))
         new_kwargs.update(kwargs)
         return cls(**new_kwargs)
 
@@ -626,9 +626,6 @@ class BenchmarkRunner(object):
 
         fig = plt.figure()
         ax = fig.gca()
-        #ax = fig.add_axes([0.1, 0.1, 0.6, 0.75])
-        #ax = fig.add_subplot(121)
-        #ax = plt.subplot(121)
 
         _, example_row_value = next(iter(self.results))
         x_axes = [[] for _ in range(len(example_row_value))]
@@ -653,17 +650,19 @@ class BenchmarkRunner(object):
         ax.set_ylabel("Time in seconds")
         if len(self.sizes) > 1:
             ax.set_xlabel("Number of channels")
+            tag = '_channels'
         elif len(self.depths) > 1:
             ax.set_xlabel("Depth")
             if log:
                 ax.set_yscale('log')
+            tag = '_depths'
         else:
             raise RuntimeError
         start, end = ax.get_xlim()
         ax.xaxis.set_ticks(range(int(math.ceil(start)), int(math.floor(end)) + 1))
         plt.tight_layout()
         if save:
-            plt.savefig(title_string.lower().replace(' ', '_').replace(':', ''))
+            plt.savefig(title_string.lower().replace(' ', '_').replace(':', '') + tag)
         else:
             plt.show()
 

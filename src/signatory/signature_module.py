@@ -15,6 +15,7 @@
 """Provides operations relating to the signature transform."""
 
 
+import inspect
 import torch
 from torch import nn
 from torch import autograd
@@ -132,6 +133,8 @@ def _signature_openmp(path, depth, stream, basepoint, inverse, initial):
     if not open_mp_parallelise:
         return
 
+    # transpose to go from Python convention of (batch, stream, channel) to autograd/C++ convention of
+    # (stream, batch, channel)
     # noinspection PyUnresolvedReferences
     return _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, True)
 
@@ -140,8 +143,11 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
     if stream:
         return
 
-    _threshold = _impl.hardware_concurrency()
-    threshold = _threshold if _threshold != 0 else 32
+    threshold = _impl.hardware_concurrency()
+    if threshold == 0:
+        # Indicates that we can't get hardware concurrency, which is a bit weird.
+        # Let's not try to be clever.
+        return
 
     batch_size, stream_size, channel_size = path.shape
 
@@ -194,12 +200,65 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
         chunks.append(initial)
     chunks.extend(result_bulk.unbind(dim=-2))
     if remainder != 0:
+        # transpose to go from Python convention of (batch, stream, channel) to autograd/C++ convention of
+        # (stream, batch, channel)
         # noinspection PyUnresolvedReferences
         result_remainder = _SignatureFunction.apply(path_remainder.transpose(0, 1), depth, stream, basepoint_remainder,
                                                     inverse, False, False)
         chunks.append(result_remainder)
 
     return multi_signature_combine(chunks, channel_size, depth, inverse)
+
+
+def _signature_default(path, depth, stream, basepoint, inverse, initial):
+    # transpose to go from Python convention of (batch, stream, channel) to autograd/C++ convention of
+    # (stream, batch, channel)
+    # noinspection PyUnresolvedReferences
+    return _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, False)
+
+
+_signature_calculation_methods = ()
+
+
+def set_signature_calculation_methods(openmp=None, batch_trick=None, default=None):
+    if default is False:
+        warnings.warn('You are setting the default method of signature calculation off. You may find that the '
+                      'signature calculations may sometimes not be computable without this as an option.')
+
+    methods = []
+
+    def _add_method(toggle, fn):
+        if toggle is True:
+            methods.append(fn)
+        elif toggle is False:
+            pass
+        elif toggle is None:
+            if fn in _signature_calculation_methods:
+                methods.append(fn)
+        else:
+            raise ValueError("Value of '{}' not valid".format(toggle))
+
+    # The order of these matters. It's the order that the methods will be tried in; the first matching method will be
+    # used.
+    _add_method(openmp, _signature_openmp)
+    _add_method(batch_trick, _signature_batch_trick)
+    _add_method(default, _signature_default)
+
+    global _signature_calculation_methods
+    _signature_calculation_methods = tuple(methods)
+
+
+def reset_signature_calculation_methods(value=True):
+    try:
+        # Python 3
+        num_methods = len(inspect.signature(set_signature_calculation_methods).parameters)
+    except AttributeError:
+        # Python 2
+        num_methods = len(inspect.getargspec(set_signature_calculation_methods).args)
+    set_signature_calculation_methods(*[value for _ in range(num_methods)])
+
+
+reset_signature_calculation_methods()
 
 
 def signature(path, depth, stream=False, basepoint=False, inverse=False, initial=None):
@@ -279,8 +338,10 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
 
     _signature_checkargs(path, depth, basepoint, initial)
 
-    # Coming up is a somewhat involved set of optimisations via parallelisation.
-    #
+    # There's a few ways to compute signatures, basically differing on how to parallelise.
+    # The methods are ranked in a preferential order.
+    # We iterate through them and select the first one that works.
+
     # Parallelisation can be accomplished via OpenMP (in the C++ code) in the special case of:
     #     stream==False,
     #     the path is on the CPU,
@@ -293,8 +354,6 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
     #               possible as the OpenMP approach doesn't generate certain information needed for the more-efficient
     #               backward pass.)
     #
-    # So we start off by checking if we can parallelise via OpenMP.
-    #
     # If not then we try a trick: we split apart the stream dimension into chunks and push them into the batch
     # dimension. Then afterwards we pull it out and perform the remaining few tensor multiplications. This requires:
     #     stream==False
@@ -305,17 +364,12 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
     # (As a final remark, this optimisation is done in the Python rather than the C++ so that the backward pass is
     # hooked up.)
 
-    for fn in (_signature_openmp,        # Try to parallelise via OpenMP
-               _signature_batch_trick):  # Try to parallelise via the push-into-batch-dimension trick
+    for fn in _signature_calculation_methods:
         result = fn(path, depth, stream, basepoint, inverse, initial)
         if result is not None:
             break
     else:
-        # Default case: no parallelisation
-        # transpose to go from Python convention of (batch, stream, channel) to autograd/C++ convention of
-        # (stream, batch, channel)
-        # noinspection PyUnresolvedReferences
-        result = _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, False)
+        raise RuntimeError('No registered signature calculation method was suitable for this problem.')
 
     # We have to do the transpose outside of autograd.Function.apply to avoid PyTorch bug 24413
     if stream:

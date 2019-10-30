@@ -128,8 +128,17 @@ windows = "windows-2016",
 linux = "ubuntu-16.04",
 mac = "macOS-10.14",
 
+# Run on repository_dispatch and precisely one other event
+on = \
+"""on:
+  repository_dispatch:
+  <<event_name>>:""",
+
+# Only run on repository_dispatch
+on_rd = "on: repository_dispatch",
+
 # Versions of Python
-# Note that it's actually important to specify the patch number here as well for maximum compatability.
+# Note that it's actually important to specify the patch number here as well for maximum compatibility.
 # (e.g. 3.6.6 vs 3.6.9 does break things)
 py27 = '2.7.13',
 py35 = '3.5.4',
@@ -139,15 +148,7 @@ py37 = '3.7.0',
 # Versions of PyTorch
 pytorch12 = '1.2.0',
 pytorch13 = '1.3.0',
-
-# Run on repository_dispatch and precisely one other event
-on = \
-"""on:
-  repository_dispatch:
-  <<event_name>>:""",
-
-# Only run on repository_dispatch
-on_rd = "on: repository_dispatch",
+pytorch_all = '[<<pytorch12>>, <<pytorch13>>]',
 
 # A strategy for every operating system and version of Python
 # Note that every possible combination must be specified in action_os and action_pv to have repository_dispatch work
@@ -158,7 +159,7 @@ strategy:
   matrix:
     os: [<<windows>>, <<linux>>, <<mac>>]
     python-version: [<<py27>>, <<py35>>, <<py36>>, <<py37>>]
-    pytorch-version: [<<pytorch12>>, <<pytorch13>>]
+    pytorch-version: <<pytorch_all>>
     exclude:
       # PyTorch doesn't support this combination
       - os: <<windows>>
@@ -175,6 +176,16 @@ strategy:
     pytorch-version: [<<pytorch12>>]
 """,
 
+# A single Linux strategy except with all PyTorch versions
+strategy_single_all_pytorch = \
+"""runs-on: ${{ matrix.os }}
+strategy:
+  matrix:
+    os: [<<linux>>]
+    python-version: [<<py37>>]
+    pytorch-version: <<pytorch_all>>
+""",
+
 # Tests whether a repository_dispatch-triggered action is triggered at all
 # Note that trigger is intended to have a space after it (used to distinguish similar triggers)
 action_trigger = "contains(github.event.action, '-trigger <<trigger>> ')",
@@ -186,7 +197,7 @@ _action_os_windows = "(contains(github.event.action, '-os <<windows>>') && matri
 _action_os_linux = "(contains(github.event.action, '-os <<linux>>') && matrix.os == '<<linux>>')",
 _action_os_mac = "(contains(github.event.action, '-os <<mac>>') && matrix.os == '<<mac>>')",
 _action_os_star = "contains(github.event.action, '-os *')",
-action_os = "(<<_action_os_windows>> || <<_action_os_linux>> || <<_action_os_mac>> || <<_action_os_star>>)", 
+action_os = "(<<_action_os_windows>> || <<_action_os_linux>> || <<_action_os_mac>> || <<_action_os_star>>)",
 
 # Tests whether a repository_dispatch-triggered action is triggered, depending on Python version
 _action_pv_27 = "(contains(github.event.action, '-pv <<py27>>') && matrix.python-version == '<<py27>>')",
@@ -242,7 +253,7 @@ run: >
   python -m pip install --upgrade pip &&
   conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y &&
   python command.py should_not_import &&""",
-  
+
 # Builds a bdist_wheel on Windows
 build_windows = '  python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel &&',
 
@@ -257,7 +268,7 @@ install_remote_windows = \
   import metadata;
   sleep = lambda t: time.sleep(t) or True;
   retry = lambda fn: fn() or (sleep(20) and fn()) or (sleep(40) and fn()) or (sleep(120) and fn()) or (sleep(240) and fn());
-  ret = retry(lambda: not subprocess.run('python -m pip install signatory_installer=={}'.format(metadata.version)).returncode);
+  ret = retry(lambda: not subprocess.run('python -m pip install signatory==' + metadata.version + '-torch${{ matrix.pytorch-version }}').returncode);
   sys.exit(not ret)
   " &&""",
 
@@ -308,7 +319,7 @@ install_local_linux = \
 install_remote_linux = \
 """  retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
   SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-  retry python -m pip install signatory_installer==$SIGNATORY_VERSION""",
+  retry python -m pip install signatory==$SIGNATORY_VERSION-torch${{ matrix.pytorch-version }}""",
 
 # Runs tests on Linux
 test_linux = \
@@ -358,7 +369,7 @@ install_local_mac = \
 install_remote_mac = \
 """  retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
   SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-  retry python -m pip install signatory_installer==$SIGNATORY_VERSION""",
+  retry python -m pip install signatory==$SIGNATORY_VERSION-torch${{ matrix.pytorch-version }}""",
 
 # Runs tests on Mac
 test_mac = \
@@ -382,25 +393,15 @@ terminate_mac = \
   chmod +x $GITHUB_WORKSPACE/to_run.sh
   sudo -s -H -E $GITHUB_WORKSPACE/to_run.sh""",
 
-# Uploads dist/* to PyPI for Windows, and uploads the installer script
+# Uploads dist/* to PyPI for Windows
 upload_windows = \
 r"""  pip install twine &&
-  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/* &&
-  cd installer &&
-  python command.py setup &&
-  python setup.py sdist &&
-  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/* &&
-  cd .. &&""",
+  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/* &&""",
 
-# Uploads dist/* to PyPI for Unix, and uploads the installer script
+# Uploads dist/* to PyPI for Unix
 upload_unix = \
 """  pip install twine
-  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/*
-  cd installer
-  python command.py setup
-  python setup.py sdist
-  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/*
-  cd ..""",
+  twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/*""",
 )  # end of global_subs
 global_subs['upload_mac'] = global_subs['upload_linux'] = global_subs['upload_unix']
 

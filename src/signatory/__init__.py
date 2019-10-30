@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
+"""Signatory: Differentiable computations of the signature and logsignature transforms, on both CPU and GPU.
+
+Project homepage: github.com/patrick-kidger/signatory
+Documentation: signatory.readthedocs.io
+"""
 
 
 import functools as ft

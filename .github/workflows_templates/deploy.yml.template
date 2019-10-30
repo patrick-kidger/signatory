@@ -15,7 +15,7 @@ name: Deploy and test
 jobs:
   # we need to do this first as all the linux versions install the same thing from PyPI
   deploy_sdist:
-    <<strategy_single>>
+    <<strategy_single_all_pytorch>>
     steps:
     - <<checkout_code>>
       with:

@@ -53,18 +53,13 @@ description = 'Differentiable computations of the signature and logsignature tra
 
 here = os.path.realpath(os.path.dirname(__file__))
 
-try:
-    # for simplicity we actually store the version in the __version__ attribute in the source
-    with io.open(os.path.join(here, 'src', project, '__init__.py')) as f:
-        meta_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", f.read(), re.M)
-        if meta_match:
-            version = meta_match.group(1)
-        else:
-            raise RuntimeError("Unable to find __version__ string.")
+# for simplicity we actually store the version in the __version__ attribute in the source
+with io.open(os.path.join(here, 'src', project, '__init__.py')) as f:
+    meta_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", f.read(), re.M)
+    if meta_match:
+        version = meta_match.group(1)
+    else:
+        raise RuntimeError("Unable to find __version__ string.")
 
-    with io.open(os.path.join(here, 'README.rst'), 'r', encoding='utf-8') as f:
-        readme = f.read()
-except Exception:
-    # If metadata.py has been copied around, for example into the installer script, then this bit won't work, but that's
-    # fine.
-    pass
+with io.open(os.path.join(here, 'README.rst'), 'r', encoding='utf-8') as f:
+    readme = f.read()

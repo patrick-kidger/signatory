@@ -5,4 +5,3 @@ include metadata.py
 recursive-include src *.hpp
 recursive-include src *.inl
 prune test
-prune installer
