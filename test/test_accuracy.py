@@ -100,10 +100,10 @@ class TestSignatureAccuracy(utils.EnhancedTestCase):
             if not path_initial_grad.allclose(path_initial.grad):
                 self.fail(c.diff_fail(path_initial_grad=path_initial_grad, true_path_initial_grad=path_initial.grad))
 
-    def test_parallelisation(self):
-        for c in utils.ConfigIter(requires_grad=True, stream=False):
+    def test_batch_trick(self):
+        for c in utils.ConfigIter(requires_grad=True, stream=False, L=(6, 10)):
             # no parallelisation when stream=True
-            true_sig = signatory.signature(c.path, c.depth, True, c.basepoint, c.inverse)[:, -1]
+            true_sig = signatory.signature(c.path, c.depth, True, c.basepoint, c.inverse, batch_trick=False)[:, -1]
             grad = torch.rand_like(true_sig)
             true_sig.backward(grad)
             true_path_grad = c.path.grad.clone()
@@ -113,37 +113,20 @@ class TestSignatureAccuracy(utils.EnhancedTestCase):
                 true_basepoint_grad = c.basepoint.grad.clone()
                 c.basepoint.grad.zero_()
 
-            basepoint_detached = c.basepoint
-            if isinstance(basepoint_detached, torch.Tensor):
-                basepoint_detached = basepoint_detached.detach().cpu()
-            openmp_sig = signatory.signature.__globals__['_signature_openmp'](c.path.detach().cpu(), c.depth, c.stream,
-                                                                              basepoint_detached, c.inverse,
-                                                                              None).to(c.device)
             batch_trick_sig = signatory.signature.__globals__['_signature_batch_trick'](c.path, c.depth, c.stream,
                                                                                         c.basepoint, c.inverse, None)
-            if openmp_sig is None:
-                raise RuntimeError(c.fail())
-            test_batch_trick = True
             if batch_trick_sig is None:
-                if c.L < 4:
-                    # The batch trick only triggers for paths of length at least 4
-                    test_batch_trick = False
-                else:
-                    raise RuntimeError(c.fail())
+                raise RuntimeError(c.fail())
 
-            if not true_sig.allclose(openmp_sig):
-                self.fail(c.diff_fail(true_sig=true_sig, openmp_sig=openmp_sig))
-
-            if test_batch_trick:
-                batch_trick_sig.backward(grad)
-                if not true_sig.allclose(batch_trick_sig):
-                    self.fail(c.diff_fail(true_sig=true_sig, batch_trick_sig=batch_trick_sig))
-                if not true_path_grad.allclose(c.path.grad):
-                    self.fail(c.diff_fail(true_path_grad=true_path_grad, batch_trick_path_grad=c.path.grad))
-                if isinstance(c.basepoint, torch.Tensor) and c.basepoint.requires_grad:
-                    if not true_basepoint_grad.allclose(c.basepoint.grad):
-                        self.fail(c.diff_fail(true_basepoint_grad=true_basepoint_grad,
-                                              batch_trick_basepoint_grad=c.basepoint.grad))
+            batch_trick_sig.backward(grad)
+            if not true_sig.allclose(batch_trick_sig):
+                self.fail(c.diff_fail(true_sig=true_sig, batch_trick_sig=batch_trick_sig))
+            if not true_path_grad.allclose(c.path.grad):
+                self.fail(c.diff_fail(true_path_grad=true_path_grad, batch_trick_path_grad=c.path.grad))
+            if isinstance(c.basepoint, torch.Tensor) and c.basepoint.requires_grad:
+                if not true_basepoint_grad.allclose(c.basepoint.grad):
+                    self.fail(c.diff_fail(true_basepoint_grad=true_basepoint_grad,
+                                          batch_trick_basepoint_grad=c.basepoint.grad))
 
 
 class TestLogSignatureAccuracy(utils.EnhancedTestCase):

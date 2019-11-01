@@ -26,14 +26,6 @@
 
 
 namespace signatory {
-    #ifdef _OPENMP
-        constexpr bool open_mp = true;
-    #else
-        constexpr bool open_mp = false;
-    #endif
-
-    inline bool built_with_open_mp() { return open_mp; }
-
     // signed-ness is important because we'll sometimes iterate downwards
     // it is very deliberately not called 'size_type' because otherwise when using it in e.g. the constructor for
     // something inheriting from std::vector, then 'size_type' will there refer to std::vector::size_type instead.

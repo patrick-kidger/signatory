@@ -12,16 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
-"""This module exposes functionality that isn't documented as part of the public API. In particular that means that
+"""This module exposes functionality that isn't a stable part of the public API. In particular that means that
 everything here is experimental and may change without notice.
-
-The functionality here is either exposed for developer convenience, or because the functionality is niche enough that it
-hasn't been worth documenting and exposing.
 """
 
 
-from .signature_module import (set_signature_calculation_methods,
-                               reset_signature_calculation_methods)
-
-from ._impl import (lyndon_words_to_basis_transform,
-                    built_with_open_mp,)
+from ._impl import (lyndon_words_to_basis_transform,)

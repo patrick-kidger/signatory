@@ -15,7 +15,6 @@
 """Provides operations relating to the signature transform."""
 
 
-import inspect
 import torch
 from torch import nn
 from torch import autograd
@@ -29,39 +28,6 @@ from . import _impl
 # noinspection PyUnreachableCode
 if False:
     from typing import Any, List, Union
-
-
-# So coming up we've got the functionality for creating signtures. The system is a little convoluted and unfortunately
-# has a few warts, so we're detailing them here, and why.
-#
-# The thing that actually matters is _impl.signature_forward and _impl.signature_backward, which do exactly what you
-# think they do.
-#
-# Unfortunately it's not at all clear how to bring these together into an autograd.Function in the C++, so we export
-# both to Python and to that here instead, to create _SignatureFunction.
-#
-# (This uses the helpers interpet_forward_args and interpret_backward_grad as the Python signature function and the C++
-# signature_forward don't have exactly the same interface - for some sensible reasons, and some not-so-sensible but now
-# unchangable-because-of-backwards-compatability reasons - and these convert between them.)
-#
-# In particular one annoying wart that I would definitely change if I could is the order of dimensions. For speed
-# reasons this is (stream, batch, channel) in C++. For convention reasons it is (batch, stream, channel) in the visible
-# API. Somewhere a transpose has to be performed. Unfortunately, some transposes cannot be performed inside the
-# autograd machinery, as else certain correctness checks don't trigger. (PyTorch bug 24413). So for simplicity we put
-# all transposes outside the autograd framework.
-# If I could I would just make (stream, batch, channel) the convention throughout.
-#
-# Moving on, the next wart is that there's some somewhat convoluted logic in the main signature function to test for
-# more efficient parallelisation cases. This has to be done outside of _SignatureFunction (and thus in Python), so that
-# the backward logic is hooked up correctly.
-# In particular the C++ code checks that the proposed strategy is valid (it's part of the design philosophy that the C++
-# code isn't unsafe), so both the Python and the C++ code are performing the same checks twice. Which is another wart.
-#
-# And in turn we then have to perform argument checking before that set of logic, which is the purpose of
-# _signature_checkargs.
-#
-# If only we could do autograd in C++ pretty much all of this unpleasantness could be tided up, but the documentation
-# for how to do that is literally non-existent.
 
 
 def interpet_forward_args(ctx, path, basepoint, initial):
@@ -81,26 +47,14 @@ def interpret_backward_grad(ctx, grad_basepoint, grad_initial):
     return grad_basepoint, grad_initial
 
 
-def _interpret_strategy(strategy):
-    if strategy == "simple":
-        return _impl.SignatureComputationStrategy.Simple
-    elif strategy == "openmp":
-        return _impl.SignatureComputationStrategy.OpenMP
-    elif strategy == "default":
-        return _impl.SignatureComputationStrategy.Default
-    else:
-        raise ValueError("Invalid values for argument 'strategy'. Valid values are 'simple', 'openmp', or 'default'.")
-
-
 class _SignatureFunction(autograd.Function):
     @staticmethod
-    def forward(ctx, path, depth, stream, basepoint, inverse, initial, strategy):
+    def forward(ctx, path, depth, stream, basepoint, inverse, initial):
 
         basepoint, basepoint_value, initial, initial_value = interpet_forward_args(ctx, path, basepoint, initial)
-        strategy = _interpret_strategy(strategy)
 
         signature_, path_increments = _impl.signature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
-                                                              initial, initial_value, strategy)
+                                                              initial, initial_value)
         ctx.save_for_backward(signature_, path_increments)
         ctx.depth = depth
         ctx.stream = stream
@@ -132,71 +86,31 @@ def _signature_checkargs(path, depth, basepoint, initial):
     _impl.signature_checkargs(path, depth, basepoint, basepoint_value, initial, initial_value)
 
 
-def _signature_simple(path, depth, stream, basepoint, inverse, initial):
-    if path.is_cuda:
-        # Only works for CPU tensors
-        return
-    if inverse:
-        # We haven't bothered to implement it in the reasonably-niche inverse=True case
-        return
-    if path.size(-3) * path.size(-2) * signature_channels(path.size(-1), depth) > 5586943:
-        # The signature must be sufficiently small that a single thread will be quicker than multiple ones
-        return
-    # transpose to go from Python convention of (batch, stream, channel) to autograd/C++ convention of
-    # (stream, batch, channel)
-    # noinspection PyUnresolvedReferences
-    return _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, 'simple')
-
-
-def _signature_openmp(path, depth, stream, basepoint, inverse, initial):
-    if stream:
-        # The problem musn't be inherently unparallelisable
-        return
-    if not _impl.built_with_open_mp():
-        # We must have built with OpenMP
-        return
-    if path.is_cuda:
-        # For some reason this is slower when using the GPU. Don't know why!
-        return
-    if path.requires_grad:
-        # If we need gradients then the batch trick method, coming up next, is likely to be quicker for the overall
-        # forward+backward pass. (And we can't use this one just for the forward because it doesn't compute certain
-        # quantities needed for the backward pass.)
-        # Note that if for whatever reason the batch trick method isn't available then we'll try this method again,
-        # without worrying about the gradients this time.
-        return
-    if isinstance(basepoint, torch.Tensor):
-        if basepoint.requires_grad:
-            return
-    if isinstance(initial, torch.Tensor):
-        if initial.requires_grad:
-            return
-
-    # transpose to go from Python convention of (batch, stream, channel) to autograd/C++ convention of
-    # (stream, batch, channel)
-    # noinspection PyUnresolvedReferences
-    return _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, 'openmp')
-
-
 def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
     if stream:
+        # We can't use this trick in this case
         return
 
-    threshold = _impl.hardware_concurrency()
-    if threshold == 0:
-        # Indicates that we can't get hardware concurrency, which is a bit weird.
-        # Let's not try to be clever.
-        return
+    if path.is_cuda:
+        threshold = 64
+    else:
+        if not path.requires_grad:
+            # If we're on the CPU then parallelisation will automatically occur more efficiently than this trick allows.
+            # However that parallelisation will not generate certain intermediate tensors needed to perform an efficient
+            # backward pass (whilst the batch trick does), so we don't use it if we're going to perform a backward
+            # operation.
+            return
+        threshold = _impl.hardware_concurrency()
+        if threshold == 0:
+            # Indicates that we can't get the amount of hardware concurrency, which is a bit weird.
+            # In this case let's not try to be clever.
+            return
 
     batch_size, stream_size, channel_size = path.shape
 
-    # If we don't have available parallelisation capacity
-    if batch_size >= threshold:
-        return
-
     # Number of chunks to split the stream in to
     mult = int(round(float(threshold) / batch_size))
-    mult = min(mult, int(stream_size / 2))
+    mult = min(mult, int(stream_size / 3))
 
     # If the problem isn't large enough to be worth parallelising
     if mult < 2:
@@ -232,8 +146,7 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
     basepoint = ends.view(batch_size * mult, channel_size)
 
     # noinspection PyUnresolvedReferences
-    result_bulk = _SignatureFunction.apply(path_bulk.transpose(0, 1), depth, stream, basepoint, inverse, False,
-                                           'default')
+    result_bulk = _SignatureFunction.apply(path_bulk.transpose(0, 1), depth, stream, basepoint, inverse, None)
     result_bulk = result_bulk.view(batch_size, mult, result_bulk.size(-1))
     chunks = []
     if isinstance(initial, torch.Tensor):
@@ -244,81 +157,14 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
         # (stream, batch, channel)
         # noinspection PyUnresolvedReferences
         result_remainder = _SignatureFunction.apply(path_remainder.transpose(0, 1), depth, stream, basepoint_remainder,
-                                                    inverse, False, False)
+                                                    inverse, None)
         chunks.append(result_remainder)
 
     return multi_signature_combine(chunks, channel_size, depth, inverse)
 
 
-def _signature_openmp_allow_grad(path, depth, stream, basepoint, inverse, initial):
-    # As _signature_openmp, except that we allow ourselves to use it even if a gradient is required. Typically the
-    # batch trick method will be utilised in this case, but if for whatever reason it's not used. (e.g. discontiguous
-    # data) then this may still be a sensible option.
-    if stream:
-        return
-    if not _impl.built_with_open_mp():
-        return
-    if path.is_cuda:
-        return
-
-    return _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, 'openmp')
-
-
-def _signature_default(path, depth, stream, basepoint, inverse, initial):
-    # transpose to go from Python convention of (batch, stream, channel) to autograd/C++ convention of
-    # (stream, batch, channel)
-    # noinspection PyUnresolvedReferences
-    return _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, 'default')
-
-
-_signature_calculation_methods = ()
-
-
-def set_signature_calculation_methods(simple=None, openmp=None, batch_trick=None, openmp_allow_grad=None, default=None):
-    if default is False:
-        warnings.warn('You are setting the default method of signature calculation off. You may find that the '
-                      'signature calculations may sometimes not be computable without this as an option.')
-
-    methods = []
-
-    def _add_method(toggle, fn):
-        if toggle is True:
-            methods.append(fn)
-        elif toggle is False:
-            pass
-        elif toggle is None:
-            if fn in _signature_calculation_methods:
-                methods.append(fn)
-        else:
-            raise ValueError("Value of '{}' not valid".format(toggle))
-
-    # The order of these matters. It's the order that the methods will be tried in; the first matching method will be
-    # used.
-    _add_method(simple, _signature_simple)
-    _add_method(openmp, _signature_openmp)
-    _add_method(batch_trick, _signature_batch_trick)
-    _add_method(openmp_allow_grad, _signature_openmp_allow_grad)
-    _add_method(default, _signature_default)
-
-    global _signature_calculation_methods
-    _signature_calculation_methods = tuple(methods)
-
-
-def reset_signature_calculation_methods(value=True):
-    try:
-        # Python 3
-        num_methods = len(inspect.signature(set_signature_calculation_methods).parameters)
-    except AttributeError:
-        # Python 2
-        num_methods = len(inspect.getargspec(set_signature_calculation_methods).args)
-    set_signature_calculation_methods(*[value for _ in range(num_methods)])
-
-
-reset_signature_calculation_methods()
-
-
-def signature(path, depth, stream=False, basepoint=False, inverse=False, initial=None):
-    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], bool, Union[None, torch.Tensor]) -> torch.Tensor
+def signature(path, depth, stream=False, basepoint=False, inverse=False, initial=None, batch_trick=True):
+    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], bool, Union[None, torch.Tensor], bool) -> torch.Tensor
 
     r"""Applies the signature transform to a stream of data.
 
@@ -367,6 +213,11 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
             explanation, see :ref:`this example<examples-online>`.
             (The appropriate modifications are made if :attr:`inverse=True` or if :attr:`basepoint`.)
 
+        batch_trick (bool, optional): Defaults to True. Whether or not to try the so-called 'batch trick' to speed up
+            computation. This can makes things faster, but will potentially use a lot more memory. Note that this flag
+            doesn't specify whether or not the batch trick *will* be used, but just whether or not it *can* be used.
+            (The trick can't always be used.)
+
     Returns:
         A :class:`torch.Tensor`. Given an input :class:`torch.Tensor` of shape :math:`(N, L, C)`, and input arguments
         :attr:`depth`, :attr:`basepoint`, :attr:`stream`, then the return value is, in pseudocode:
@@ -394,18 +245,11 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
 
     _signature_checkargs(path, depth, basepoint, initial)
 
-    # There's a few ways to compute signatures, basically differing on how to parallelise.
-    # The methods are ranked in a preferential order.
-    # We iterate through them and select the first one that works.
-    # (As a final remark, this optimisation is done in the Python rather than the C++ so that the backward pass is
-    # hooked up.)
-
-    for fn in _signature_calculation_methods:
-        result = fn(path, depth, stream, basepoint, inverse, initial)
-        if result is not None:
-            break
-    else:
-        raise RuntimeError('No registered signature calculation method was suitable for this problem.')
+    result = None
+    if batch_trick:
+        result = _signature_batch_trick(path, depth, stream, basepoint, inverse, initial)
+    if result is None:  # Either because we disabled use of the batch trick, or because the batch trick doesn't apply
+        result = _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial)
 
     # We have to do the transpose outside of autograd.Function.apply to avoid PyTorch bug 24413
     if stream:
@@ -432,8 +276,8 @@ class Signature(nn.Module):
         self.stream = stream
         self.inverse = inverse
 
-    def forward(self, path, basepoint=False, initial=None):
-        # type: (torch.Tensor, Union[bool, torch.Tensor], Union[None, torch.Tensor]) -> torch.Tensor
+    def forward(self, path, basepoint=False, initial=None, batch_trick=True):
+        # type: (torch.Tensor, Union[bool, torch.Tensor], Union[None, torch.Tensor], bool) -> torch.Tensor
         """The forward operation.
 
         Arguments:
@@ -443,11 +287,13 @@ class Signature(nn.Module):
 
             initial (None or torch.Tensor, optional): As :func:`signatory.signature`.
 
+            batch_trick (bool, optional): As :func:`signatory.signature`.
+
         Returns:
             As :func:`signatory.signature`.
         """
         return signature(path, self.depth, stream=self.stream, basepoint=basepoint, inverse=self.inverse,
-                         initial=initial)
+                         initial=initial, batch_trick=batch_trick)
 
     def extra_repr(self):
         return 'depth={depth}, stream={stream}, basepoint={basepoint}'.format(depth=self.depth, stream=self.stream,

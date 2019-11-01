@@ -14,7 +14,6 @@
  * ========================================================================= */
 
 
-#include <cmath>      // pow
 #include <cstdint>    // int64_t
 #include <stdexcept>  // std::invalid_argument
 #include <utility>    // std::pair

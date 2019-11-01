@@ -15,6 +15,7 @@
 
 
 #include <torch/extension.h>
+#include <algorithm>  // std::min
 #include <cstdint>    // int64_t
 #include <cmath>      // std::lround
 #ifdef _OPENMP
@@ -26,7 +27,6 @@
 #include "misc.hpp"
 #include "signature.hpp"
 #include "tensor_algebra_ops.hpp"
-#
 
 namespace signatory {
     namespace detail {
@@ -126,6 +126,120 @@ namespace signatory {
         }
 
         struct bool_wrapper { bool value; };
+
+        void signature_forward_inner(torch::Tensor path_increments,
+                                     torch::Tensor reciprocals,
+                                     std::vector<torch::Tensor> signature_by_term_at_stream,
+                                     bool inverse,
+                                     int64_t output_stream_size,
+                                     bool stream,
+                                     torch::Tensor signature,
+                                     const std::vector<torch::Tensor> signature_by_term) {
+            for (int64_t stream_index = 1; stream_index < output_stream_size; ++stream_index) {
+                if (stream) {
+                    signature[stream_index].copy_(signature[stream_index - 1]);
+                    misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index);
+                }
+                ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
+                                                  signature_by_term_at_stream,
+                                                  inverse,
+                                                  reciprocals);
+            }
+        }
+
+        template<typename scalar_t>
+        void signature_forward_inner_cpu_inner(torch::Tensor path_increments,
+                                               torch::Tensor reciprocals,
+                                               std::vector<torch::Tensor> signature_by_term_at_stream,
+                                               bool inverse,
+                                               int64_t batch_size,
+                                               int64_t start,
+                                               int64_t end,
+                                               int64_t batch_threads,
+                                               bool stream,
+                                               torch::Tensor signature,
+                                               const std::vector<torch::Tensor> signature_by_term) {
+
+            // First make some TensorAccessors
+            auto path_increments_a = path_increments.accessor<scalar_t, 3>();
+            auto reciprocals_a = reciprocals.accessor<scalar_t, 1>();
+
+            std::vector<torch::TensorAccessor<scalar_t, 2>> signature_by_term_at_stream_a;
+            signature_by_term_at_stream_a.reserve(signature_by_term_at_stream.size());
+            if (!stream) {  // if stream then we'll handle this inside the stream loop
+                for (auto elem : signature_by_term_at_stream) {
+                    signature_by_term_at_stream_a.push_back(elem.accessor<scalar_t, 2>());
+                }
+            }
+
+            for (int64_t stream_index = start; stream_index < end; ++stream_index) {
+                // Store the information we've already computed if stream==true
+                if (stream) {
+                    signature[stream_index].copy_(signature[stream_index - 1]);
+                    misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index);
+                    signature_by_term_at_stream_a.clear();
+                    for (auto elem: signature_by_term_at_stream) {
+                        // have to do this inside the stream loop because the tensors in signature_by_term_at_stream
+                        // get overwritten in slice_at_stream.
+                        signature_by_term_at_stream_a.push_back(elem.accessor<scalar_t, 2>());
+                    }
+                }
+
+                // Do the actual computation
+                #pragma omp parallel for default(none) \
+                                         if(batch_threads > 1) \
+                                         num_threads(batch_threads) \
+                                         shared(batch_size, path_increments_a, signature_by_term_at_stream_a, inverse, \
+                                                reciprocals_a, stream_index)
+                for (int64_t batch_index = 0; batch_index < batch_size; ++batch_index) {
+                    std::vector<torch::TensorAccessor<scalar_t, 1>> signature_by_term_at_stream_a_at_batch;
+                    signature_by_term_at_stream_a_at_batch.reserve(signature_by_term_at_stream_a.size());
+                    for (auto elem: signature_by_term_at_stream_a) {
+                        signature_by_term_at_stream_a_at_batch.push_back(elem[batch_index]);
+                    }
+                    if (inverse) {
+                        ta_ops::mult_fused_restricted_exp_single_cpu<scalar_t, /*inverse=*/true>
+                                (path_increments_a[stream_index][batch_index],
+                                 signature_by_term_at_stream_a_at_batch,
+                                 reciprocals_a);
+                    }
+                    else {
+                        ta_ops::mult_fused_restricted_exp_single_cpu<scalar_t, /*inverse=*/false>
+                                (path_increments_a[stream_index][batch_index],
+                                 signature_by_term_at_stream_a_at_batch,
+                                 reciprocals_a);
+                    }
+                }
+            }
+        }
+
+        void signature_forward_inner_cpu(torch::Tensor path_increments,
+                                         torch::Tensor reciprocals,
+                                         std::vector<torch::Tensor> signature_by_term_at_stream,
+                                         bool inverse,
+                                         int64_t batch_size,
+                                         int64_t start,
+                                         int64_t end,
+                                         int64_t batch_threads,
+                                         bool stream,
+                                         torch::Tensor signature,
+                                         const std::vector<torch::Tensor> signature_by_term) {
+            // Pick the appropriate templated version of signature_forward_inner_cpu_inner based on the floating point
+            // type being used
+            AT_DISPATCH_FLOATING_TYPES(path_increments.type(), "signature_forward_inner_cpu", ([&] {
+                signature_forward_inner_cpu_inner<scalar_t>(path_increments,
+                                                            reciprocals,
+                                                            signature_by_term_at_stream,
+                                                            inverse,
+                                                            batch_size,
+                                                            start,
+                                                            end,
+                                                            batch_threads,
+                                                            stream,
+                                                            signature,
+                                                            signature_by_term);
+            }));
+        }
     }  // namespace signatory::detail
 
     void signature_checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value,
@@ -189,7 +303,7 @@ namespace signatory {
 
     std::tuple<torch::Tensor, torch::Tensor>
     signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
-                      bool inverse, bool initial, torch::Tensor initial_value, SignatureComputationStrategy strategy) {
+                      bool inverse, bool initial, torch::Tensor initial_value) {
         signature_checkargs(path, depth, basepoint, basepoint_value, initial, initial_value);
 
         // No sense keeping track of gradients when we have a dedicated backwards function (and in-place operations mean
@@ -200,9 +314,10 @@ namespace signatory {
 
         // Some constants to pass around
         int64_t batch_size = path.size(batch_dim);
+        int64_t input_stream_size = path.size(stream_dim);
         int64_t input_channel_size = path.size(channel_dim);
         int64_t output_stream_size = path.size(stream_dim) - (basepoint ? 0 : 1);
-        int64_t output_channel_size = signature_channels(path.size(channel_dim), depth);
+        int64_t output_channel_size = signature_channels(input_channel_size, depth);
         torch::TensorOptions opts = misc::make_opts(path);
         torch::Tensor reciprocals = misc::make_reciprocals(depth, opts);
 
@@ -241,86 +356,92 @@ namespace signatory {
         }
 
         // Now actually do the computation! This is a little involved as it's possible to optimise various cases.
-        // We use the 'strategy' argument as a hint for what the most efficient method of computation will be.
-        // If the argument doesn't align with what's possible then we'll fall back to the default method. (We could also
-        // throw an error, but the precise cases in which each strategy is possible can be a little convoluted so we
-        // prefer not to.)
-        if (stream) {
-            if (strategy == SignatureComputationStrategy::Simple && !path.is_cuda() && !inverse) {
-                for (int64_t stream_index = 1; stream_index < output_stream_size; ++stream_index) {
-                    signature[stream_index].copy_(signature[stream_index - 1]);
-                    misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index);
-                    ta_ops::mult_fused_restricted_exp_simple(path_increments[stream_index],
-                                                             signature_by_term_at_stream,
-                                                             reciprocals);
-                }
-            }
-            else {
-                for (int64_t stream_index = 1; stream_index < output_stream_size; ++stream_index) {
-                    signature[stream_index].copy_(signature[stream_index - 1]);
-                    misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index);
-                    ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
-                                                      signature_by_term_at_stream,
-                                                      inverse,
-                                                      reciprocals);
-                }
-            }
+        if (path.is_cuda()) {
+            // First of all, we don't/haven't tried writing custom GPU code. But if we did it would go here. Instead we
+            // call a function specified in terms of the higher-level PyTorch Tensors.
+            detail::signature_forward_inner(path_increments, reciprocals, signature_by_term_at_stream, inverse,
+                                            output_stream_size, stream, signature, signature_by_term);
         }
         else {
-            if (strategy == SignatureComputationStrategy::OpenMP && open_mp) {
-                int64_t nthreads = omp_get_max_threads();
-                std::vector<std::vector<torch::Tensor>> omp_results(nthreads);
+            // If we're here then we're on the CPU.
+            // That means we're going to try to use OpenMP to parallelise.
+
+            int64_t stream_threads;
+            int64_t batch_threads;
+            if (batch_size * output_stream_size * output_channel_size < 5586944) {
+                // Don't use parallelism if the problem is small
+                stream_threads = 1;
+                batch_threads = 1;
+            }
+            else {
+                // We want to parallelise across the batch dimension first, as that's most efficient. So here we figure
+                // out how many threads we can afford to use across the stream dimension.
+                stream_threads = (omp_get_max_threads() + batch_size - 1) / batch_size;
+
+                // Don't want to cut the stream dimension _too_ small, or we'll lose the benefits of the fused
+                // mult-restricted-exp operation
+                stream_threads = std::min(stream_threads, (input_stream_size + 2) / 3);
+
+                batch_threads = std::min(batch_size, static_cast<int64_t>(omp_get_max_threads()));
+            }
+            if (stream) {
+                // Can't parallelise along the stream dimension in this inherently-serial case.
+                stream_threads = 1;
+            }
+
+            if (stream_threads == 1) {
+                // Will be true if stream==true or if the problem is small or if the batch size is large
+                // It's not that the OpenMP code below will be wrong with just one thread, but it will be needlessly
+                // inefficient, as it allocates extra memory.
+                detail::signature_forward_inner_cpu(path_increments, reciprocals, signature_by_term_at_stream, inverse,
+                                                    batch_size, /*start=*/1, /*end=*/output_stream_size, batch_threads,
+                                                    stream, signature, signature_by_term);
+            }
+            else {
+                std::vector<std::vector<torch::Tensor>> omp_results(stream_threads);
                 // There's no guarantee that we actually get the maximum number of threads, so we have to check
                 // which ones actually get used.
                 // This also serves as a check that start < end, in the block below
-                std::vector<detail::bool_wrapper> omp_used(nthreads, {false});
-                // As for why we bother with the wrapper: std::vector<bool> is special-cased from other vectors and is
-                // basically broken. https://stackoverflow.com/questions/670308/alternative-to-vectorbool
+                std::vector<detail::bool_wrapper> omp_used(stream_threads, {false});
+                // As for why we bother with the bool wrapper: std::vector<bool> is special-cased from other vectors and
+                // is basically broken. https://stackoverflow.com/questions/670308/alternative-to-vectorbool
 
-                #pragma omp parallel default(none) shared(omp_results, omp_used, path_increments, inverse, reciprocals,\
-                                                          output_stream_size, batch_size, output_channel_size, \
-                                                          input_channel_size, depth, opts)
+                #pragma omp parallel default(none) \
+                                 num_threads(stream_threads) \
+                                 shared(omp_results, omp_used, path_increments, inverse, reciprocals, \
+                                        output_stream_size, batch_size, output_channel_size, input_channel_size, \
+                                        depth, opts, batch_threads)
                 {
+                    // Split up the stream dimension into chunks
                     int64_t start = 1 + ((output_stream_size - 1) * omp_get_thread_num()) / omp_get_num_threads();
                     int64_t end = 1 + ((output_stream_size - 1) * (1 + omp_get_thread_num())) / omp_get_num_threads();
                     if (start < end) {
-                        std::vector<torch::Tensor> omp_signature_by_term_at_stream;
+                        // Compute the signature of each chunk separately
                         torch::Tensor omp_signature = torch::empty({batch_size, output_channel_size}, opts);
+                        std::vector<torch::Tensor> omp_signature_by_term_at_stream;
                         misc::slice_by_term(omp_signature, omp_signature_by_term_at_stream, input_channel_size, depth);
                         ta_ops::restricted_exp(path_increments[start], omp_signature_by_term_at_stream, reciprocals);
-                        for (int64_t stream_index = start + 1; stream_index < end; ++stream_index) {
-                            ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
-                                                              omp_signature_by_term_at_stream,
-                                                              inverse,
-                                                              reciprocals);
-                        }
+
+                        detail::signature_forward_inner_cpu(path_increments, reciprocals,
+                                                            omp_signature_by_term_at_stream, inverse, batch_size,
+                                                            /*start=*/start + 1, /*end=*/end, batch_threads,
+                                                            /*stream=*/false,
+                                                            torch::Tensor {}/*is unused because stream==false*/,
+                                                            std::vector<torch::Tensor> {}
+                                                            /*is unused because stream==false*/);
+                        // Record results
                         omp_results[omp_get_thread_num()] = std::move(omp_signature_by_term_at_stream);
                         omp_used[omp_get_thread_num()] = {true};
                     }
                 }
-                for (int64_t thread_index = 0; thread_index < nthreads; ++thread_index) {
+
+                // Combine the signatures of each chunk
+                for (int64_t thread_index = 0; thread_index < stream_threads; ++thread_index) {
                     if (omp_used[thread_index].value) {
                         ta_ops::mult(signature_by_term_at_stream, omp_results[thread_index], inverse);
                     }
                     // there is no else{break;} block because it need not be true that the used threads are
                     // contiguously indexed, because of the start < end condition above.
-                }
-            }
-            else {
-                if (strategy == SignatureComputationStrategy::Simple && !path.is_cuda() && !inverse) {
-                    for (int64_t stream_index = 1; stream_index < output_stream_size; ++stream_index) {
-                        ta_ops::mult_fused_restricted_exp_simple(path_increments[stream_index],
-                                                                 signature_by_term_at_stream,
-                                                                 reciprocals);
-                    }
-                }
-                else {
-                    for (int64_t stream_index = 1; stream_index < output_stream_size; ++stream_index) {
-                        ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
-                                                          signature_by_term_at_stream,
-                                                          inverse,
-                                                          reciprocals);
-                    }
                 }
             }
         }

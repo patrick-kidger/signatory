@@ -113,38 +113,6 @@ namespace signatory {
                     grad_tensor_at_depth.zero_();
                 }
             }
-
-            template <typename scalar_t>
-            void mult_fused_restricted_exp_simple_inner(torch::Tensor next, std::vector<torch::Tensor> prev,
-                                                        torch::Tensor reciprocals) {
-                int64_t batch_size = next.size(batch_dim);
-                int64_t input_channel_size = next.size(channel_dim);
-                s_size_type depth = prev.size();
-
-                // We're going to need to know the new increment, divided by every depth up to the maximum depth
-                // We precompute them here as we're going to need them several times.
-                torch::Tensor next_divided = next.unsqueeze(0) * reciprocals.unsqueeze(1).unsqueeze(2);
-
-                for (s_size_type depth_index = depth - 1; depth_index >= 1; --depth_index) {
-                    torch::Tensor scratch = prev[0] + next_divided[depth_index - 1].squeeze(0);
-                    for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
-                        auto old_scratch_size = scratch.size(channel_dim);
-                        torch::Tensor prev_view;
-                        prev_view = prev[j].view({batch_size,
-                                                  old_scratch_size,
-                                                  input_channel_size});
-                        scratch = prev_view.addcmul(scratch.unsqueeze(channel_dim),
-                                                    next_divided[k].unsqueeze(channel_dim - 1));
-                        scratch = scratch.view({batch_size, old_scratch_size * input_channel_size});
-                    }
-                    torch::Tensor prev_view;
-                    prev_view = prev[depth_index].view({batch_size,
-                                                        scratch.size(channel_dim),
-                                                        input_channel_size});
-                    prev_view.addcmul_(scratch.unsqueeze(channel_dim), next.unsqueeze(channel_dim - 1));
-                }
-                prev[0] += next;
-            }
         }  // namespace signatory::ta_ops::detail
 
         void mult(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2, bool inverse) {
@@ -236,20 +204,6 @@ namespace signatory {
             }
         }
 
-        void mult_fused_restricted_exp_simple(torch::Tensor next, std::vector<torch::Tensor>& prev,
-                                              torch::Tensor reciprocals) {
-            if (next.dtype() == torch::kFloat32) {
-                detail::mult_fused_restricted_exp_simple_inner<float>(next, prev, reciprocals)
-            }
-            else if (next.dtype() == torch::kFloat64) {
-                detail::mult_fused_restricted_exp_simple_inner<double>(next, prev, reciprocals)
-            }
-            else {
-                // should never end up here, but we'll be graceful if we do
-                mult_fused_restricted_exp(next, prev, false, reciprocals);
-            }
-        }
-
         void mult_fused_restricted_exp(torch::Tensor next, std::vector<torch::Tensor>& prev, bool inverse,
                                        torch::Tensor reciprocals) {
             int64_t batch_size = next.size(batch_dim);
@@ -272,7 +226,7 @@ namespace signatory {
             }
 
             for (s_size_type depth_index = depth - 1; depth_index >= 1; --depth_index) {
-                torch::Tensor scratch = prev[0] + next_divided[depth_index - 1].squeeze(0);
+                torch::Tensor scratch = prev[0] + next_divided[depth_index - 1];
                 for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
                     auto old_scratch_size = scratch.size(channel_dim);
                     torch::Tensor prev_view;

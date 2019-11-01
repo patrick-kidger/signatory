@@ -23,8 +23,7 @@
                              // signatory::signature_to_logsignature_backward,
                              // signatory::make_lyndon_info
 
-#include "misc.hpp"          // signatory::built_with_open_mp,
-                             // signatory::signature_channels
+#include "misc.hpp"          // signatory::signature_channels
 
 #include "signature.hpp"     // signatory::signature_checkargs
                              // signatory::SignatureComputationStrategy,
@@ -38,6 +37,10 @@
 #include "tensor_algebra_ops.hpp"  // signatory::signature_combine_forward,
                                    // signatory::signature_combine_backward
 
+#ifndef _OPENMP
+    #error OpenMP required
+#endif
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("signature_to_logsignature_forward",
           &signatory::signature_to_logsignature_forward);
@@ -45,8 +48,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
           &signatory::signature_to_logsignature_backward);
     m.def("make_lyndon_info",
           &signatory::make_lyndon_info);
-    m.def("built_with_open_mp",
-          &signatory::built_with_open_mp);
     m.def("hardware_concurrency",
           &std::thread::hardware_concurrency);
     py::enum_<signatory::LogSignatureMode>(m, "LogSignatureMode")
@@ -55,10 +56,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
             .value("Words", signatory::LogSignatureMode::Words);
     m.def("signature_checkargs",
           &signatory::signature_checkargs);
-    py::enum_<signatory::SignatureComputationStrategy>(m, "SignatureComputationStrategy")
-            .value("Simple", signatory::SignatureComputationStrategy::Simple)
-            .value("OpenMP", signatory::SignatureComputationStrategy::OpenMP)
-            .value("Default", signatory::SignatureComputationStrategy::Default);
     m.def("signature_forward",
           &signatory::signature_forward);
     m.def("signature_backward",

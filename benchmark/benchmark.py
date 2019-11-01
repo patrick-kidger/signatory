@@ -122,10 +122,13 @@ def run(self):
 
     def time(self):
         try:
-            self.time_statement()  # warm up
-        except Exception:
+            try:
+                self.time_statement()  # warm up
+            except Exception:
+                return math.inf
+            return min(timeit.Timer(stmt=self.time_statement).repeat(repeat=self.repeat, number=self.number))
+        except KeyboardInterrupt:
             return math.inf
-        return min(timeit.Timer(stmt=self.time_statement).repeat(repeat=self.repeat, number=self.number))
 
     def memory(self):
         files = os.listdir('.')
@@ -604,7 +607,7 @@ class BenchmarkRunner(object):
     def depths(cls, **kwargs):
         """Tests depths for a fixed number of channels."""
         new_kwargs = dict(sizes=((32, 128, 4),),
-                          depths=(4, 5, 6, 7, 8, 9))
+                          depths=(2, 3, 4, 5, 6, 7, 8, 9))
         new_kwargs.update(kwargs)
         return cls(**new_kwargs)
 

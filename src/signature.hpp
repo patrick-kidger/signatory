@@ -23,12 +23,10 @@ namespace signatory {
     void signature_checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value,
                              bool initial, torch::Tensor initial_value);
 
-    enum class SignatureComputationStrategy { Default, OpenMP, Simple };
-
     // See signatory.signature for documentation
     std::tuple<torch::Tensor, torch::Tensor>
     signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
-                      bool inverse, bool initial, torch::Tensor initial_value, SignatureComputationStrategy strategy);
+                      bool inverse, bool initial, torch::Tensor initial_value);
 
     // See signatory.signature for documentation
     std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>

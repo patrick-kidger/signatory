@@ -22,11 +22,14 @@
  //                                                                                                          \-------/
  //                                                                                                           i times
  // (In particular unless otherwise noted, the 1 in the scalar part is implicit.)
+ //
+ // Furthermore all tensors should typically be of shape (batch, channels) unless otherwise noted.
 
 
 #ifndef SIGNATORY_TENSOR_ALGEBRA_OPS_HPP
 #define SIGNATORY_TENSOR_ALGEBRA_OPS_HPP
 
+#include <torch/extension.h>
 #include <utility>  // std::pair
 
 #include "misc.hpp"
@@ -71,13 +74,6 @@ namespace signatory {
                                      torch::Tensor in, const std::vector<torch::Tensor>& out,
                                      torch::Tensor reciprocals);
 
-        // As mult_fused_restricted_exp.
-        // However it requires that its inputs be CPU tensors, isn't quite as general, and explicitly only uses a single
-        // thread without parallelism. The idea is to just do the simple thing without any overhead, when the problem is
-        // small.
-        void mult_fused_restricted_exp_simple(torch::Tensor next, std::vector<torch::Tensor>& prev,
-                                              torch::Tensor reciprocals)
-
         // Computes a fused multiply-exponentiate.
         // 'next' should be a member of the lowest nonscalar level of the tensor algebra.
         // 'prev' should be a general member of the tensor algebra.
@@ -97,6 +93,15 @@ namespace signatory {
                                                 const std::vector<torch::Tensor>& prev,
                                                 bool inverse,
                                                 torch::Tensor reciprocals);
+
+        // Performs the same computation as mult_fused_restricted_exp, but handles the very special case of being on the
+        // cpu, with a particular scalar type, and does not have a batch dimension.
+        // Be careful with this function! Unless you're aiming for ludicrous speed and know what you're doing then you
+        // probably want one of the other functions defined here.
+        template <typename scalar_t, bool inverse>
+        void mult_fused_restricted_exp_single_cpu(torch::TensorAccessor<scalar_t, 1> next_a,
+                                                  std::vector<torch::TensorAccessor<scalar_t, 1>>& prev_a,
+                                                  torch::TensorAccessor<scalar_t, 1> reciprocals_a);
 
         // Computes the logarithm in the tensor algebra
         // 'output_vector' and 'input_vector' are both members of the tensor algebra, with assumed scalar values 1.
@@ -125,5 +130,7 @@ namespace signatory {
                                                           int64_t input_channels,
                                                           s_size_type depth);
 }  // namespace signatory
+
+#include "tensor_algebra_ops.inl"
 
 #endif //SIGNATORY_TENSOR_ALGEBRA_OPS_HPP
