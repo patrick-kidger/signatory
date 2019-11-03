@@ -44,6 +44,14 @@ namespace signatory {
     // See signatory.signature_channels for documentation
     int64_t signature_channels(int64_t input_channel_size, int64_t depth);
 
+    // See signatory.max_parallelisation for documentation
+    // But basically, this is the amount of extra parallelisation we allow ourselves for those operations which, as a
+    // result of parallelising, use extra memory.
+    // As a result this should be used to bound the parallelisation whenever this is the case. (And should _not_ be used
+    // to bound all parallelisation!)
+    void set_max_parallelisation(int64_t value);
+    int64_t get_max_parallelisation();
+
     namespace misc {
         inline torch::TensorOptions make_opts(torch::Tensor tensor);
 

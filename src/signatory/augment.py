@@ -59,9 +59,9 @@ class Augment(nn.Module):
     where :math:`T` is a constant appropriately chosen so that the first entry moves between :math:`0` and :math:`1` as
     :math:`i` varies. (Specifically, :math:`T = L - k + 1 + 2 \times \text{padding}`.)
 
-    For further details see `Deep Signatures -- Bonnier et al. 2019 <https://arxiv.org/abs/1905.08494>`_. This Module
-    is here more for convenience: it doesn't directly relate to the signature transform; it's just useful to have around
-    when you are using the signature transform.
+    For further details see `Deep Signature Transforms -- Bonnier et al. 2019 <https://arxiv.org/abs/1905.08494>`_. This
+    Module is here more for convenience: it doesn't directly relate to the signature transform; it's just useful to have
+    around when you are using the signature transform.
 
     This Module represents a reasonably general form of a stream-preserving neural network, in the sense of the above
     linked paper.

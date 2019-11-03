@@ -102,8 +102,8 @@ class TestSignatureAccuracy(utils.EnhancedTestCase):
 
     def test_batch_trick(self):
         for c in utils.ConfigIter(requires_grad=True, stream=False, L=(6, 10)):
-            # no parallelisation when stream=True
-            true_sig = signatory.signature(c.path, c.depth, True, c.basepoint, c.inverse, batch_trick=False)[:, -1]
+            # no batch trick when stream=True
+            true_sig = signatory.signature(c.path, c.depth, True, c.basepoint, c.inverse)[:, -1]
             grad = torch.rand_like(true_sig)
             true_sig.backward(grad)
             true_path_grad = c.path.grad.clone()

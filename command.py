@@ -182,7 +182,7 @@ def benchmark(args):
                                                  fns=args.fns)
         else:
             raise RuntimeError
-        if args.output == 'graph':
+        if args.output in ('graph', 'graphsave'):
             runner.check_graph()
         runner.run()
         if args.output == 'graph':

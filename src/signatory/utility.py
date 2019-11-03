@@ -16,6 +16,7 @@
 
 
 import itertools as it
+import math
 
 # noinspection PyUnresolvedReferences
 from . import _impl
@@ -23,7 +24,7 @@ from . import _impl
 
 # noinspection PyUnreachableCode
 if False:
-    from typing import List, Tuple, Union
+    from typing import List, Optional, Union
     # what we actually want, but can't make sense of in the auto-generated documentation
     # LyndonBracket = Union[int, List['LyndonBracket']]
     LyndonBracket = Union[int, List]
@@ -88,3 +89,19 @@ def all_words(channels, depth):
     # Just returning the generator would be much nicer, programmatically speaking, but then this is inconsistent with
     # the lyndon_words function. This isn't expected to use a lot of memory so this is acceptable.
     return list(generator())
+
+
+def max_parallelisation(value=None):
+    # type: (Optional[int]) -> int
+    """Gets or sets the maximum amount of parallelisation used in Signatory's computations. Higher values will typically
+    result in quicker computations but will use more memory.
+
+    Calling without arguments will return the current value.
+    Passing a value of 1 will disable parallelisation.
+    Passing :code:`-1`, :code:`math.inf` or :code:`np.inf` will enable unlimited parallelisation.
+    """
+    if value is not None:
+        if value == math.inf:  # also true for np.inf
+            value = -1
+        _impl.set_max_parallelisation(value)
+    return _impl.get_max_parallelisation()

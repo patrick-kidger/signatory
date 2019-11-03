@@ -18,9 +18,7 @@
 #include <algorithm>  // std::min
 #include <cstdint>    // int64_t
 #include <cmath>      // std::lround
-#ifdef _OPENMP
-    #include <omp.h>
-#endif
+#include <omp.h>
 #include <tuple>      // std::tie, std::tuple
 #include <vector>     // std::vector
 
@@ -29,218 +27,220 @@
 #include "tensor_algebra_ops.hpp"
 
 namespace signatory {
-    namespace detail {
-        // Takes the path and basepoint and returns the path increments
-        torch::Tensor compute_path_increments(torch::Tensor path, bool basepoint, torch::Tensor basepoint_value,
-                                              bool inverse) {
-            int64_t num_increments {path.size(stream_dim) - 1};
-            // The difference between these cases: basepoint/no basepoint + inverse/no inverse are basically just
-            // niceties.
-            // Essentially all that's going on is that if basepoint is passed then the basepoint is concatenated on to
-            // the path.
-            // All that's going on if inverse is passed is just to multiply everything by -1.
-            // We break it up into special cases like this because doing either of the above operations naively involves
-            // unnecessary extra operations.
-            if (basepoint) {
-                if (inverse) {
-                    torch::Tensor path_increments = torch::empty_like(path);
-                    path_increments[0].copy_(basepoint_value);
-                    path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments).copy_(
-                            path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments));
-                    path_increments -= path;
-                    return path_increments;
+    namespace signature {
+        namespace detail {
+            // Takes the path and basepoint and returns the path increments
+            torch::Tensor compute_path_increments(torch::Tensor path, bool basepoint, torch::Tensor basepoint_value,
+                                                  bool inverse) {
+                int64_t num_increments {path.size(stream_dim) - 1};
+                // The difference between these cases: basepoint/no basepoint + inverse/no inverse are basically just
+                // niceties.
+                // Essentially all that's going on is that if basepoint is passed then the basepoint is concatenated on to
+                // the path.
+                // All that's going on if inverse is passed is just to multiply everything by -1.
+                // We break it up into special cases like this because doing either of the above operations naively involves
+                // unnecessary extra operations.
+                if (basepoint) {
+                    if (inverse) {
+                        torch::Tensor path_increments = torch::empty_like(path);
+                        path_increments[0].copy_(basepoint_value);
+                        path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments).copy_(
+                                path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments));
+                        path_increments -= path;
+                        return path_increments;
+                    }
+                    else {
+                        torch::Tensor path_increments = path.clone();
+                        path_increments[0] -= basepoint_value;
+                        path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -=
+                                path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments);
+                        return path_increments;
+                    }
                 }
                 else {
-                    torch::Tensor path_increments = path.clone();
-                    path_increments[0] -= basepoint_value;
-                    path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -=
-                            path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments);
-                    return path_increments;
+                    if (inverse) {
+                        return path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments) -
+                               path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments);
+                    }
+                    else {
+                        return path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -
+                               path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments);
+                    }
                 }
             }
-            else {
-                if (inverse) {
-                    return path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments) -
-                           path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments);
+
+            // Computes the backward pass through the path increments operation.
+            // Returns the gradients for the original path, and for the basepoint.
+            std::tuple<torch::Tensor, torch::Tensor>
+            compute_path_increments_backward(torch::Tensor grad_path_increments, bool basepoint, bool inverse,
+                                             torch::TensorOptions opts) {
+                int64_t batch_size {grad_path_increments.size(batch_dim)};
+                int64_t input_stream_size {grad_path_increments.size(stream_dim)};
+                int64_t input_channel_size {grad_path_increments.size(channel_dim)};
+                if (!basepoint) {
+                    ++input_stream_size;
+                }
+
+                int64_t num_increments{input_stream_size - 1};
+                if (basepoint) {
+                    if (inverse) {
+                        torch::Tensor grad_path = torch::empty_like(grad_path_increments);
+                        grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments).copy_(
+                                grad_path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments));
+                        grad_path[-1].zero_();
+                        grad_path -= grad_path_increments;
+                        return std::tuple<torch::Tensor, torch::Tensor>
+                                                         {grad_path, grad_path_increments[0]};
+                    }
+                    else {
+                        torch::Tensor grad_path = grad_path_increments.clone();
+                        grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments)
+                                -= grad_path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments);
+                        return std::tuple<torch::Tensor, torch::Tensor>
+                                                         {grad_path, -grad_path_increments[0]};
+                    }
                 }
                 else {
-                    return path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -
-                           path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments);
-                }
-            }
-        }
+                    if (inverse) {
+                        torch::Tensor grad_path = torch::empty({input_stream_size, batch_size, input_channel_size}, opts);
+                        grad_path[-1].zero_();
+                        grad_path.narrow(/*dim=*/stream_dim,
+                                /*start=*/0,
+                                /*len=*/num_increments).copy_(grad_path_increments);
+                        grad_path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -= grad_path_increments;
+                        // no second return value in this case
+                        return std::tuple<torch::Tensor, torch::Tensor> {grad_path, torch::empty({0}, opts)};
 
-        // Computes the backward pass through the path increments operation.
-        // Returns the gradients for the original path, and for the basepoint.
-        std::tuple<torch::Tensor, torch::Tensor>
-        compute_path_increments_backward(torch::Tensor grad_path_increments, bool basepoint, bool inverse,
-                                         torch::TensorOptions opts) {
-            int64_t batch_size {grad_path_increments.size(batch_dim)};
-            int64_t input_stream_size {grad_path_increments.size(stream_dim)};
-            int64_t input_channel_size {grad_path_increments.size(channel_dim)};
-            if (!basepoint) {
-                ++input_stream_size;
-            }
-
-            int64_t num_increments{input_stream_size - 1};
-            if (basepoint) {
-                if (inverse) {
-                    torch::Tensor grad_path = torch::empty_like(grad_path_increments);
-                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments).copy_(
-                            grad_path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments));
-                    grad_path[-1].zero_();
-                    grad_path -= grad_path_increments;
-                    return std::tuple<torch::Tensor, torch::Tensor>
-                           {grad_path, grad_path_increments[0]};
-                }
-                else {
-                    torch::Tensor grad_path = grad_path_increments.clone();
-                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments)
-                            -= grad_path_increments.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments);
-                    return std::tuple<torch::Tensor, torch::Tensor>
-                           {grad_path, -grad_path_increments[0]};
-                }
-            }
-            else {
-                if (inverse) {
-                    torch::Tensor grad_path = torch::empty({input_stream_size, batch_size, input_channel_size}, opts);
-                    grad_path[-1].zero_();
-                    grad_path.narrow(/*dim=*/stream_dim,
-                                     /*start=*/0,
-                                     /*len=*/num_increments).copy_(grad_path_increments);
-                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/1, /*len=*/num_increments) -= grad_path_increments;
-                    // no second return value in this case
-                    return std::tuple<torch::Tensor, torch::Tensor> {grad_path, torch::empty({0}, opts)};
-
-                }
-                else {
-                    torch::Tensor grad_path = torch::empty({input_stream_size, batch_size, input_channel_size}, opts);
-                    grad_path[0].zero_();
-                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/1,
-                                     /*len=*/num_increments).copy_(grad_path_increments);
-                    grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments) -= grad_path_increments;
-                    // no second return value in this case
-                    return std::tuple<torch::Tensor, torch::Tensor> {grad_path, torch::empty({0}, opts)};
-                }
-            }
-        }
-
-        struct bool_wrapper { bool value; };
-
-        void signature_forward_inner(torch::Tensor path_increments,
-                                     torch::Tensor reciprocals,
-                                     std::vector<torch::Tensor> signature_by_term_at_stream,
-                                     bool inverse,
-                                     int64_t output_stream_size,
-                                     bool stream,
-                                     torch::Tensor signature,
-                                     const std::vector<torch::Tensor> signature_by_term) {
-            for (int64_t stream_index = 1; stream_index < output_stream_size; ++stream_index) {
-                if (stream) {
-                    signature[stream_index].copy_(signature[stream_index - 1]);
-                    misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index);
-                }
-                ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
-                                                  signature_by_term_at_stream,
-                                                  inverse,
-                                                  reciprocals);
-            }
-        }
-
-        template<typename scalar_t>
-        void signature_forward_inner_cpu_inner(torch::Tensor path_increments,
-                                               torch::Tensor reciprocals,
-                                               std::vector<torch::Tensor> signature_by_term_at_stream,
-                                               bool inverse,
-                                               int64_t batch_size,
-                                               int64_t start,
-                                               int64_t end,
-                                               int64_t batch_threads,
-                                               bool stream,
-                                               torch::Tensor signature,
-                                               const std::vector<torch::Tensor> signature_by_term) {
-
-            // First make some TensorAccessors
-            auto path_increments_a = path_increments.accessor<scalar_t, 3>();
-            auto reciprocals_a = reciprocals.accessor<scalar_t, 1>();
-
-            std::vector<torch::TensorAccessor<scalar_t, 2>> signature_by_term_at_stream_a;
-            signature_by_term_at_stream_a.reserve(signature_by_term_at_stream.size());
-            if (!stream) {  // if stream then we'll handle this inside the stream loop
-                for (auto elem : signature_by_term_at_stream) {
-                    signature_by_term_at_stream_a.push_back(elem.accessor<scalar_t, 2>());
+                    }
+                    else {
+                        torch::Tensor grad_path = torch::empty({input_stream_size, batch_size, input_channel_size}, opts);
+                        grad_path[0].zero_();
+                        grad_path.narrow(/*dim=*/stream_dim, /*start=*/1,
+                                /*len=*/num_increments).copy_(grad_path_increments);
+                        grad_path.narrow(/*dim=*/stream_dim, /*start=*/0, /*len=*/num_increments) -= grad_path_increments;
+                        // no second return value in this case
+                        return std::tuple<torch::Tensor, torch::Tensor> {grad_path, torch::empty({0}, opts)};
+                    }
                 }
             }
 
-            for (int64_t stream_index = start; stream_index < end; ++stream_index) {
-                // Store the information we've already computed if stream==true
-                if (stream) {
-                    signature[stream_index].copy_(signature[stream_index - 1]);
-                    misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index);
-                    signature_by_term_at_stream_a.clear();
-                    for (auto elem: signature_by_term_at_stream) {
-                        // have to do this inside the stream loop because the tensors in signature_by_term_at_stream
-                        // get overwritten in slice_at_stream.
+            struct bool_wrapper { bool value; };
+
+            void signature_forward_inner(torch::Tensor path_increments,
+                                         torch::Tensor reciprocals,
+                                         std::vector<torch::Tensor> signature_by_term_at_stream,
+                                         bool inverse,
+                                         int64_t output_stream_size,
+                                         bool stream,
+                                         torch::Tensor signature,
+                                         const std::vector<torch::Tensor> signature_by_term) {
+                for (int64_t stream_index = 1; stream_index < output_stream_size; ++stream_index) {
+                    if (stream) {
+                        signature[stream_index].copy_(signature[stream_index - 1]);
+                        misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index);
+                    }
+                    ta_ops::mult_fused_restricted_exp(path_increments[stream_index],
+                                                      signature_by_term_at_stream,
+                                                      inverse,
+                                                      reciprocals);
+                }
+            }
+
+            template<typename scalar_t>
+            void signature_forward_inner_cpu_inner(torch::Tensor path_increments,
+                                                   torch::Tensor reciprocals,
+                                                   std::vector<torch::Tensor> signature_by_term_at_stream,
+                                                   bool inverse,
+                                                   int64_t batch_size,
+                                                   int64_t start,
+                                                   int64_t end,
+                                                   int64_t batch_threads,
+                                                   bool stream,
+                                                   torch::Tensor signature,
+                                                   const std::vector<torch::Tensor> signature_by_term) {
+
+                // First make some TensorAccessors
+                auto path_increments_a = path_increments.accessor<scalar_t, 3>();
+                auto reciprocals_a = reciprocals.accessor<scalar_t, 1>();
+
+                std::vector<torch::TensorAccessor<scalar_t, 2>> signature_by_term_at_stream_a;
+                signature_by_term_at_stream_a.reserve(signature_by_term_at_stream.size());
+                if (!stream) {  // if stream then we'll handle this inside the stream loop
+                    for (auto elem : signature_by_term_at_stream) {
                         signature_by_term_at_stream_a.push_back(elem.accessor<scalar_t, 2>());
                     }
                 }
 
-                // Do the actual computation
-                #pragma omp parallel for default(none) \
+                for (int64_t stream_index = start; stream_index < end; ++stream_index) {
+                    // Store the information we've already computed if stream==true
+                    if (stream) {
+                        signature[stream_index].copy_(signature[stream_index - 1]);
+                        misc::slice_at_stream(signature_by_term, signature_by_term_at_stream, stream_index);
+                        signature_by_term_at_stream_a.clear();
+                        for (auto elem: signature_by_term_at_stream) {
+                            // have to do this inside the stream loop because the tensors in signature_by_term_at_stream
+                            // get overwritten in slice_at_stream.
+                            signature_by_term_at_stream_a.push_back(elem.accessor<scalar_t, 2>());
+                        }
+                    }
+
+                    // Do the actual computation
+                    #pragma omp parallel for default(none) \
                                          if(batch_threads > 1) \
                                          num_threads(batch_threads) \
                                          shared(batch_size, path_increments_a, signature_by_term_at_stream_a, inverse, \
                                                 reciprocals_a, stream_index)
-                for (int64_t batch_index = 0; batch_index < batch_size; ++batch_index) {
-                    std::vector<torch::TensorAccessor<scalar_t, 1>> signature_by_term_at_stream_a_at_batch;
-                    signature_by_term_at_stream_a_at_batch.reserve(signature_by_term_at_stream_a.size());
-                    for (auto elem: signature_by_term_at_stream_a) {
-                        signature_by_term_at_stream_a_at_batch.push_back(elem[batch_index]);
-                    }
-                    if (inverse) {
-                        ta_ops::mult_fused_restricted_exp_single_cpu<scalar_t, /*inverse=*/true>
-                                (path_increments_a[stream_index][batch_index],
-                                 signature_by_term_at_stream_a_at_batch,
-                                 reciprocals_a);
-                    }
-                    else {
-                        ta_ops::mult_fused_restricted_exp_single_cpu<scalar_t, /*inverse=*/false>
-                                (path_increments_a[stream_index][batch_index],
-                                 signature_by_term_at_stream_a_at_batch,
-                                 reciprocals_a);
+                    for (int64_t batch_index = 0; batch_index < batch_size; ++batch_index) {
+                        std::vector<torch::TensorAccessor<scalar_t, 1>> signature_by_term_at_stream_a_at_batch;
+                        signature_by_term_at_stream_a_at_batch.reserve(signature_by_term_at_stream_a.size());
+                        for (auto elem: signature_by_term_at_stream_a) {
+                            signature_by_term_at_stream_a_at_batch.push_back(elem[batch_index]);
+                        }
+                        if (inverse) {
+                            ta_ops::mult_fused_restricted_exp_single_cpu<scalar_t, /*inverse=*/true>
+                                    (path_increments_a[stream_index][batch_index],
+                                     signature_by_term_at_stream_a_at_batch,
+                                     reciprocals_a);
+                        }
+                        else {
+                            ta_ops::mult_fused_restricted_exp_single_cpu<scalar_t, /*inverse=*/false>
+                                    (path_increments_a[stream_index][batch_index],
+                                     signature_by_term_at_stream_a_at_batch,
+                                     reciprocals_a);
+                        }
                     }
                 }
             }
-        }
 
-        void signature_forward_inner_cpu(torch::Tensor path_increments,
-                                         torch::Tensor reciprocals,
-                                         std::vector<torch::Tensor> signature_by_term_at_stream,
-                                         bool inverse,
-                                         int64_t batch_size,
-                                         int64_t start,
-                                         int64_t end,
-                                         int64_t batch_threads,
-                                         bool stream,
-                                         torch::Tensor signature,
-                                         const std::vector<torch::Tensor> signature_by_term) {
-            // Pick the appropriate templated version of signature_forward_inner_cpu_inner based on the floating point
-            // type being used
-            AT_DISPATCH_FLOATING_TYPES(path_increments.type(), "signature_forward_inner_cpu", ([&] {
-                signature_forward_inner_cpu_inner<scalar_t>(path_increments,
-                                                            reciprocals,
-                                                            signature_by_term_at_stream,
-                                                            inverse,
-                                                            batch_size,
-                                                            start,
-                                                            end,
-                                                            batch_threads,
-                                                            stream,
-                                                            signature,
-                                                            signature_by_term);
-            }));
-        }
-    }  // namespace signatory::detail
+            void signature_forward_inner_cpu(torch::Tensor path_increments,
+                                             torch::Tensor reciprocals,
+                                             std::vector<torch::Tensor> signature_by_term_at_stream,
+                                             bool inverse,
+                                             int64_t batch_size,
+                                             int64_t start,
+                                             int64_t end,
+                                             int64_t batch_threads,
+                                             bool stream,
+                                             torch::Tensor signature,
+                                             const std::vector<torch::Tensor> signature_by_term) {
+                // Pick the appropriate templated version of signature_forward_inner_cpu_inner based on the floating
+                // point type being used
+                AT_DISPATCH_FLOATING_TYPES(path_increments.type(), "signature_forward_inner_cpu", ([&] {
+                    signature_forward_inner_cpu_inner<scalar_t>(path_increments,
+                                                                reciprocals,
+                                                                signature_by_term_at_stream,
+                                                                inverse,
+                                                                batch_size,
+                                                                start,
+                                                                end,
+                                                                batch_threads,
+                                                                stream,
+                                                                signature,
+                                                                signature_by_term);
+                }));
+            }
+        }  // namespace signatory::signature::detail
+    }  // namespace signatory::signature
 
     void signature_checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value,
                              bool initial, torch::Tensor initial_value) {
@@ -322,7 +322,8 @@ namespace signatory {
         torch::Tensor reciprocals = misc::make_reciprocals(depth, opts);
 
         // Compute path increments. Obviously.
-        torch::Tensor path_increments = detail::compute_path_increments(path, basepoint, basepoint_value, inverse);
+        torch::Tensor path_increments = signature::detail::compute_path_increments(path, basepoint, basepoint_value,
+                                                                                   inverse);
 
         // Allocate memory for the computation.
         torch::Tensor first_term;
@@ -359,8 +360,9 @@ namespace signatory {
         if (path.is_cuda()) {
             // First of all, we don't/haven't tried writing custom GPU code. But if we did it would go here. Instead we
             // call a function specified in terms of the higher-level PyTorch Tensors.
-            detail::signature_forward_inner(path_increments, reciprocals, signature_by_term_at_stream, inverse,
-                                            output_stream_size, stream, signature, signature_by_term);
+            signature::detail::signature_forward_inner(path_increments, reciprocals, signature_by_term_at_stream,
+                                                       inverse, output_stream_size, stream, signature,
+                                                       signature_by_term);
         }
         else {
             // If we're here then we're on the CPU.
@@ -368,8 +370,10 @@ namespace signatory {
 
             int64_t stream_threads;
             int64_t batch_threads;
-            if (batch_size * output_stream_size * output_channel_size < 5586944) {
-                // Don't use parallelism if the problem is small
+            if (batch_size * output_stream_size * output_channel_size < 1392640) {
+                // Don't use parallelism if the problem is small.
+                // The magic number 1392640 was chosen as being roughly the point at which the small/large threshold is
+                // crossed. (1392640 = batch size 32 * stream size 128 * signature_channels(channels 4, depth 4))
                 stream_threads = 1;
                 batch_threads = 1;
             }
@@ -388,21 +392,23 @@ namespace signatory {
                 // Can't parallelise along the stream dimension in this inherently-serial case.
                 stream_threads = 1;
             }
+            stream_threads = std::min(stream_threads, get_max_parallelisation());
 
             if (stream_threads == 1) {
                 // Will be true if stream==true or if the problem is small or if the batch size is large
                 // It's not that the OpenMP code below will be wrong with just one thread, but it will be needlessly
                 // inefficient, as it allocates extra memory.
-                detail::signature_forward_inner_cpu(path_increments, reciprocals, signature_by_term_at_stream, inverse,
-                                                    batch_size, /*start=*/1, /*end=*/output_stream_size, batch_threads,
-                                                    stream, signature, signature_by_term);
+                signature::detail::signature_forward_inner_cpu(path_increments, reciprocals,
+                                                               signature_by_term_at_stream, inverse,
+                                                               batch_size, /*start=*/1, /*end=*/output_stream_size,
+                                                               batch_threads, stream, signature, signature_by_term);
             }
             else {
                 std::vector<std::vector<torch::Tensor>> omp_results(stream_threads);
                 // There's no guarantee that we actually get the maximum number of threads, so we have to check
                 // which ones actually get used.
                 // This also serves as a check that start < end, in the block below
-                std::vector<detail::bool_wrapper> omp_used(stream_threads, {false});
+                std::vector<signature::detail::bool_wrapper> omp_used(stream_threads, {false});
                 // As for why we bother with the bool wrapper: std::vector<bool> is special-cased from other vectors and
                 // is basically broken. https://stackoverflow.com/questions/670308/alternative-to-vectorbool
 
@@ -422,13 +428,19 @@ namespace signatory {
                         misc::slice_by_term(omp_signature, omp_signature_by_term_at_stream, input_channel_size, depth);
                         ta_ops::restricted_exp(path_increments[start], omp_signature_by_term_at_stream, reciprocals);
 
-                        detail::signature_forward_inner_cpu(path_increments, reciprocals,
-                                                            omp_signature_by_term_at_stream, inverse, batch_size,
-                                                            /*start=*/start + 1, /*end=*/end, batch_threads,
-                                                            /*stream=*/false,
-                                                            torch::Tensor {}/*is unused because stream==false*/,
-                                                            std::vector<torch::Tensor> {}
-                                                            /*is unused because stream==false*/);
+                        signature::detail::signature_forward_inner_cpu(path_increments,
+                                                                       reciprocals,
+                                                                       omp_signature_by_term_at_stream,
+                                                                       inverse,
+                                                                       batch_size,
+                                                                       /*start=*/start + 1,
+                                                                       /*end=*/end,
+                                                                       batch_threads,
+                                                                       /*stream=*/false,
+                                                                       torch::Tensor{}
+                                                                       /*is unused because stream==false*/,
+                                                                       std::vector<torch::Tensor> {}
+                                                                       /*is unused because stream==false*/);
                         // Record results
                         omp_results[omp_get_thread_num()] = std::move(omp_signature_by_term_at_stream);
                         omp_used[omp_get_thread_num()] = {true};
@@ -511,7 +523,6 @@ namespace signatory {
             misc::slice_by_term(signature.clone(), signature_by_term_at_stream, input_channel_size, depth);
         }
 
-
         torch::Tensor grad_path_increments = torch::empty_like(path_increments);
 
         for (int64_t stream_index = output_stream_size - 1; stream_index >= 1; --stream_index) {
@@ -562,23 +573,13 @@ namespace signatory {
         // Find the gradient on the path from the gradient on the path increments.
         torch::Tensor grad_path;
         torch::Tensor grad_basepoint_value;
-        std::tie(grad_path, grad_basepoint_value) = detail::compute_path_increments_backward(grad_path_increments,
-                                                                                             basepoint,
-                                                                                             inverse,
-                                                                                             opts);
+        std::tie(grad_path, grad_basepoint_value) = signature::detail::compute_path_increments_backward(
+                                                                                                   grad_path_increments,
+                                                                                                   basepoint,
+                                                                                                   inverse,
+                                                                                                   opts);
 
         return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
                {grad_path, grad_basepoint_value, grad_signature_at_stream};
-    }
-
-    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
-    signature_backward_custom(torch::Tensor grad_signature, torch::Tensor signature, torch::Tensor path,
-                              s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
-                              bool inverse, bool initial) {
-        path = path.detach();
-        basepoint_value = basepoint_value.detach();
-        torch::Tensor path_increments = detail::compute_path_increments(path, basepoint, basepoint_value, inverse);
-        return signature_backward(grad_signature, signature, path_increments, depth, stream, basepoint, inverse,
-                initial);
     }
 }  // namespace signatory

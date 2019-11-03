@@ -26,6 +26,25 @@
 
 
 namespace signatory {
+    namespace misc {
+        namespace detail {
+            // This represents the maximum amount of parallelisation that we allow Signatory, _not_ counting the normal
+            // parallelisation over the batch dimension.
+            // Essentially, it's how much extra memory we're willing to use to try and speed up calculations by doing
+            // clever tricks.
+            int64_t max_parallelisation = 8;
+        }  // namespace signatory::misc::detail
+
+        void checkargs_channels_depth(int64_t channels, s_size_type depth) {
+            if (channels < 1) {
+                throw std::invalid_argument("Argument 'channels' must be at least one.");
+            }
+            if (depth < 1) {
+                throw std::invalid_argument("Argument 'depth' must be an integer greater than or equal to one.");
+            }
+        }
+    }  // namespace signatory::misc
+
     int64_t signature_channels(int64_t input_channel_size, int64_t depth) {
         if (input_channel_size < 1) {
             throw std::invalid_argument("input_channels must be at least 1");
@@ -57,14 +76,19 @@ namespace signatory {
         }
     }
 
-    namespace misc {
-        void checkargs_channels_depth(int64_t channels, s_size_type depth) {
-            if (channels < 1) {
-                throw std::invalid_argument("Argument 'channels' must be at least one.");
-            }
-            if (depth < 1) {
-                throw std::invalid_argument("Argument 'depth' must be an integer greater than or equal to one.");
-            }
+    void set_max_parallelisation(int64_t value) {
+        if (value < 1 && value != -1) {
+            throw std::invalid_argument("value must be either -1 or greater than or equal to 1.");
         }
-    }  // namespace signatory::misc
+        misc::detail::max_parallelisation = value;
+    }
+
+    int64_t get_max_parallelisation() {
+        if (misc::detail::max_parallelisation == -1) {
+            return std::numeric_limits<decltype(misc::detail::max_parallelisation)>::max();
+        }
+        else {
+            return misc::detail::max_parallelisation;
+        }
+    }
 }  // namespace signatory

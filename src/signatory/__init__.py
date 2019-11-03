@@ -89,7 +89,8 @@ from .signature_module import (signature,
                                multi_signature_combine)
 from .utility import (lyndon_words,
                       lyndon_brackets,
-                      all_words)
+                      all_words,
+                      max_parallelisation)
 
 
 __version__ = "1.1.4"

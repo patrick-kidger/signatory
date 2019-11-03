@@ -70,7 +70,7 @@ class TestPath(utils.EnhancedTestCase):
                         self.fail(c.fail(path_signature_channels=path_obj.signature_channels(),
                                          true_signature_channels=true_sig.size(-1)))
 
-                    if (path_obj.size(-3), path_obj.size(-1)) != basepointed_path.shape:
+                    if path_obj.shape != basepointed_path.shape:
                         self.fail(c.fail(path_shape=path_obj.shape,
                                          true_shape=basepointed_path.shape))
 
@@ -114,13 +114,14 @@ class TestPath(utils.EnhancedTestCase):
                     if not true_logsig.allclose(logsig):
                         self.fail(c.diff_fail({'start': start, 'end': end}, logsig=logsig, true_logsig=true_logsig))
 
-                    if (path_obj.logsignature_size(-3), path_obj.logsignature_size(-1)) != true_logsig.shape:
-                        self.fail(c.fail(path_logsignature_shape=path_obj.logsignature_shape,
-                                         true_logsignature_shape=true_logsig.shape))
+                    if c.signatory_mode != 'expand':
+                        if (path_obj.logsignature_size(-3), path_obj.logsignature_size(-1)) != true_logsig.shape:
+                            self.fail(c.fail(path_logsignature_shape=path_obj.logsignature_shape,
+                                             true_logsignature_shape=true_logsig.shape))
 
-                    if path_obj.logsignature_channels() != true_logsig.size(-1):
-                        self.fail(c.fail(path_logsignature_channels=path_obj.logsignature_channels(),
-                                         true_logsignature_channels=true_logsig.size(-1)))
+                        if path_obj.logsignature_channels() != true_logsig.size(-1):
+                            self.fail(c.fail(path_logsignature_channels=path_obj.logsignature_channels(),
+                                             true_logsignature_channels=true_logsig.size(-1)))
 
     def test_gradient_signature(self):
         def gradchecked(path, depth, basepoint, update, start, end):

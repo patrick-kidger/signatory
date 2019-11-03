@@ -22,6 +22,7 @@ from torch.autograd import function as autograd_function
 import warnings
 
 from . import backend
+from . import utility
 # noinspection PyUnresolvedReferences
 from . import _impl
 
@@ -92,7 +93,13 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
         return
 
     if path.is_cuda:
-        threshold = 64
+        # TODO: find a better way to choose this value when on the GPU.
+        #       Note that there are two implications of changing this value.
+        #       First of all, there will be greater potential parallelisation, so the main computation will go faster.
+        #       However we don't yet parallelise the bit where we combine the results of our parallel computations,
+        #       so setting this value too large will cause a slowdown as we serially perform this many tensor
+        #       multplications.
+        threshold = 512
     else:
         if not path.requires_grad:
             # If we're on the CPU then parallelisation will automatically occur more efficiently than this trick allows.
@@ -110,7 +117,7 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
 
     # Number of chunks to split the stream in to
     mult = int(round(float(threshold) / batch_size))
-    mult = min(mult, int(stream_size / 3))
+    mult = min(mult, int(stream_size / 3), utility.max_parallelisation())
 
     # If the problem isn't large enough to be worth parallelising
     if mult < 2:
@@ -163,8 +170,8 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
     return multi_signature_combine(chunks, channel_size, depth, inverse)
 
 
-def signature(path, depth, stream=False, basepoint=False, inverse=False, initial=None, batch_trick=True):
-    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], bool, Union[None, torch.Tensor], bool) -> torch.Tensor
+def signature(path, depth, stream=False, basepoint=False, inverse=False, initial=None):
+    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], bool, Union[None, torch.Tensor]) -> torch.Tensor
 
     r"""Applies the signature transform to a stream of data.
 
@@ -213,11 +220,6 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
             explanation, see :ref:`this example<examples-online>`.
             (The appropriate modifications are made if :attr:`inverse=True` or if :attr:`basepoint`.)
 
-        batch_trick (bool, optional): Defaults to True. Whether or not to try the so-called 'batch trick' to speed up
-            computation. This can makes things faster, but will potentially use a lot more memory. Note that this flag
-            doesn't specify whether or not the batch trick *will* be used, but just whether or not it *can* be used.
-            (The trick can't always be used.)
-
     Returns:
         A :class:`torch.Tensor`. Given an input :class:`torch.Tensor` of shape :math:`(N, L, C)`, and input arguments
         :attr:`depth`, :attr:`basepoint`, :attr:`stream`, then the return value is, in pseudocode:
@@ -245,9 +247,7 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
 
     _signature_checkargs(path, depth, basepoint, initial)
 
-    result = None
-    if batch_trick:
-        result = _signature_batch_trick(path, depth, stream, basepoint, inverse, initial)
+    result = _signature_batch_trick(path, depth, stream, basepoint, inverse, initial)
     if result is None:  # Either because we disabled use of the batch trick, or because the batch trick doesn't apply
         result = _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial)
 
@@ -276,8 +276,8 @@ class Signature(nn.Module):
         self.stream = stream
         self.inverse = inverse
 
-    def forward(self, path, basepoint=False, initial=None, batch_trick=True):
-        # type: (torch.Tensor, Union[bool, torch.Tensor], Union[None, torch.Tensor], bool) -> torch.Tensor
+    def forward(self, path, basepoint=False, initial=None):
+        # type: (torch.Tensor, Union[bool, torch.Tensor], Union[None, torch.Tensor]) -> torch.Tensor
         """The forward operation.
 
         Arguments:
@@ -287,17 +287,15 @@ class Signature(nn.Module):
 
             initial (None or torch.Tensor, optional): As :func:`signatory.signature`.
 
-            batch_trick (bool, optional): As :func:`signatory.signature`.
-
         Returns:
             As :func:`signatory.signature`.
         """
         return signature(path, self.depth, stream=self.stream, basepoint=basepoint, inverse=self.inverse,
-                         initial=initial, batch_trick=batch_trick)
+                         initial=initial)
 
     def extra_repr(self):
-        return 'depth={depth}, stream={stream}, basepoint={basepoint}'.format(depth=self.depth, stream=self.stream,
-                                                                              basepoint=str(self.basepoint)[:6])
+        return 'depth={depth}, stream={stream}, inverse={inverse}'.format(depth=self.depth, stream=self.stream,
+                                                                          inverse=self.inverse)
 
 
 # A wrapper for the sake of consistent documentation

@@ -22,12 +22,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import subprocess
+import time
 import timeit
 
 import esig.tosig
 import iisignature
 import signatory
 import torch
+
+
+# Increasing this tends to result in quicker computations that use more memory
+# For the sake of a fair benchmark in both parameters we just disable this.
+signatory.max_parallelisation(1)
 
 
 class BenchmarkBase(object):
@@ -83,11 +89,13 @@ def run(self):
         self.mem_statement = '\n'.join(["import argparse",
                                         "import gc",
                                         "import memory_profiler",
+                                        "import numpy as np",
                                         "import time",
                                         "import esig.tosig",
                                         "import iisignature",
                                         "import signatory",
                                         "import torch",
+                                        "signatory.max_parallelisation(1)",
                                         "self = argparse.Namespace()",
                                         'self.size = {size}'.format(size=repr(size)),
                                         'self.depth = {depth}'.format(depth=repr(depth)),
@@ -109,7 +117,10 @@ def run(self):
                                         'gc.collect()',
                                         'baseline = min(memory_profiler.memory_usage(proc=-1, interval=.2, timeout=1))',
                                         self.mem_include,
-                                        'used = max(memory_profiler.memory_usage((run_wrapper, (), {})))',
+                                        'try:',
+                                        '    used = max(memory_profiler.memory_usage((run_wrapper, (), {})))',
+                                        'except Exception:',
+                                        '    used = np.inf',
                                         'print(used - baseline)'])
 
     def action(self):
@@ -156,7 +167,12 @@ def run(self):
                 print('=========================')
                 raise RuntimeError
             else:
-                return float(p.stdout.decode().strip())
+                stdout = p.stdout.decode().strip()
+                for line in stdout.split('\n'):
+                    if 'Legitimate' not in line:
+                        stdout = line
+                        break
+                return float(stdout)
         finally:
             try:
                 os.remove(memory_tmp)
@@ -306,6 +322,7 @@ def run(self):
 
     mem_include = """
 self.logsignature_instance = signatory.LogSignature(self.depth)
+self.logsignature_instance.prepare(self.size[-1])
 """
 
 
@@ -323,6 +340,7 @@ def run(self):
 
     mem_include = """
 self.logsignature_instance = signatory.LogSignature(self.depth)
+self.logsignature_instance.prepare(self.size[-1])
 """
 
 
@@ -531,7 +549,7 @@ class BenchmarkRunner(object):
 
         if len(self.sizes) > 1 and len(self.depths) > 1:
             raise RuntimeError("Cannot output as graph with multiple sizes and multiple depths.")
-        if self.fns is all_fns:
+        if len(list(self.fns.keys())) > 1:
             raise RuntimeError("Cannot output as graph with multiple functions.")
         batch_size, stream_size, _ = next(iter(self.sizes))
         for size in self.sizes:
@@ -650,7 +668,10 @@ class BenchmarkRunner(object):
         ax.legend(mode='expand', ncol=len(example_row_value), bbox_to_anchor=(0, 1.1, 1, 0), borderaxespad=0.)
         title_string = list(self.fns.keys())[0] + ': ' + self.measure
         ax.set_title(title_string, y=1.1)
-        ax.set_ylabel("Time in seconds")
+        if self.measure == 'time':
+            ax.set_ylabel("Time in seconds")
+        elif self.measure == 'memory':
+            ax.set_ylabel("Memory usage in MB")
         if len(self.sizes) > 1:
             ax.set_xlabel("Number of channels")
             tag = '_channels'
@@ -665,7 +686,10 @@ class BenchmarkRunner(object):
         ax.xaxis.set_ticks(range(int(math.ceil(start)), int(math.floor(end)) + 1))
         plt.tight_layout()
         if save:
-            plt.savefig(title_string.lower().replace(' ', '_').replace(':', '') + tag)
+            dirname = title_string.lower().replace(' ', '_').replace(':', '') + tag
+            if not os.path.isdir(dirname):
+                os.mkdir(dirname)
+            plt.savefig(os.path.join(dirname, str(time.time())))
         else:
             plt.show()
 

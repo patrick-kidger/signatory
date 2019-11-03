@@ -64,7 +64,9 @@ namespace signatory {
                     for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
                         old_scratch.swap(new_scratch);
                         new_scratch.resize(old_scratch.size() * input_channel_size);
-                        for (int64_t old_scratch_index = 0; old_scratch_index < old_scratch.size(); ++old_scratch_index) {
+                        for (int64_t old_scratch_index = 0;
+                             old_scratch_index < static_cast<int64_t>(old_scratch.size());
+                             ++old_scratch_index) {
                             for (int64_t next_divided_index = 0; next_divided_index < input_channel_size; ++next_divided_index)
                             {
                                 int64_t new_scratch_index;
@@ -81,7 +83,9 @@ namespace signatory {
                         }
                     }
 
-                    for (int64_t new_scratch_index = 0; new_scratch_index < new_scratch.size(); ++new_scratch_index) {
+                    for (int64_t new_scratch_index = 0;
+                         new_scratch_index < static_cast<int64_t>(new_scratch.size());
+                         ++new_scratch_index) {
                         for (int64_t next_index = 0; next_index < input_channel_size; ++next_index)
                         {
                             int64_t prev_a_index;
