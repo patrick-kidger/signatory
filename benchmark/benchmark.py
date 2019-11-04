@@ -689,7 +689,7 @@ class BenchmarkRunner(object):
             dirname = title_string.lower().replace(' ', '_').replace(':', '') + tag
             if not os.path.isdir(dirname):
                 os.mkdir(dirname)
-            plt.savefig(os.path.join(dirname, str(time.time())))
+            plt.savefig(os.path.join(dirname, str(time.time())) + '.png')
         else:
             plt.show()
 

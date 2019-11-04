@@ -14,7 +14,6 @@
 # =========================================================================
 
 
-import iisignature
 import signatory
 import torch
 
@@ -52,22 +51,62 @@ def diff(arg1, arg2):
                                                                                         arg1=arg1, arg2=arg2)
 
 
-_iisignature_prepare_cache = {}
+def get_path(info):
+    return torch.rand(info.batch_size, info.input_stream, info.input_channels, device=info.device,
+                      requires_grad=info.path_grad, dtype=torch.double)
 
 
-def iisignature_prepare(channels, depth):
-    try:
-        return _iisignature_prepare_cache[(channels, depth)]
-    except KeyError:
-        prepared = iisignature.prepare(channels, depth)
-        _iisignature_prepare_cache[(channels, depth)] = prepared
-        return prepared
+def get_basepoint(info):
+    if info.basepoint == without_grad:
+        return torch.rand(info.batch_size, info.input_channels, device=info.device, dtype=torch.double)
+    elif info.basepoint == with_grad:
+        return torch.rand(info.batch_size, info.input_channels, device=info.device, requires_grad=True,
+                          dtype=torch.double)
+    else:
+        return info.basepoint
 
 
-_signatory_logsignature_classes_cache = set()
+def get_initial(info):
+    if info.initial in (without_grad, with_grad):
+        initial_path = torch.rand(info.batch_size, 2, info.input_channels, device=info.device, dtype=torch.double)
+        initial = signatory.signature(initial_path, info.depth)
+        if info.initial == with_grad:
+            initial.requires_grad_()
+        return initial
+    else:
+        return info.initial
 
 
-def cache_signatory_logsignature_instances(*args, **kwargs):
-    s = signatory.LogSignature(*args, **kwargs)
-    _signatory_logsignature_classes_cache.add(s)
-    return s
+def random_sizes():
+    params = []
+    for batch_size in (1, 2):
+        for input_stream in (1, 2):
+            for input_channels in (1, 2):
+                params.append((batch_size, input_stream, input_channels))
+    for _ in range(5):
+        batch_size = int(torch.randint(low=1, high=10, size=(1,)))
+        input_stream = int(torch.randint(low=2, high=10, size=(1,)))
+        input_channels = int(torch.randint(low=1, high=10, size=(1,)))
+        params.append((batch_size, input_stream, input_channels))
+    return params
+
+
+def random_sizes_and_basepoint():
+    params = []
+    for batch_size in (1, 2):
+        for input_stream in (1, 2):
+            for input_channels in (1, 2):
+                for basepoint in (True, without_grad, with_grad):
+                    params.append((batch_size, input_stream, input_channels, basepoint))
+    for batch_size in (1, 2):
+        for input_stream in (2,):
+            for input_channels in (1, 2):
+                for basepoint in (False,):
+                    params.append((batch_size, input_stream, input_channels, basepoint))
+    for _ in range(5):
+        for basepoint in (True, h.without_grad, h.with_grad):
+            batch_size = int(torch.randint(low=1, high=10, size=(1,)))
+            input_stream = int(torch.randint(low=2, high=10, size=(1,)))
+            input_channels = int(torch.randint(low=1, high=10, size=(1,)))
+            params.append((batch_size, input_stream, input_channels, basepoint))
+    return params

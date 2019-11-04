@@ -107,7 +107,8 @@ def signature_to_logsignature(signature, channels, depth, stream=False, mode="wo
     Returns:
         A :class:`torch.Tensor` representing the logsignature corresponding to the given signature.
     """
-    return _signature_to_logsignature(signature, channels, depth, stream, mode, None)
+    # Go via the class so that it uses a cached lyndon info capsule, if we have one already for some reason.
+    return SignatureToLogSignature(channels, depth, stream, mode)(signature)
 
 
 class SignatureToLogSignature(nn.Module):
@@ -237,13 +238,7 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
         In all cases, the ordering corresponds to the ordering on words given by first ordering the words by length,
         and then ordering each length class lexicographically.
     """
-
-    # Deliberately no 'initial' argument. To support that for logsignatures we'd need to be able to expand a
-    # (potentially compressed) logsignature into a signature first. (Which is certainly possible in principle)
-    signature = smodule.signature(path, depth, stream=stream, basepoint=basepoint, inverse=inverse, initial=None)
-    # lyndon_info=None because that's supported through the LogSignature class.
-    return _signature_to_logsignature(signature, path.size(-1), depth, stream=stream, mode=mode,
-                                      lyndon_info=None)
+    return LogSignature(depth, stream=stream, inverse=inverse, mode=mode)(path, basepoint=basepoint)
 
 
 class LogSignature(nn.Module):

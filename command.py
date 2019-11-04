@@ -139,6 +139,22 @@ def test(args):
         return test.runner.main(failfast=args.failfast, times=args.times, names=args.names)
 
 
+def test2(args):
+    try:
+        import iisignature  # fail fast here if necessary
+    except ImportError:
+        raise ImportError("The iisignature package is required for running tests. It can be installed via 'pip "
+                          "install iisignature'")
+    import pytest
+    import torch
+    with torch.cuda.device(args.device) if args.device != -1 else _NullContext():
+        print('Using ' + _get_device())
+        pytest_args = [os.path.join(_here, 'test2/')]
+        if args.failfast:
+            pytest_args.append('-x')
+        return pytest.main(pytest_args)
+
+
 def benchmark(args):
     """Run speed benchmarks."""
     try:
