@@ -30,6 +30,7 @@ pytest.register_assert_rewrite('helpers')
 
 @pytest.fixture
 def no_parallelism():
+    """Disable parallelism in this test."""
     current_parallelism = signatory.max_parallelism()
     signatory.max_parallelism(1)
     yield
@@ -38,6 +39,7 @@ def no_parallelism():
 
 @pytest.fixture(scope='session')
 def iisignature_prepare():
+    """Caches the results of iisignature's prepare() function, which is often quite time consuming."""
     _iisignature_prepare_cache = {}
 
     def _iisignature_prepare(channels, depth):
@@ -51,8 +53,9 @@ def iisignature_prepare():
     return _iisignature_prepare
 
 
-@pytest.fixture
+@pytest.fixture(scope='module')
 def path_hack(request):
+    """Hacks the PYTHONPATH to be able to import other things."""
     original_path = sys.path.copy()
     add_to_path = getattr(request.module, 'add_to_path')
     if isinstance(add_to_path, (tuple, list)):

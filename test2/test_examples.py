@@ -24,20 +24,19 @@ _here = os.path.realpath(os.path.dirname(__file__))
 add_to_path = os.path.join(_here, '..', 'examples')
 pytestmark = pytest.mark.usefixtures('path_hack')
 
-import example1
-import example2
-import example3
-
 
 def test_example1():
+    import example1
     _example_tester(example1.SigNet)
 
 
 def test_example2():
+    import example2
     _example_tester(example2.SigNet2)
 
 
 def test_example3():
+    import example3
     _example_tester(example3.SigNet3)
 
 

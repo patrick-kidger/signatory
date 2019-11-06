@@ -53,7 +53,7 @@ def main():
     should_not_import_parser = subparsers.add_parser('should_not_import', description="Tests that Signatory _cannot_ "
                                                                                       "be imported.")
 
-    test_parser.set_defaults(cmd=test)
+    test_parser.set_defaults(cmd=test2)
     benchmark_parser.set_defaults(cmd=benchmark)
     docs_parser.set_defaults(cmd=docs)
     readme_parser.set_defaults(cmd=readme)

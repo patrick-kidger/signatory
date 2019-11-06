@@ -50,6 +50,7 @@ def _iisignature_convert(ii_elem):
 
 
 def test_lyndon_brackets(iisignature_prepare):
+    """Tests the lyndon_brackets function"""
     for channels in range(2, 11):  # iisignature supports channels with unique symbols in the range 2 to 10 inclusive
         for depth in range(1, 6):
             iisignature_brackets = iisignature.basis(iisignature_prepare(channels, depth))
@@ -60,6 +61,7 @@ def test_lyndon_brackets(iisignature_prepare):
 
 
 def test_lyndon_words(iisignature_prepare):
+    """Tests the lyndon_words function"""
     for channels in range(2, 11):  # iisignature supports channels with unique symbols in the range 2 to 10 inclusive
         for depth in range(1, 6):
             iisignature_brackets = iisignature.basis(iisignature_prepare(channels, depth))
@@ -74,6 +76,7 @@ def test_lyndon_words(iisignature_prepare):
 
 
 def test_lyndon_amount():
+    """Tests that the lyndon_words and lyndon_brackets functions gives the same number of elements"""
     for channels in range(1, 10):
         for depth in range(1, 6):
             len_words = len(signatory.lyndon_words(channels, depth))
@@ -83,16 +86,20 @@ def test_lyndon_amount():
 
 
 def test_signature_channels():
+    """Tests the signature_channels function"""
     for channels in range(1, 16):
         for depth in range(1, 15):
             result = signatory.signature_channels(channels, depth)
             sum_over = sum(channels ** i for i in range(1, depth + 1))
-            with h.Information(channels=channels, depth=depth, result=result, sum_over=sum_over)
+            with h.Information(channels=channels, depth=depth, result=result, sum_over=sum_over):
                 assert result == sum_over
 
+
 def test_logsignature_channels():
+    """Tests the logsignature_channels function"""
     for channels in range(1, 10):
         for depth in range(1, 6):
             result = signatory.logsignature_channels(channels, depth)
             from_words = len(signatory.lyndon_words(channels, depth))
-            with h.Information(channels=channels, depth=depth, result=result, from_words=from_words)
+            with h.Information(channels=channels, depth=depth, result=result, from_words=from_words):
+                assert result == from_words

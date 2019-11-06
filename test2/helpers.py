@@ -35,10 +35,13 @@ class Information(object):
             setattr(self, key, val)
         super(Information, self).__init__()
 
+    def __enter__(self):
+        return self
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         if exc_type is not None:
             pieces = []
-            for key, val in self.kwargs:
+            for key, val in self.kwargs.items():
                 pieces.append("{}: {}".format(key, val))
             raise exc_type('\n'.join(pieces))
 
@@ -49,6 +52,14 @@ def diff(arg1, arg2):
         max_diff = torch.max(torch.abs(diff))
         assert False, 'diff={diff}\nmax_diff={max_diff}\narg1={arg1}arg2={arg2}'.format(diff=diff, max_diff=max_diff,
                                                                                         arg1=arg1, arg2=arg2)
+
+
+def get_devices():
+    import torch
+    if torch.cuda.is_available():
+        return 'cuda', 'cpu'
+    else:
+        return ('cpu',)
 
 
 def get_path(info):
@@ -104,7 +115,7 @@ def random_sizes_and_basepoint():
                 for basepoint in (False,):
                     params.append((batch_size, input_stream, input_channels, basepoint))
     for _ in range(5):
-        for basepoint in (True, h.without_grad, h.with_grad):
+        for basepoint in (True, without_grad, with_grad):
             batch_size = int(torch.randint(low=1, high=10, size=(1,)))
             input_stream = int(torch.randint(low=2, high=10, size=(1,)))
             input_channels = int(torch.randint(low=1, high=10, size=(1,)))

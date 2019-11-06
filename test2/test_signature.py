@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
+"""Tests the signature function and the Signature class."""
 
 
 import gc
@@ -25,161 +26,210 @@ import weakref
 import helpers as h
 
 
-class TestSignature(object):
-    def __init__(self):
-        self.tested_batch_trick = False
-        super(TestSignature, self).__init__()
+@pytest.mark.parametrize('class_', (False, True))
+@pytest.mark.parametrize('device', h.get_devices())
+# sometimes we do different calculations depending on whether we expect to take a gradient later, so we need to
+# check both of these cases
+@pytest.mark.parametrize('path_grad', (False, True))
+@pytest.mark.parametrize('batch_size', (0, 1, 2, 5))
+@pytest.mark.parametrize('input_stream', (0, 1, 2, 3, 10))
+@pytest.mark.parametrize('input_channels', (0, 1, 2, 6))
+@pytest.mark.parametrize('depth', (1, 2, 4, 6))
+@pytest.mark.parametrize('stream', (False, True))
+@pytest.mark.parametrize('basepoint', (False, True, h.without_grad, h.with_grad))
+@pytest.mark.parametrize('inverse', (False, True))
+@pytest.mark.parametrize('initial', (None, h.without_grad, h.with_grad))
+def test_forward(class_, device, path_grad, batch_size, input_stream, input_channels, depth, stream, basepoint, inverse,
+                 initial):
+    """Tests that the forward calculations of the signature behave correctly."""
 
-    @pytest.mark.parameterize('class_', (False, True))
-    @pytest.mark.parameterize('device', ('cuda', 'cpu'))
-    # sometimes we do different calculations depending on whether we expect to take a gradient later, so we need to
-    # check both of these cases
-    @pytest.mark.parameterize('path_grad', (False, True))
-    @pytest.mark.parameterize('batch_size', (0, 1, 2, 5))
-    @pytest.mark.parameterize('input_stream', (0, 1, 2, 3, 10))
-    @pytest.mark.parameterize('input_channels', (0, 1, 2, 6))
-    @pytest.mark.parameterize('depth', (1, 2, 4, 6))
-    @pytest.mark.parameterize('stream', (False, True))
-    @pytest.mark.parameterize('basepoint', (False, True, h.without_grad, h.with_grad))
-    @pytest.mark.parameterize('inverse', (False, True))
-    @pytest.mark.parameterize('initial', (None, h.without_grad, h.with_grad))
-    def test_forward(self, class_, device, path_grad, batch_size, input_stream, input_channels, depth, stream,
-                     basepoint, inverse, initial):
+    with h.Information(class_=class_, device=device, path_grad=path_grad, batch_size=batch_size,
+                       input_stream=input_stream, input_channels=input_channels, depth=depth, stream=stream,
+                       basepoint=basepoint, inverse=inverse, initial=initial) as info:
+        path = h.get_path(info)
+        basepoint = h.get_basepoint(info)
+        initial = h.get_initial(info)
 
-        with h.Information(class_=class_, device=device, path_grad=path_grad, batch_size=batch_size,
-                           input_stream=input_stream, input_channels=input_channels, depth=depth, stream=stream,
-                           basepoint=basepoint, inverse=inverse, initial=initial) as info:
-            path = h.get_path(info)
-            basepoint = h.get_basepoint(info)
-            initial = h.get_initial(info)
-
-            expected_exception = (batch_size < 1) or (input_channels < 1) or (not basepoint and input_stream < 2) or \
-                                 (basepoint and input_stream < 1)
-            try:
-                if class_:
-                    signature = signatory.Signature(depth, stream=stream, inverse=inverse)(path, basepoint=basepoint,
-                                                                                           initial=initial)
-                else:
-                    signature = signatory.signature(path, depth, stream=stream, basepoint=basepoint, inverse=inverse,
-                                                    initial=initial)
-            except ValueError:
-                if expected_exception:
-                    return
-                else:
-                    raise
+        expected_exception = (batch_size < 1) or (input_channels < 1) or (not basepoint and input_stream < 2) or \
+                             (basepoint and input_stream < 1)
+        try:
+            if class_:
+                signature = signatory.Signature(depth, stream=stream, inverse=inverse)(path, basepoint=basepoint,
+                                                                                       initial=initial)
             else:
-                assert not expected_exception
-
-            self._test_shape(signature, info)
-            self._test_forward_accuracy(signature, path, info)
-            self._test_batch_trick(signature, path, info)
-
-            if hasattr(signature, 'grad_fn'):
-                ctx = signature.grad_fn
-                if stream:
-                    ctx = ctx.next_functions[0][0]
-                assert type(ctx).__name__ in ('_SignatureFunctionBackward', '_SignatureCombineFunctionBackward')
-                ref = weakref.ref(ctx)
-                del ctx
-                del signature
-                gc.collect()
-                assert ref() is None
-
-    def _test_shape(self, signature, info):
-        correct_channels = signatory.signature_channels(info.input_channels, info.depth)
-        if info.stream:
-            if info.basepoint is (True, h.without_grad, h.with_grad):
-                correct_shape = (info.batch_size,
-                                 info.input_stream,
-                                 correct_channels)
+                signature = signatory.signature(path, depth, stream=stream, basepoint=basepoint, inverse=inverse,
+                                                initial=initial)
+        except ValueError:
+            if expected_exception:
+                return
             else:
-                correct_shape = (info.batch_size,
-                                 info.input_stream - 1,
-                                 correct_channels)
+                raise
+        else:
+            assert not expected_exception
+
+        _test_shape(signature, info)
+        _test_forward_accuracy(signature, path, info)
+
+        if path_grad or info.basepoint is h.with_grad or info.initial is h.with_grad:
+            ctx = signature.grad_fn
+            if stream:
+                ctx = ctx.next_functions[0][0]
+            assert type(ctx).__name__ in ('_SignatureFunctionBackward', '_SignatureCombineFunctionBackward')
+            ref = weakref.ref(ctx)
+            del ctx
+            del signature
+            gc.collect()
+            assert ref() is None
+        else:
+            assert signature.grad_fn is None
+
+
+def _test_shape(signature, info):
+    """Tests the the signature is of the expected shape."""
+    correct_channels = signatory.signature_channels(info.input_channels, info.depth)
+    if info.stream:
+        if info.basepoint is (True, h.without_grad, h.with_grad):
+            correct_shape = (info.batch_size,
+                             info.input_stream,
+                             correct_channels)
         else:
             correct_shape = (info.batch_size,
+                             info.input_stream - 1,
                              correct_channels)
-        assert signature.shape == correct_shape
+    else:
+        correct_shape = (info.batch_size,
+                         correct_channels)
+    assert signature.shape == correct_shape
 
-    def _test_forward_accuracy(self, signature, path, info):
-        iisignature_path_pieces = []
-        if isinstance(info.initial, torch.Tensor):
-            if info.basepoint is True:
-                basepoint_adjustment = 0
-            elif info.basepoint is False:
-                basepoint_adjustment = path[:, 0, :].unsqueeze(1)
-            else:
-                basepoint_adjustment = info.basepoint
-            adjusted_initial_path = info.initial_path - info.initial_path[:, -1, :].unsqueeze(1) + basepoint_adjustment
-            iisignature_path_pieces.append(adjusted_initial_path.cpu())
-        if isinstance(info.basepoint, torch.Tensor) or info.basepoint is True:
-            if info.basepoint is True:
-                iisignature_basepoint = torch.zeros(info.batch_size, info.input_channels, dtype=torch.double)
-            else:
-                iisignature_basepoint = info.basepoint.cpu()
-            iisignature_path_pieces.append(iisignature_basepoint.unsqueeze(1))
-        iisignature_path_pieces.append(path.detach().cpu())
-        if info.inverse:
-            iisignature_path_pieces_reversed = []
-            for tensor in reversed(iisignature_path_pieces):
-                iisignature_path_pieces_reversed.append(tensor.flip(1))
-            iisignature_path_pieces = iisignature_path_pieces_reversed
-        iisignature_path = torch.cat(iisignature_path_pieces, dim=1)
 
-        iisignature_signature = iisignature.sig(iisignature_path, info.depth, 2 if info.stream else 0)
+def _test_forward_accuracy(signature, path, info):
+    """Tests that the signature computes the correct values."""
+    iisignature_path_pieces = []
+    if isinstance(info.initial, torch.Tensor):
+        if info.basepoint is True:
+            basepoint_adjustment = 0
+        elif info.basepoint is False:
+            basepoint_adjustment = path[:, 0, :].unsqueeze(1)
+        else:
+            basepoint_adjustment = info.basepoint
+        adjusted_initial_path = info.initial_path - info.initial_path[:, -1, :].unsqueeze(1) + basepoint_adjustment
+        iisignature_path_pieces.append(adjusted_initial_path.cpu())
+    if isinstance(info.basepoint, torch.Tensor) or info.basepoint is True:
+        if info.basepoint is True:
+            iisignature_basepoint = torch.zeros(info.batch_size, info.input_channels, dtype=torch.double)
+        else:
+            iisignature_basepoint = info.basepoint.cpu()
+        iisignature_path_pieces.append(iisignature_basepoint.unsqueeze(1))
+    iisignature_path_pieces.append(path.detach().cpu())
+    if info.inverse:
+        iisignature_path_pieces_reversed = []
+        for tensor in reversed(iisignature_path_pieces):
+            iisignature_path_pieces_reversed.append(tensor.flip(1))
+        iisignature_path_pieces = iisignature_path_pieces_reversed
+    iisignature_path = torch.cat(iisignature_path_pieces, dim=1)
 
-        h.diff(signature, torch.tensor(iisignature_signature, dtype=torch.double, device=info.device))
+    iisignature_signature = iisignature.sig(iisignature_path, info.depth, 2 if info.stream else 0)
 
-    def _test_batch_trick(self, signature, path, info):
+    h.diff(signature, torch.tensor(iisignature_signature, dtype=torch.double, device=info.device))
+
+
+def _device_path_grad():
+    if torch.cuda.is_available():
+        return ('cuda', False), ('cuda', True), ('cpu', True)
+    else:
+        return (('cpu', True),)
+
+
+@pytest.mark.parametrize('class_', (False, True))
+@pytest.mark.parametrize('device,path_grad', _device_path_grad())
+@pytest.mark.parametrize('batch_size', (1, 2, 5))
+@pytest.mark.parametrize('input_stream', (6, 10))
+@pytest.mark.parametrize('input_channels', (1, 2, 6))
+@pytest.mark.parametrize('depth', (1, 2, 4, 6))
+@pytest.mark.parametrize('stream', (False,))
+@pytest.mark.parametrize('basepoint', (False, True, h.without_grad, h.with_grad))
+@pytest.mark.parametrize('inverse', (False, True))
+@pytest.mark.parametrize('initial', (None, h.without_grad, h.with_grad))
+def _test_batch_trick(class_, device, path_grad, batch_size, input_stream, input_channels, depth, stream, basepoint,
+                      inverse, initial):
+    """Tests that the batch trick method for computing signatures, which is sometimes selected for speed, does
+    produce the correct values."""
+
+    if device == 'cuda':
+        threshold = 512
+    else:
+        import signatory._impl
+        threshold = signatory._impl.hardware_concurrency()
+        if threshold < 2:
+            return  # can't test the batch trick in this case
+    if round(float(threshold) / batch_size) < 2:
+        batch_size = int(threshold / 2)
+
+    with h.Information(class_=class_, device=device, path_grad=path_grad, batch_size=batch_size,
+                       input_stream=input_stream, input_channels=input_channels, depth=depth, stream=stream,
+                       basepoint=basepoint, inverse=inverse, initial=initial) as info:
+        path = h.get_path(info)
+        basepoint = h.get_basepoint(info)
+        initial = h.get_initial(info)
+
+        if class_:
+            signature = signatory.Signature(depth, stream=stream,
+                                            inverse=inverse)(path, basepoint=basepoint, initial=initial)
+        else:
+            signature = signatory.signature(path, depth, stream=stream, basepoint=basepoint,
+                                            inverse=inverse, initial=initial)
+
         batch_trick_signature = signatory.signature.__globals__['_signature_batch_trick'](path,
-                                                                                          info.depth,
-                                                                                          stream=info.stream,
-                                                                                          basepoint=info.basepoint,
-                                                                                          inverse=info.inverse,
-                                                                                          initial=info.initial)
-        if batch_trick_signature is None:
-            return
-        self.tested_batch_trick = True
+                                                                                          depth,
+                                                                                          stream=stream,
+                                                                                          basepoint=basepoint,
+                                                                                          inverse=inverse,
+                                                                                          initial=initial)
+
+        assert batch_trick_signature is not None  # that the batch trick is viable in this case
 
         h.diff(signature, batch_trick_signature)
 
-        path_has_grad = path.requires_grad
-        basepoint_has_grad = isinstance(info.basepoint, torch.Tensor) and info.basepoint.requires_grad
-        initial_has_grad = isinstance(info.initial, torch.Tensor) and info.initial.requires_grad
-        if not (path_has_grad or basepoint_has_grad or initial_has_grad):
+        can_backward = path_grad or info.basepoint is h.with_grad or info.initial is h.with_grad
+        try:
+            grad = torch.rand_like(signature)
+            signature.backward(grad)
+        except RuntimeError:
+            assert not can_backward
             return
+        else:
+            assert can_backward
 
-        grad = torch.rand_like(signature)
-        signature.backward(grad)
-        if path_has_grad:
+        if path_grad:
             path_grad = path.grad.clone()
             path.grad.zero_()
-        if basepoint_has_grad:
-            basepoint_grad = info.basepoint.grad.clone()
-            info.basepoint.grad.zero_()
-        if initial_has_grad:
-            initial_grad = info.initial.grad.clone()
-            info.initial.grad.zero_()
+        if info.basepoint is h.with_grad:
+            basepoint_grad = basepoint.grad.clone()
+            basepoint.grad.zero_()
+        if info.initial is h.with_grad:
+            initial_grad = initial.grad.clone()
+            initial.grad.zero_()
         batch_trick_signature.backward(grad)
-        if path_has_grad:
+        if path_grad:
             h.diff(path_grad, path.grad)
             path.grad.zero_()
-        if basepoint_has_grad:
-            h.diff(basepoint_grad, info.basepoint.grad)
-            info.basepoint.grad.zero_()
-        if initial_has_grad:
-            h.diff(initial_grad, info.initial.grad)
-            info.initial.grad.zero_()
+        if info.basepoint is h.with_grad:
+            h.diff(basepoint_grad, basepoint.grad)
+            basepoint.grad.zero_()
+        if info.initial is h.with_grad:
+            h.diff(initial_grad, initial.grad)
+            initial.grad.zero_()
 
 
-@pytest.mark.parameterize('class_', (False, True))
-@pytest.mark.parameterize('device', ('cuda', 'cpu'))
-@pytest.mark.parameterize('batch_size,input_stream,input_channels,basepoint', h.sizes_and_basepoint())
-@pytest.mark.parameterize('depth', (1, 2))
-@pytest.mark.parameterize('stream', (False, True))
-@pytest.mark.parameterize('inverse', (False, True))
-@pytest.mark.parameterize('initial', (None, h.without_grad, h.with_grad))
+@pytest.mark.parametrize('class_', (False, True))
+@pytest.mark.parametrize('device', h.get_devices())
+@pytest.mark.parametrize('batch_size,input_stream,input_channels,basepoint', h.random_sizes_and_basepoint())
+@pytest.mark.parametrize('depth', (1, 2, 4, 6))
+@pytest.mark.parametrize('stream', (False, True))
+@pytest.mark.parametrize('inverse', (False, True))
+@pytest.mark.parametrize('initial', (None, h.without_grad, h.with_grad))
 def test_backward(class_, device, batch_size, input_stream, input_channels, depth, stream, basepoint, inverse, initial):
+    """Tests the the backwards operation through the signature gives the correct values."""
     with h.Information(class_=class_, device=device, batch_size=batch_size, input_stream=input_stream,
                        input_channels=input_channels, depth=depth, stream=stream, basepoint=basepoint,
                        inverse=inverse, initial=initial, path_grad=True) as info:
@@ -200,18 +250,20 @@ def test_backward(class_, device, batch_size, input_stream, input_channels, dept
             pytest.fail()
 
 
-@pytest.mark.parameterize('class_', (False, True))
-@pytest.mark.parameterize('device', ('cuda', 'cpu'))
-@pytest.mark.parameterize('batch_size,input_stream,input_channels,basepoint', h.sizes_and_basepoint())
-@pytest.mark.parameterize('depth', (1, 2))
-@pytest.mark.parameterize('stream', (False, True))
-@pytest.mark.parameterize('inverse', (False, True))
-@pytest.mark.parameterize('initial', (None, h.without_grad, h.with_grad))
+@pytest.mark.parametrize('class_', (False, True))
+@pytest.mark.parametrize('path_grad', (False, True))
+@pytest.mark.parametrize('device', h.get_devices())
+@pytest.mark.parametrize('batch_size,input_stream,input_channels,basepoint', h.random_sizes_and_basepoint())
+@pytest.mark.parametrize('depth', (1, 2, 5))
+@pytest.mark.parametrize('stream', (False, True))
+@pytest.mark.parametrize('inverse', (False, True))
+@pytest.mark.parametrize('initial', (None, h.without_grad, h.with_grad))
 def test_no_adjustments(class_, device, batch_size, input_stream, input_channels, depth, stream, basepoint,
-                        inverse, initial):
+                        inverse, initial, path_grad):
+    """Tests that the signature computations don't modify any memory that they're not supposed to."""
     with h.Information(class_=class_, device=device, batch_size=batch_size,
                        input_stream=input_stream, input_channels=input_channels, depth=depth, stream=stream,
-                       basepoint=basepoint, inverse=inverse, initial=initial, path_grad=True) as info:
+                       basepoint=basepoint, inverse=inverse, initial=initial, path_grad=path_grad) as info:
         path = h.get_path(info)
         basepoint = h.get_basepoint(info)
         initial = h.get_initial(info)
@@ -229,31 +281,36 @@ def test_no_adjustments(class_, device, batch_size, input_stream, input_channels
             signature = signatory.signature(path, depth, stream=stream, basepoint=basepoint, inverse=inverse,
                                             initial=initial)
 
-        grad = torch.rand_like(signature)
+        if path_grad or info.basepoint is h.with_grad or info.initial is h.with_grad:
+            grad = torch.rand_like(signature)
 
-        signature_clone = signature.clone()
-        grad_clone = grad.clone()
+            signature_clone = signature.clone()
+            grad_clone = grad.clone()
 
-        signature.backward(grad)
+            signature.backward(grad)
+        else:
+            assert signature.grad_fn is None
 
-        assert path.allclose(path_clone)
+        h.diff(path, path_clone)
         if isinstance(basepoint, torch.Tensor):
-            assert basepoint.allclose(basepoint_clone)
+            h.diff(basepoint, basepoint_clone)
         if isinstance(initial, torch.Tensor):
-            assert initial.allclose(initial_clone)
-        assert signature.allclose(signature_clone)
-        assert grad.allclose(grad_clone)
+            h.diff(initial, initial_clone)
+        if path_grad or info.basepoint is h.with_grad or info.initial is h.with_grad:
+            h.diff(signature, signature_clone)
+            h.diff(grad, grad_clone)
 
 
-@pytest.mark.parameterize('class_', (False, True))
-@pytest.mark.parameterize('path_grad', (False, True))
-@pytest.mark.parameterize('batch_size,input_stream,input_channels,basepoint', h.sizes_and_basepoint())
-@pytest.mark.parameterize('depth', (1, 2))
-@pytest.mark.parameterize('stream', (False, True))
-@pytest.mark.parameterize('inverse', (False, True))
-@pytest.mark.parameterize('initial', (None, h.without_grad, h.with_grad))
-def test_repeated(class_, path_grad, batch_size, input_stream, input_channels, depth, stream, basepoint, inverse,
-                  initial):
+@pytest.mark.skipif(not torch.cuda.is_available())
+@pytest.mark.parametrize('class_', (False, True))
+@pytest.mark.parametrize('path_grad', (False, True))
+@pytest.mark.parametrize('batch_size,input_stream,input_channels,basepoint', h.random_sizes_and_basepoint())
+@pytest.mark.parametrize('depth', (1, 2, 5))
+@pytest.mark.parametrize('stream', (False, True))
+@pytest.mark.parametrize('inverse', (False, True))
+@pytest.mark.parametrize('initial', (None, h.without_grad, h.with_grad))
+def test_repeat_and_memory_leaks(class_, path_grad, batch_size, input_stream, input_channels, depth, stream, basepoint,
+                                 inverse, initial):
     """Performs two separate tests.
 
     First, that the computations are deterministic, and always give the same result when run multiple times; in
@@ -284,11 +341,9 @@ def test_repeated(class_, path_grad, batch_size, input_stream, input_channels, d
                                                 initial=cpu_initial)
         cpu_grad = torch.rand_like(cpu_signature)
 
-        gc.collect()
-        torch.cuda.reset_max_memory_allocated()
-
         def one_iteration():
             gc.collect()
+            torch.cuda.reset_max_memory_allocated()
             cuda_path = cpu_path.to('cuda')
             if path_grad:
                 cuda_path.requires_grad_()
@@ -311,7 +366,7 @@ def test_repeated(class_, path_grad, batch_size, input_stream, input_channels, d
                 cuda_signature = signatory.signature(cuda_path, depth, stream=stream, basepoint=cuda_basepoint,
                                                      inverse=inverse, initial=cuda_initial)
 
-            assert cuda_signature.cpu().allclose(cpu_signature)
+            h.diff(cuda_signature.cpu(), cpu_signature)
 
             if path_grad:
                 cuda_grad = cpu_grad.cuda()

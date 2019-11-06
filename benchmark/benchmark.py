@@ -31,11 +31,6 @@ import signatory
 import torch
 
 
-# Increasing this tends to result in quicker computations that use more memory
-# For the sake of a fair benchmark in both parameters we just disable this.
-signatory.max_parallelisation(1)
-
-
 class BenchmarkBase(object):
     """Abstract base class. Subclasses should correspond to a particular function to be benchmarked.
 
