@@ -9,7 +9,7 @@ The following miscellaneous operations are provided as a convenience.
 
 ----
 
-.. autofunction:: signatory.max_parallelisation
+.. autofunction:: signatory.max_parallelism
 
 ----
 

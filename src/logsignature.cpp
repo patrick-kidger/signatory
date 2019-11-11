@@ -63,17 +63,22 @@ namespace signatory {
             };
 
             // Compresses a representation of a member of the free Lie algebra.
-            // In the tensor algebra it is represented by coefficients of all words. This just extracts the coefficients of
-            // all the Lyndon words.
+            // In the tensor algebra it is represented by coefficients of all words. This just extracts the coefficients
+            // of all the Lyndon words.
             // The list of all Lyndon words must have already been computed, and passed in as an argument.
-            torch::Tensor compress(const lyndon::LyndonWords& lyndon_words, torch::Tensor input, torch::TensorOptions opts)
+            torch::Tensor compress(const lyndon::LyndonWords& lyndon_words, torch::Tensor input)
             {
-                torch::Tensor indices = torch::empty({lyndon_words.amount}, opts.dtype(torch::kInt64));
-
+                // TODO: avoid the need for this copy operation entirely by having all of the `tensor_algebra_index`s be
+                //       a std::vector<int64_t> attribute of lyndon_words instead, and then just use torch::from_blob.
+                torch::Tensor indices = torch::empty({lyndon_words.amount}, torch::dtype(torch::kInt64));
+                auto index_accessor = indices.accessor<int64_t, 1>();
                 for (s_size_type depth_index = 0; depth_index < lyndon_words.depth; ++depth_index){
                     for (auto& lyndon_word : lyndon_words[depth_index]) {
-                        indices[lyndon_word.compressed_index] = lyndon_word.tensor_algebra_index;
+                        index_accessor[lyndon_word.compressed_index] = lyndon_word.tensor_algebra_index;
                     }
+                }
+                if (input.is_cuda()) {
+                    indices = indices.cuda();
                 }
 
                 return torch::index_select(input, /*dim=*/channel_dim, /*index=*/indices);
@@ -88,36 +93,40 @@ namespace signatory {
                     int64_t output_stream_size = grad_compressed.size(stream_dim);
                     grad_expanded = torch::zeros({output_stream_size,
                                                   batch_size,
-                                                  output_channel_size},
-                                                 opts);
+                                                  output_channel_size}, opts);
                 }
                 else {
                     grad_expanded = torch::zeros({batch_size,
-                                                  output_channel_size},
-                                                 opts);
+                                                  output_channel_size}, opts);
                 }
 
+                // TODO: avoid the need for this copy operation entirely by having all of the `tensor_algebra_index`s be
+                //       a std::vector<int64_t> attribute of lyndon_words instead, and then just use torch::from_blob.
+                torch::Tensor indices = torch::empty({lyndon_words.amount}, torch::dtype(torch::kInt64));
+                auto index_accessor = indices.accessor<int64_t, 1>();
                 for (s_size_type depth_index = 0; depth_index < lyndon_words.depth; ++depth_index){
-                    for (auto& lyndon_word: lyndon_words[depth_index]) {
-                        grad_expanded.narrow(/*dim=*/channel_dim,
-                                /*start=*/lyndon_word.tensor_algebra_index,
-                                /*length=*/1).copy_(
-                                grad_compressed.narrow(/*dim=*/channel_dim,
-                                        /*start=*/lyndon_word.compressed_index,
-                                        /*length=*/1),
-                                /*non_blocking=*/true);
+                    for (auto& lyndon_word : lyndon_words[depth_index]) {
+                        index_accessor[lyndon_word.compressed_index] = lyndon_word.tensor_algebra_index;
                     }
                 }
-                return grad_expanded;
+                if (grad_compressed.is_cuda()) {
+                    indices = indices.cuda();
+                }
+
+                indices = indices.expand_as(grad_compressed);
+
+                return grad_expanded.scatter_(channel_dim, indices, grad_compressed);
             }
 
-            void logsignature_checkargs(torch::Tensor signature, int64_t input_channel_size, s_size_type depth, bool stream)
+            void logsignature_checkargs(torch::Tensor signature, int64_t input_channel_size, s_size_type depth,
+                                        bool stream)
             {
                 misc::checkargs_channels_depth(input_channel_size, depth);
                 if (stream) {
                     if (signature.ndimension() != 3) {
-                        throw std::invalid_argument("Argument 'signature' must be a 3-dimensional tensor, with dimensions "
-                                                    "corresponding to (batch, stream, channel) respectively.");
+                        throw std::invalid_argument("Argument 'signature' must be a 3-dimensional tensor, with "
+                                                    "dimensions corresponding to (batch, stream, channel) "
+                                                    "respectively.");
                     }
                     if (signature.size(stream_dim) == 0) {
                         throw std::invalid_argument("Argument 'signature' cannot have dimensions of size zero.");
@@ -125,16 +134,16 @@ namespace signatory {
                 }
                 else {
                     if (signature.ndimension() != 2) {
-                        throw std::invalid_argument("Argument 'signature' must be a 2-dimensional tensor, with dimensions "
-                                                    "corresponding to (batch, channel) respectively.");
+                        throw std::invalid_argument("Argument 'signature' must be a 2-dimensional tensor, with "
+                                                    "dimensions corresponding to (batch, channel) respectively.");
                     }
                 }
                 if (signature.size(batch_dim) == 0 || signature.size(channel_dim) == 0) {
                     throw std::invalid_argument("Argument 'signature' cannot have dimensions of size zero.");
                 }
                 if (signature.size(channel_dim) != signature_channels(input_channel_size, depth)) {
-                    throw std::invalid_argument("Argument 'signature' has the wrong number of channels for the specified "
-                                                "channels and depth.");
+                    throw std::invalid_argument("Argument 'signature' has the wrong number of channels for the "
+                                                "specified channels and depth.");
                 }
                 if (!signature.is_floating_point()) {
                     throw std::invalid_argument("Argument 'signature' must be of floating point type.");
@@ -186,8 +195,12 @@ namespace signatory {
         if (stream) {
             std::vector<torch::Tensor> signature_by_term_at_stream;
 
-            #pragma omp parallel for default(none) shared(output_stream_size, logsignature_by_term, signature_by_term, \
-                                                          reciprocals)
+            // The if statement is for safety's sake... we haven't had issues with this one, but there have been other
+            // issues we've run into with OpenMP+GPU on other for loops.
+            // (even though presumably those threads are just scheduling work for the GPU to do... ?)
+            #pragma omp parallel for default(none) \
+                                     if(!signature.is_cuda()) \
+                                     shared(output_stream_size, logsignature_by_term, signature_by_term, reciprocals)
             for (int64_t stream_index = 0;
                  stream_index < output_stream_size;
                  ++stream_index) {
@@ -212,20 +225,25 @@ namespace signatory {
         logsignature::detail::LyndonInfo* lyndon_info =
                 misc::unwrap_capsule<logsignature::detail::LyndonInfo>(lyndon_info_capsule);
         if (mode == LogSignatureMode::Words) {
-            logsignature = logsignature::detail::compress(*lyndon_info->lyndon_words, logsignature, opts);
+            logsignature = logsignature::detail::compress(*lyndon_info->lyndon_words, logsignature);
         }
         else if (mode == LogSignatureMode::Brackets){
-            logsignature = logsignature::detail::compress(*lyndon_info->lyndon_words, logsignature, opts);
+            logsignature = logsignature::detail::compress(*lyndon_info->lyndon_words, logsignature);
             // This is essentially solving a sparse linear system... and it's horrendously slow on a GPU.
+            // There may well be ways of speeding this up beyond what's done here, but the brackets mode is definitely
+            // the least favoured child out of the mode options we provide. (It's inherently a strange choice in machine
+            // learning anyway, when the words mode is available.)
             bool cuda = logsignature.is_cuda();
             if (cuda) {
                 logsignature = logsignature.cpu();
             }
             // Then apply the transforms. We rely on the triangularity property of the Lyndon basis for this to work.
-            #pragma omp parallel for default(none) shared(lyndon_info, logsignature) schedule(dynamic,1)
+            #pragma omp parallel for default(none) \
+                                     shared(lyndon_info, logsignature) schedule(dynamic,1)
             for (s_size_type transform_class_index = 0;
                  transform_class_index < static_cast<s_size_type>(lyndon_info->transforms.size());
                  ++transform_class_index) {
+                // Note that it is very important that this inner loop operate serially!
                 for (const auto& transform : lyndon_info->transforms[transform_class_index]) {
                     int64_t source_index = std::get<0>(transform);
                     int64_t target_index = std::get<1>(transform);
@@ -294,7 +312,8 @@ namespace signatory {
                 grad_logsignature = grad_logsignature.cpu();
             }
             // This is essentially solving a sparse linear system... and it's horrendously slow on a GPU.
-            #pragma omp parallel for default(none) shared(lyndon_info, grad_logsignature) schedule(dynamic,1)
+            #pragma omp parallel for default(none) \
+                                     shared(lyndon_info, grad_logsignature) schedule(dynamic,1)
             for (s_size_type transform_class_index = 0;
                  transform_class_index < static_cast<s_size_type>(lyndon_info->transforms_backward.size());
                  ++transform_class_index) {
@@ -326,8 +345,13 @@ namespace signatory {
         misc::slice_by_term(grad_signature, grad_signature_by_term, input_channel_size, depth);
 
         if (stream) {
+            // The if statement is because this sometimes hangs on the GPU... for some reason.
+            //
+            // This is deliberately using num_threads when some of the other parallelisations in this file don't.
+            // It's because this one actually uses reasonable amounts of extra memory, whereas the others don't.
             #pragma omp parallel for default(none) \
-                                     num_threads(get_max_parallelisation()) \
+                                     if(!grad_logsignature.is_cuda()) \
+                                     num_threads(get_max_parallelism()) \
                                      shared(grad_logsignature_by_term, \
                                             grad_signature_by_term, \
                                             signature_by_term, \

@@ -117,7 +117,7 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
 
     # Number of chunks to split the stream in to
     mult = int(round(float(threshold) / batch_size))
-    mult = min(mult, int(stream_size / 3), utility.max_parallelisation())
+    mult = min(mult, int(stream_size / 3), utility.max_parallelism())
 
     # If the problem isn't large enough to be worth parallelising
     if mult < 2:
@@ -127,14 +127,8 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
     reduced_bulk_length = int(stream_size / mult)  # Size of each chunk of the stream
     bulk_length = stream_size - remainder          # Size of all of the chunks of the stream put together,
     # excluding the remainder
-    path_bulk = path[:, 0:bulk_length]
+    path_bulk = path[:, :bulk_length]
     path_remainder = path[:, bulk_length:]
-
-    # If the data isn't laid out such that some of the stream dimension can be pushed into the batch dimension
-    try:
-        path_bulk.view(batch_size * mult, reduced_bulk_length, channel_size)
-    except RuntimeError:
-        return
 
     # Need to set basepoints to the end of each previous chunk
     path_bulk = path_bulk.view(batch_size, mult, reduced_bulk_length, channel_size)
@@ -149,7 +143,7 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
     else:
         # noinspection PyUnresolvedReferences
         ends[:, 0].copy_(path_bulk[:, 0, 0])
-    path_bulk = path_bulk.view(batch_size * mult, reduced_bulk_length, channel_size)
+    path_bulk = path_bulk.reshape(batch_size * mult, reduced_bulk_length, channel_size)
     basepoint = ends.view(batch_size * mult, channel_size)
 
     # noinspection PyUnresolvedReferences
@@ -199,7 +193,7 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
 
         stream (bool, optional): Defaults to False. If False then the usual signature transform of the whole path is
             computed. If True then the signatures of all paths :math:`(x_1, \ldots, x_j)`, for :math:`j=2, \ldots, L`,
-            are returned.
+            are returned. (Or :math:`j=1, \ldots, L` is :attr:`basepoint` is passed, see below.)
 
         basepoint (bool or :class:`torch.Tensor`, optional): Defaults to False. If :attr:`basepoint` is True then an
             additional point :math:`x_0 = 0 \in \mathbb{R}^C` is prepended to the path before the signature transform is
@@ -209,8 +203,10 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
             have shape :math:`(N, C)`.
 
         inverse (bool, optional): Defaults to False. If True then it is in fact the inverse signature that is computed.
-            That is, we flip the input path along its stream dimension before computing the signature. (But without the
-            extra computational overhead of actually performing that flip separately.)
+            That is, we flip the input path along its stream dimension before computing the signature.
+            If :attr:`stream` is True then each sub-path is the same as before, and are each individually flipped along
+            their stream dimensions, and kept in the same order with respect to each other.
+            (But without the extra computational overhead of actually doing all of these flips.)
             From a machine learning perspective it does not particularly matter whether the signature or the inverse
             signature is computed - both represent essentially the same information as each other.
 

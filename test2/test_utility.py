@@ -16,9 +16,25 @@
 
 
 import iisignature
-import signatory
 
-import helpers as h
+from helpers import helpers as h
+from helpers import validation as v
+
+
+tests = ['lyndon_words', 'lyndon_brackets', 'signature_channels', 'logsignature_channels']
+depends = []
+signatory = v.validate_tests(tests, depends)
+
+
+def test_lyndon_amount():
+    """Tests that the lyndon_words and lyndon_brackets functions gives the same number of elements"""
+    for channels in range(1, 10):
+        for depth in range(1, 6):
+            len_words = len(signatory.lyndon_words(channels, depth))
+            len_brackets = len(signatory.lyndon_brackets(channels, depth))
+            print('channels=' + str(channels))
+            print('depth=' + str(depth))
+            assert len_words == len_brackets
 
 
 def _iisignature_convert(ii_elem):
@@ -49,40 +65,35 @@ def _iisignature_convert(ii_elem):
     return outstr
 
 
-def test_lyndon_brackets(iisignature_prepare):
+def test_lyndon_brackets():
     """Tests the lyndon_brackets function"""
     for channels in range(2, 11):  # iisignature supports channels with unique symbols in the range 2 to 10 inclusive
         for depth in range(1, 6):
-            iisignature_brackets = iisignature.basis(iisignature_prepare(channels, depth))
+            iisignature_brackets = iisignature.basis(h.iisignature_prepare(channels, depth))
             signatory_brackets = signatory.lyndon_brackets(channels, depth)
             for ii_elem, sig_elem in zip(iisignature_brackets, signatory_brackets):
-                with h.Information(channels=channels, depth=depth, ii_elem=ii_elem, sig_elem=sig_elem):
-                    assert sig_elem == eval(_iisignature_convert(ii_elem))
+                print('channels=' + str(channels))
+                print('depth=' + str(depth))
+                assert sig_elem == eval(_iisignature_convert(ii_elem))
 
 
-def test_lyndon_words(iisignature_prepare):
+# This is actually quite an important test, because we use lyndon_words as part of our logsignature testing elsewhere,
+# so we have to know that this function is correct.
+def test_lyndon_words():
     """Tests the lyndon_words function"""
     for channels in range(2, 11):  # iisignature supports channels with unique symbols in the range 2 to 10 inclusive
         for depth in range(1, 6):
-            iisignature_brackets = iisignature.basis(iisignature_prepare(channels, depth))
+            iisignature_brackets = iisignature.basis(h.iisignature_prepare(channels, depth))
             signatory_words = signatory.lyndon_words(channels, depth)
             for ii_elem, sig_elem in zip(iisignature_brackets, signatory_words):
                 ii_elem_new = ii_elem.replace('[', '').replace(']', '').replace(',', '')
                 ii_elem_new = _iisignature_convert(ii_elem_new)
                 sig_elem_new = ''.join(str(i) for i in sig_elem)
-                with h.Information(channels=channels, depth=depth, ii_elem=ii_elem, sig_elem=sig_elem,
-                                   ii_elem_new=ii_elem_new, sig_elem_new=sig_elem_new):
-                    assert sig_elem_new == ii_elem_new
-
-
-def test_lyndon_amount():
-    """Tests that the lyndon_words and lyndon_brackets functions gives the same number of elements"""
-    for channels in range(1, 10):
-        for depth in range(1, 6):
-            len_words = len(signatory.lyndon_words(channels, depth))
-            len_brackets = len(signatory.lyndon_brackets(channels, depth))
-            with h.Information(channels=channels, depth=depth, len_words=len_words, len_brackets=len_brackets):
-                assert len_words == len_brackets
+                print('channels=' + str(channels))
+                print('depth=' + str(depth))
+                print('ii_elem' + str(ii_elem))
+                print('sig_elem' + str(sig_elem))
+                assert sig_elem_new == ii_elem_new
 
 
 def test_signature_channels():
@@ -91,8 +102,9 @@ def test_signature_channels():
         for depth in range(1, 15):
             result = signatory.signature_channels(channels, depth)
             sum_over = sum(channels ** i for i in range(1, depth + 1))
-            with h.Information(channels=channels, depth=depth, result=result, sum_over=sum_over):
-                assert result == sum_over
+            print('channels=' + str(channels))
+            print('depth=' + str(depth))
+            assert result == sum_over
 
 
 def test_logsignature_channels():
@@ -101,5 +113,6 @@ def test_logsignature_channels():
         for depth in range(1, 6):
             result = signatory.logsignature_channels(channels, depth)
             from_words = len(signatory.lyndon_words(channels, depth))
-            with h.Information(channels=channels, depth=depth, result=result, from_words=from_words):
-                assert result == from_words
+            print('channels=' + str(channels))
+            print('depth=' + str(depth))
+            assert result == from_words

@@ -20,6 +20,7 @@ import torch
 from torch import nn
 from torch import autograd
 from torch.autograd import function as autograd_function
+import warnings
 import weakref
 
 from . import signature_module as smodule
@@ -201,25 +202,29 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
         inverse (bool, optional): as :func:`signatory.signature`.
 
         mode (str, optional): Defaults to :attr:`"words"`. How the output should be presented. Valid values are
-            :attr:`"expand"`, :attr:`"brackets"`, or :attr:`"words"`. Precisely what each of these options mean is
+            :attr:`"words"`, :attr:`"brackets"`, or :attr:`"expand"`. Precisely what each of these options mean is
             described in the
-            "Returns" section below. As a rule of thumb: use :attr:`"words"` for new projects (as it is the fastest),
-            and use :attr:`"brackets"` for compatibility with other projects which do not provide equivalent
-            functionality to :attr:`"words"`. (Such as `iisignature <https://github.com/bottler/iisignature>`__). The
-            mode :attr:`"expand"` is mostly only interesting for mathematicians.
+            "Returns" section below. For machine learning applications, :code:`"words"` is the appropriate choice. The
+            other two options are mostly only interesting for mathematicians.
 
     Returns:
-        A :class:`torch.Tensor`. If :attr:`mode == "expand"` then it will be of the same shape as the returned tensor
-        from :func:`signatory.signature`. If :attr:`mode in ("brackets", "words")` then it will again be of the
+        A :class:`torch.Tensor`. If :code:`mode == "expand"` then it will be of the same shape as the returned tensor
+        from :func:`signatory.signature`. If :code:`mode in ("brackets", "words")` then it will again be of the
         same shape, except that the channel dimension will instead be of size
-        :attr:`signatory.logsignature_channels(C, depth)`, where :attr:`C` is the number of input channels, i.e.
-        :attr:`path.size(-1)`.
-        (Thus the logsignature is much smaller than the signature, which is the whole point of using the logsignature
+        :code:`signatory.logsignature_channels(C, depth)`, where :code:`C` is the number of input channels, i.e.
+        :code:`path.size(-1)`.
+        (Thus the logsignature is much smaller than the signature, which is often the point of using the logsignature
         over the signature in the first place.)
 
         We now go on to explain what the different values for :attr:`mode` mean. This discussion is in the "Returns"
         section because the value of :attr:`mode` essentially just determines how the output is represented; the
         mathematical meaning is the same in all cases.
+
+        .. tip::
+
+            If you haven't studied tensor algebras and free Lie algebras, and none of the following explanation makes
+            sense to you, then you probably want to leave :attr:`mode` on its default value of :code:`"words"` and it
+            will all be fine!
 
         If :attr:`mode == "expand"` then the logsignature is presented as a member of the tensor algebra; the numbers
         returned correspond to the coefficients of all words in the tensor algebra.
@@ -228,7 +233,7 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
         basis of the free Lie algebra.
 
         If :attr:`mode == "words"` then the logsignature is presented in terms of the coefficients of a particular
-        computationally efficient basis of the free Lie algebra that is not a Hall basis. Every basis element is given
+        computationally efficient basis of the free Lie algebra (that is not a Hall basis). Every basis element is given
         as a sum of Lyndon brackets. When each bracket is expanded out and the sum computed, the sum will contain
         precisely one Lyndon word (and some collection of non-Lyndon words). Moreover
         every Lyndon word is represented uniquely in this way. We identify these basis elements with each corresponding
@@ -299,6 +304,8 @@ class LogSignature(nn.Module):
         # In particular does not return anything
         self._get_signature_to_logsignature_instance(in_channels)
 
+    # Deliberately no 'initial' argument. To support that for logsignatures we'd need to be able to expand a
+    # (potentially compressed) logsignature into a signature first. (Which is possible in principle.)
     def forward(self, path, basepoint=False):
         # type: (torch.Tensor, Union[bool, torch.Tensor]) -> torch.Tensor
         """The forward operation.
@@ -312,8 +319,10 @@ class LogSignature(nn.Module):
             As :func:`signatory.logsignature`.
         """
 
-        # Deliberately no 'initial' argument. To support that for logsignatures we'd need to be able to expand a
-        # (potentially compressed) logsignature into a signature first. (Which is certainly possible in principle)
+        if path.is_cuda and self._mode == 'brackets':
+            warnings.warn("The logsignature with mode='brackets' has been requested on the GPU. This mode is quite "
+                          "slow to calculate, and the GPU offers no speedup. Consider mode='words' instead.")
+
         signature = smodule.signature(path, self._depth, stream=self._stream, basepoint=basepoint,
                                       inverse=self._inverse, initial=None)
         return self._get_signature_to_logsignature_instance(path.size(-1))(signature)

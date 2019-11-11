@@ -87,10 +87,11 @@ from .signature_module import (signature,
                                extract_signature_term,
                                signature_combine,
                                multi_signature_combine)
+from . import unstable  # make it available as an attribute here, but don't import any unstable objects themselves
 from .utility import (lyndon_words,
                       lyndon_brackets,
                       all_words,
-                      max_parallelisation)
+                      max_parallelism)
 
 
 __version__ = "1.1.4"

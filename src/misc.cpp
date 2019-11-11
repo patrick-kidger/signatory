@@ -32,7 +32,7 @@ namespace signatory {
             // parallelisation over the batch dimension.
             // Essentially, it's how much extra memory we're willing to use to try and speed up calculations by doing
             // clever tricks.
-            int64_t max_parallelisation = 8;
+            int64_t max_parallelism = 8;
         }  // namespace signatory::misc::detail
 
         void checkargs_channels_depth(int64_t channels, s_size_type depth) {
@@ -76,19 +76,19 @@ namespace signatory {
         }
     }
 
-    void set_max_parallelisation(int64_t value) {
+    void set_max_parallelism(int64_t value) {
         if (value < 1 && value != -1) {
             throw std::invalid_argument("value must be either -1 or greater than or equal to 1.");
         }
-        misc::detail::max_parallelisation = value;
+        misc::detail::max_parallelism = value;
     }
 
-    int64_t get_max_parallelisation() {
-        if (misc::detail::max_parallelisation == -1) {
-            return std::numeric_limits<decltype(misc::detail::max_parallelisation)>::max();
+    int64_t get_max_parallelism() {
+        if (misc::detail::max_parallelism == -1) {
+            return std::numeric_limits<decltype(misc::detail::max_parallelism)>::max();
         }
         else {
-            return misc::detail::max_parallelisation;
+            return misc::detail::max_parallelism;
         }
     }
 }  // namespace signatory

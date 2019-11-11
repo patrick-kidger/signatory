@@ -24,8 +24,8 @@
                              // signatory::make_lyndon_info
 
 #include "misc.hpp"          // signatory::signature_channels
-                             // signatory::set_max_parallelisation
-                             // signatory::get_max_parallelisation
+                             // signatory::set_max_parallelism
+                             // signatory::get_max_parallelism
 
 #include "signature.hpp"     // signatory::signature_checkargs
                              // signatory::signature_forward,
@@ -63,10 +63,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
           &signatory::signature_backward);
     m.def("signature_channels",
           &signatory::signature_channels);
-    m.def("set_max_parallelisation",
-          &signatory::set_max_parallelisation);
-    m.def("get_max_parallelisation",
-          &signatory::get_max_parallelisation);
+    m.def("set_max_parallelism",
+          &signatory::set_max_parallelism);
+    m.def("get_max_parallelism",
+          &signatory::get_max_parallelism);
     m.def("lyndon_words",
           &signatory::lyndon_words,
           py::return_value_policy::move);

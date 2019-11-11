@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
+"""Configures the tests."""
 
 
-import iisignature
 import pytest
 import signatory
 import sys
+
+from helpers import validation as v
 
 
 # Replace the weak dictionary with a regular dictionary for speed
@@ -25,32 +27,32 @@ if not hasattr(signatory.SignatureToLogSignature, '_lyndon_info_capsule_cache'):
     raise RuntimeError('Expected signatory.SignatureToLogSignature to have a cache for lyndon info capsules')
 signatory.SignatureToLogSignature._lyndon_info_capsule_cache = {}
 
-pytest.register_assert_rewrite('helpers')
 
+def pytest_collection_finish(session):
+    cycle = v.signatory_functionality_graph.get_cycle()
+    if cycle is not None:
+        error_pieces = ['\nTests have a cyclic dependency!\n']
 
-@pytest.fixture
-def no_parallelism():
-    """Disable parallelism in this test."""
-    current_parallelism = signatory.max_parallelism()
-    signatory.max_parallelism(1)
-    yield
-    signatory.max_parallelism(current_parallelism)
-
-
-@pytest.fixture(scope='session')
-def iisignature_prepare():
-    """Caches the results of iisignature's prepare() function, which is often quite time consuming."""
-    _iisignature_prepare_cache = {}
-
-    def _iisignature_prepare(channels, depth):
+        itercycle = iter(reversed(cycle))
         try:
-            return _iisignature_prepare_cache[(channels, depth)]
-        except KeyError:
-            prepared = iisignature.prepare(channels, depth)
-            _iisignature_prepare_cache[(channels, depth)] = prepared
-            return prepared
+            while True:
+                item = next(itercycle)
+                error_pieces.append(str(item))
+                item2 = next(itercycle)
+                error_pieces.append('--(')
+                error_pieces.append(str(item2))
+                error_pieces.append(')->')
+        except StopIteration:
+            pass
 
-    return _iisignature_prepare
+        raise RuntimeError(''.join(error_pieces))
+
+    unmarked = v.signatory_functionality_graph.get_unmarked()
+    if len(unmarked):
+        print('These tests assume that the following functionality is correct:\n' + ', '.join(unmarked))
+
+    if 'Logsignature' in v.signatory_functionality_graph.vertices():
+        raise RuntimeError('Use LogSignature, not Logsignature')
 
 
 @pytest.fixture(scope='module')

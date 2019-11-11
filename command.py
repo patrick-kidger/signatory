@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import webbrowser
 #### DO NOT IMPORT NON-(STANDARD LIBRARY) MODULES HERE
 # Instead, lazily import them inside the command.
@@ -45,6 +46,7 @@ def main():
     subparsers = parser.add_subparsers(dest='command', help='Which command to run')
     
     test_parser = subparsers.add_parser('test', parents=[deviceparser], description="Run tests")
+    test2_parser = subparsers.add_parser('test2', parents=[deviceparser], description="Run tests")
     benchmark_parser = subparsers.add_parser('benchmark', parents=[deviceparser], description="Run speed benchmarks")
     docs_parser = subparsers.add_parser('docs', description="Build documentation")
     readme_parser = subparsers.add_parser('readme', description="Generate the README from the documentation.")
@@ -53,7 +55,8 @@ def main():
     should_not_import_parser = subparsers.add_parser('should_not_import', description="Tests that Signatory _cannot_ "
                                                                                       "be imported.")
 
-    test_parser.set_defaults(cmd=test2)
+    test_parser.set_defaults(cmd=test)
+    test2_parser.set_defaults(cmd=test2)
     benchmark_parser.set_defaults(cmd=benchmark)
     docs_parser.set_defaults(cmd=docs)
     readme_parser.set_defaults(cmd=readme)
@@ -65,6 +68,10 @@ def main():
                              help="Don't print names and start time of the tests being run.")
     test_parser.add_argument('-t', '--notimes', action='store_false', dest='times',
                              help="Don't print the overall times of the tests that have been run.")
+
+    test2_parser.add_argument('-t', '--test', default='', help="What to test. Defaults to all tests.")
+    test2_parser.add_argument('-a', '--args', nargs=argparse.REMAINDER,
+                              help="All other arguments are forwarded on to pytest.")
 
     benchmark_parser.add_argument('-e', '--noesig', action='store_false', dest='test_esig',
                                   help="Skip esig tests as esig is typically very slow.")
@@ -136,7 +143,11 @@ def test(args):
     import torch
     with torch.cuda.device(args.device) if args.device != -1 else _NullContext():
         print('Using ' + _get_device())
-        return test.runner.main(failfast=args.failfast, times=args.times, names=args.names)
+        start = time.time()
+        result = test.runner.main(failfast=args.failfast, times=args.times, names=args.names)
+        end = time.time()
+        print("Total time: " + str(end - start))
+        return result
 
 
 def test2(args):
@@ -149,9 +160,10 @@ def test2(args):
     import torch
     with torch.cuda.device(args.device) if args.device != -1 else _NullContext():
         print('Using ' + _get_device())
-        pytest_args = [os.path.join(_here, 'test2/')]
-        if args.failfast:
-            pytest_args.append('-x')
+        pytest_args = [os.path.join(_here, 'test2', args.test)]
+        pytest_args.extend(['-x', '--tb=long', '-ra', '--durations=0'])
+        if args.args is not None:
+            pytest_args.extend(args.args)
         return pytest.main(pytest_args)
 
 

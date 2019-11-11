@@ -392,7 +392,7 @@ namespace signatory {
                 // Can't parallelise along the stream dimension in this inherently-serial case.
                 stream_threads = 1;
             }
-            stream_threads = std::min(stream_threads, get_max_parallelisation());
+            stream_threads = std::min(stream_threads, get_max_parallelism());
 
             if (stream_threads == 1) {
                 // Will be true if stream==true or if the problem is small or if the batch size is large

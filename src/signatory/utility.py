@@ -91,17 +91,17 @@ def all_words(channels, depth):
     return list(generator())
 
 
-def max_parallelisation(value=None):
+def max_parallelism(value=None):
     # type: (Optional[int]) -> int
-    """Gets or sets the maximum amount of parallelisation used in Signatory's computations. Higher values will typically
+    """Gets or sets the maximum amount of parallelism used in Signatory's computations. Higher values will typically
     result in quicker computations but will use more memory.
 
     Calling without arguments will return the current value.
-    Passing a value of 1 will disable parallelisation.
-    Passing :code:`-1`, :code:`math.inf` or :code:`np.inf` will enable unlimited parallelisation.
+    Passing a value of 1 will disable parallelism.
+    Passing :code:`-1`, :code:`math.inf` or :code:`np.inf` will enable unlimited parallelism.
     """
     if value is not None:
         if value == math.inf:  # also true for np.inf
             value = -1
-        _impl.set_max_parallelisation(value)
-    return _impl.get_max_parallelisation()
+        _impl.set_max_parallelism(value)
+    return _impl.get_max_parallelism()

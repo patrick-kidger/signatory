@@ -90,7 +90,7 @@ def run(self):
                                         "import iisignature",
                                         "import signatory",
                                         "import torch",
-                                        "signatory.max_parallelisation(1)",
+                                        "signatory.max_parallelism(1)",
                                         "self = argparse.Namespace()",
                                         'self.size = {size}'.format(size=repr(size)),
                                         'self.depth = {depth}'.format(depth=repr(depth)),
