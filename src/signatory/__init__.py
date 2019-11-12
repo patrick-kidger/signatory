@@ -37,7 +37,7 @@ except ImportError as e:
         raise
 
 
-if 'darwin' in sys.platform:
+if sys.platform.startswith('darwin'):
     # It seems that either the use of clang or running on Mac means that exceptions don't get properly translated by
     # pybind11. In particular it raises RuntimeError("Caught an unknown exception!") rather than anything else.
     # We only use ValueErrors so we just translate to that; this is pretty much the best we can do.
