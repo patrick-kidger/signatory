@@ -56,11 +56,11 @@ jobs:
         print('(Raw) this version: ', metadata.version)
         last_version_ = []
         for i in last_version.split(b'.'):
-            if 'torch' in i:
+            if b'torch' in i:
                 break
             last_version_.append(int(i))
         this_version_ = []
-        for i in metadata.version.split(b'.'):
+        for i in metadata.version.split('.'):
             if 'torch' in i:
                 break
             this_version_.append(int(i))
@@ -72,6 +72,7 @@ jobs:
         print('(Final) this version: ', this_version__)
         sys.exit(this_version__ <= last_version__)
         "
+
 
   check_readme:
     runs-on: ${{ matrix.os }}
