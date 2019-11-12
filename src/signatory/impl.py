@@ -15,9 +15,6 @@
 """Provides an interface to _impl."""
 
 
-import functools as ft
-import types
-
 # noinspection PyUnresolvedReferences
 from . import _impl
 
@@ -27,10 +24,13 @@ from . import _impl
 # This isn't perfect; any genuine RuntimeErrors will now always be ValueErrors.
 # So for consistency across platforms we _always_ convert RuntimeErrors to ValueErrors.
 def _wrap(fn):
-    if not isinstance(fn, types.BuiltinFunctionType):
-        raise ValueError("Can't wrap a non-function.")
+    # We'd like to perform a check that fn is actually a function here
+    # But that throws an error with the mocking used in the documentation
+    # Easiest to not check and rely on the tests to, y'know, test.
 
-    @ft.wraps(fn)
+    # We'd also like to @functools.wrap(fn) this
+    # but again it fails with autodoc.
+    # Not super important, as nothing in this module should be public anyway.
     def wrapped(*args, **kwargs):
         try:
             return fn(*args, **kwargs)

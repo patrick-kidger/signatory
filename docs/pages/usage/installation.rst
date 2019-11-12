@@ -12,7 +12,7 @@ Installation is pretty simple:
 
 .. code-block:: bash
 
-    pip install signatory==<SIGNATORY_VERSION>_torch<TORCH_VERSION>
+    pip install signatory==<SIGNATORY_VERSION>.torch<TORCH_VERSION>
 
 where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is |version|) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
 
@@ -25,7 +25,7 @@ where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to down
 
     .. code-block:: bash
 
-        pip install signatory==1.1.4_torch1.3.0
+        pip install signatory==1.1.4.torch1.3.0
 
 Then just ``import signatory`` inside Python.
 
@@ -54,7 +54,7 @@ Then run **either**
 
 .. code-block:: bash
 
-    pip install signatory==<SIGNATORY_VERSION>_torch<TORCH_VERSION> --no-binary signatory
+    pip install signatory==<SIGNATORY_VERSION>.torch<TORCH_VERSION> --no-binary signatory
 
 (where ``<SIGNATORY_VERSION>`` and ``<TORCH_VERSION>`` are as above.)
 
@@ -93,7 +93,7 @@ If you choose the second option then tests, benchmarking code, and code to build
 
     .. code-block:: bash
 
-            MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ pip install signatory==<SIGNATORY_VERSION>_torch<TORCH_VERSION> --no-binary signatory
+            MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ pip install signatory==<SIGNATORY_VERSION>.torch<TORCH_VERSION> --no-binary signatory
 
     or
     

@@ -29,7 +29,7 @@ Installation is pretty simple:
 
 .. code-block:: bash
 
-    pip install signatory==<SIGNATORY_VERSION>_torch<TORCH_VERSION>
+    pip install signatory==<SIGNATORY_VERSION>.torch<TORCH_VERSION>
 
 where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.1.4) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
 
@@ -38,7 +38,7 @@ where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to down
 
     .. code-block:: bash
 
-        pip install signatory==1.1.4_torch1.3.0
+        pip install signatory==1.1.4.torch1.3.0
 
 Then just ``import signatory`` inside Python.
 

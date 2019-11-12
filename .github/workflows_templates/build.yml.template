@@ -30,18 +30,29 @@ jobs:
         import metadata
         version_msg = subprocess.run('pip install signatory==', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         print('Version msg: ', version_msg)
-        version_re = re.compile(rb'from versions: ([_0-9\. ,torch]*)\)')
+        version_re = re.compile(rb'from versions: ([0-9\. ,torch]*)\)')
         last_version = version_re.search(version_msg.stderr).group(1).split(b', ')[-1]
-        print('Last version: ', last_version)
-        print('This version: ', metadata.version)
-        last_version = [int(i) for i in last_version.split(b'.')]
-        this_version = [int(i) for i in metadata.version.split('.')]
-        last_version_ = [l for t, l in it.zip_longest(this_version, last_version, fillvalue=0)]
-        this_version_ = [t for t, l in it.zip_longest(this_version, last_version, fillvalue=0)]
-        sys.exit(tuple(this_version_) <= tuple(last_version_))
+        print('(Raw) last version: ', last_version)
+        print('(Raw) this version: ', metadata.version)
+        last_version_ = []
+        for i in last_version.split(b'.'):
+            if 'torch' in i:
+                break
+            last_version_.append(int(i))
+        this_version_ = []
+        for i in metadata.version.split(b'.'):
+            if 'torch' in i:
+                break
+            this_version_.append(int(i))
+        print('(No torch) last version: ', last_version_)
+        print('(No torch) this version: ', this_version_)
+        last_version__ = tuple(l for t, l in it.zip_longest(this_version_, last_version_, fillvalue=0))
+        this_version__ = tuple(t for t, l in it.zip_longest(this_version_, last_version_, fillvalue=0))
+        print('(Final) last version: ', last_version__)
+        print('(Final) this version: ', this_version__)
+        sys.exit(this_version__ <= last_version__)
         "
-  
-  
+
   check_readme:
     <<strategy_single>>
     steps:
