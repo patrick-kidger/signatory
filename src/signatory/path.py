@@ -19,7 +19,6 @@ import torch
 from torch import autograd
 from torch.autograd import function as autograd_function
 
-from . import backend
 from . import signature_module as smodule
 from . import logsignature_module as lmodule
 from . import impl
@@ -138,7 +137,7 @@ class Path(object):
         self._signature_channels = smodule.signature_channels(self._channels, self._depth)
         self._logsignature_channels = lmodule.logsignature_channels(self._channels, self._depth)
 
-        use_basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path.size(0), path.size(2), path.dtype,
+        use_basepoint, basepoint_value = smodule.interpret_basepoint(basepoint, path.size(0), path.size(2), path.dtype,
                                                                      path.device)
         if use_basepoint:
             self._length += 1

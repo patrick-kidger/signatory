@@ -16,45 +16,42 @@
 
 
 import functools as ft
-import sys
 import types
 
 # noinspection PyUnresolvedReferences
 from . import _impl
 
 
-def wrap(fn):
+# For some reason some exceptions on a Mac are converted to RuntimeErrors rather than ValueErrors.
+# So we have to make a conversion.
+# This isn't perfect; any genuine RuntimeErrors will now always be ValueErrors.
+# So for consistency across platforms we _always_ convert RuntimeErrors to ValueErrors.
+def _wrap(fn):
     if not isinstance(fn, types.BuiltinFunctionType):
         raise ValueError("Can't wrap a non-function.")
-    if sys.platform.startswith('darwin'):
-        @ft.wraps(fn)
-        def wrapped(*args, **kwargs):
-            try:
-                return fn(*args, **kwargs)
-            except RuntimeError as e:
-                if 'unknown exception' in str(e):
-                    raise ValueError("Exception raised. Unfortunately C++-to-Python translation of exceptions doesn't "
-                                     "work properly on a Mac so that's all we know. See the FAQ.")
-                else:
-                    raise
-        return wrapped
-    else:
-        return fn
+
+    @ft.wraps(fn)
+    def wrapped(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except RuntimeError as e:
+            raise ValueError(str(e))
+    return wrapped
 
 
-LogSignatureMode = _impl.LogSignatureMode
-signature_to_logsignature_forward = wrap(_impl.signature_to_logsignature_forward)
-signature_to_logsignature_backward = wrap(_impl.signature_to_logsignature_backward)
-make_lyndon_info = wrap(_impl.make_lyndon_info)
-signature_forward = wrap(_impl.signature_forward)
-signature_backward = wrap(_impl.signature_backward)
-signature_checkargs = wrap(_impl.signature_checkargs)
-hardware_concurrency = wrap(_impl.hardware_concurrency)
-signature_channels = wrap(_impl.signature_channels)
-signature_combine_forward = wrap(_impl.signature_combine_forward)
-signature_combine_backward = wrap(_impl.signature_combine_backward)
-lyndon_words_to_basis_transform = wrap(_impl.lyndon_words_to_basis_transform)
-lyndon_words = wrap(_impl.lyndon_words)
-lyndon_brackets = wrap(_impl.lyndon_brackets)
-set_max_parallelism = wrap(_impl.set_max_parallelism)
-get_max_parallelism = wrap(_impl.get_max_parallelism)
+LogSignatureMode = _impl.LogSignatureMode  # not wrapped because it's not a function
+signature_to_logsignature_forward = _wrap(_impl.signature_to_logsignature_forward)
+signature_to_logsignature_backward = _wrap(_impl.signature_to_logsignature_backward)
+make_lyndon_info = _wrap(_impl.make_lyndon_info)
+signature_forward = _wrap(_impl.signature_forward)
+signature_backward = _wrap(_impl.signature_backward)
+signature_checkargs = _wrap(_impl.signature_checkargs)
+hardware_concurrency = _wrap(_impl.hardware_concurrency)
+signature_channels = _wrap(_impl.signature_channels)
+signature_combine_forward = _wrap(_impl.signature_combine_forward)
+signature_combine_backward = _wrap(_impl.signature_combine_backward)
+lyndon_words_to_basis_transform = _wrap(_impl.lyndon_words_to_basis_transform)
+lyndon_words = _wrap(_impl.lyndon_words)
+lyndon_brackets = _wrap(_impl.lyndon_brackets)
+set_max_parallelism = _wrap(_impl.set_max_parallelism)
+get_max_parallelism = _wrap(_impl.get_max_parallelism)

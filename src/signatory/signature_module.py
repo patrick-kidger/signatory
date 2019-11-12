@@ -21,7 +21,6 @@ from torch import autograd
 from torch.autograd import function as autograd_function
 import warnings
 
-from . import backend
 from . import utility
 from . import impl
 
@@ -30,28 +29,36 @@ if False:
     from typing import Any, List, Union
 
 
-def interpet_forward_args(ctx, path, basepoint, initial):
-    ctx.basepoint_is_tensor = isinstance(basepoint, torch.Tensor)
-    ctx.initial_is_tensor = isinstance(initial, torch.Tensor)
-    basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path.size(-2), path.size(-1), path.dtype,
-                                                             path.device)
-    initial, initial_value = backend.interpret_initial(initial)
-    return basepoint, basepoint_value, initial, initial_value
+def interpret_basepoint(basepoint, batch_size, channel_size, dtype, device):
+    if basepoint is True:
+        basepoint_value = torch.zeros((batch_size, channel_size), dtype=dtype, device=device)
+    elif isinstance(basepoint, torch.Tensor):
+        basepoint_value = basepoint
+        basepoint = True
+    else:
+        basepoint_value = torch.Tensor()
+    return basepoint, basepoint_value
 
 
-def interpret_backward_grad(ctx, grad_basepoint, grad_initial):
-    if not ctx.basepoint_is_tensor:
-        grad_basepoint = None
-    if not ctx.initial_is_tensor:
-        grad_initial = None
-    return grad_basepoint, grad_initial
+def interpret_initial(initial):
+    if isinstance(initial, torch.Tensor):
+        initial_value = initial
+        initial = True
+    else:
+        initial_value = torch.Tensor()
+        initial = False
+    return initial, initial_value
 
 
 class _SignatureFunction(autograd.Function):
     @staticmethod
     def forward(ctx, path, depth, stream, basepoint, inverse, initial):
 
-        basepoint, basepoint_value, initial, initial_value = interpet_forward_args(ctx, path, basepoint, initial)
+        ctx.basepoint_is_tensor = isinstance(basepoint, torch.Tensor)
+        ctx.initial_is_tensor = isinstance(initial, torch.Tensor)
+        basepoint, basepoint_value = interpret_basepoint(basepoint, path.size(-2), path.size(-1), path.dtype,
+                                                         path.device)
+        initial, initial_value = interpret_initial(initial)
 
         signature_, path_increments = impl.signature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
                                                              initial, initial_value)
@@ -73,16 +80,18 @@ class _SignatureFunction(autograd.Function):
                                                                           ctx.depth, ctx.stream, ctx.basepoint,
                                                                           ctx.inverse, ctx.initial)
 
-        grad_basepoint, grad_initial = interpret_backward_grad(ctx, grad_basepoint, grad_initial)
+        if not ctx.basepoint_is_tensor:
+            grad_basepoint = None
+        if not ctx.initial_is_tensor:
+            grad_initial = None
 
         return grad_path, None, None, grad_basepoint, None, grad_initial, None
 
 
 def _signature_checkargs(path, depth, basepoint, initial):
     path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
-    basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path.size(-2), path.size(-1), path.dtype,
-                                                             path.device)
-    initial, initial_value = backend.interpret_initial(initial)
+    basepoint, basepoint_value = interpret_basepoint(basepoint, path.size(-2), path.size(-1), path.dtype, path.device)
+    initial, initial_value = interpret_initial(initial)
     impl.signature_checkargs(path, depth, basepoint, basepoint_value, initial, initial_value)
 
 
