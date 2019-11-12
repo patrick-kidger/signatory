@@ -46,32 +46,23 @@ def main():
     subparsers = parser.add_subparsers(dest='command', help='Which command to run')
     
     test_parser = subparsers.add_parser('test', parents=[deviceparser], description="Run tests")
-    test2_parser = subparsers.add_parser('test2', parents=[deviceparser], description="Run tests")
     benchmark_parser = subparsers.add_parser('benchmark', parents=[deviceparser], description="Run speed benchmarks")
     docs_parser = subparsers.add_parser('docs', description="Build documentation")
     readme_parser = subparsers.add_parser('readme', description="Generate the README from the documentation.")
-    workflows_parser = subparsers.add_parser('workflows', description="Generate the GitHub workflows from "
-                                                                         "templates.")
+    workflows_parser = subparsers.add_parser('workflows', description="Generate the GitHub workflows from templates.")
     should_not_import_parser = subparsers.add_parser('should_not_import', description="Tests that Signatory _cannot_ "
                                                                                       "be imported.")
 
     test_parser.set_defaults(cmd=test)
-    test2_parser.set_defaults(cmd=test2)
     benchmark_parser.set_defaults(cmd=benchmark)
     docs_parser.set_defaults(cmd=docs)
     readme_parser.set_defaults(cmd=readme)
     workflows_parser.set_defaults(cmd=workflows)
     should_not_import_parser.set_defaults(cmd=should_not_import)
 
-    test_parser.add_argument('-f', '--failfast', action='store_true', help='Stop tests on first failure.')
-    test_parser.add_argument('-n', '--nonames', action='store_false', dest='names',
-                             help="Don't print names and start time of the tests being run.")
-    test_parser.add_argument('-t', '--notimes', action='store_false', dest='times',
-                             help="Don't print the overall times of the tests that have been run.")
-
-    test2_parser.add_argument('-t', '--test', default='', help="What to test. Defaults to all tests.")
-    test2_parser.add_argument('-a', '--args', nargs=argparse.REMAINDER,
-                              help="All other arguments are forwarded on to pytest.")
+    test_parser.add_argument('-t', '--test', default='', help="What to test. Defaults to all tests.")
+    test_parser.add_argument('-a', '--args', nargs=argparse.REMAINDER,
+                             help="All other arguments are forwarded on to pytest.")
 
     benchmark_parser.add_argument('-e', '--noesig', action='store_false', dest='test_esig',
                                   help="Skip esig tests as esig is typically very slow.")
@@ -130,27 +121,6 @@ class _NullContext(object):
 
 
 def test(args):
-    """Run all tests.
-    The package 'iisignature' will need to be installed, to test against.
-    It can be installed via `pip install iisignature`
-    """
-    try:
-        import iisignature  # fail fast here if necessary
-    except ImportError:
-        raise ImportError("The iisignature package is required for running tests. It can be installed via 'pip "
-                          "install iisignature'")
-    import test.runner
-    import torch
-    with torch.cuda.device(args.device) if args.device != -1 else _NullContext():
-        print('Using ' + _get_device())
-        start = time.time()
-        result = test.runner.main(failfast=args.failfast, times=args.times, names=args.names)
-        end = time.time()
-        print("Total time: " + str(end - start))
-        return result
-
-
-def test2(args):
     try:
         import iisignature  # fail fast here if necessary
     except ImportError:
@@ -160,7 +130,7 @@ def test2(args):
     import torch
     with torch.cuda.device(args.device) if args.device != -1 else _NullContext():
         print('Using ' + _get_device())
-        pytest_args = [os.path.join(_here, 'test2', args.test)]
+        pytest_args = [os.path.join(_here, 'test', args.test)]
         pytest_args.extend(['--tb=long', '-ra', '--durations=0'])
         if args.args is not None:
             pytest_args.extend(args.args)

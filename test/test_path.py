@@ -3,9 +3,9 @@
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #    http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,201 +16,226 @@
 
 
 import gc
+import pytest
 import random
-import signatory
 import torch
-from torch import autograd
+import warnings
 import weakref
 
-import utils_testing as utils
+from helpers import helpers as h
+from helpers import validation as v
 
 
-class TestPath(utils.EnhancedTestCase):
-    def test_signature(self):
-        for c in utils.ConfigIter(inverse=False, stream=False, N=(1, 2), depth=(1, 2, 4)):
-            path_obj = signatory.Path(c.path, c.depth, basepoint=c.basepoint)
+tests = ['Path']
+depends = ['signature', 'logsignature']
+signatory = v.validate_tests(tests, depends)
 
-            if c.basepoint is True:
-                new_path = [torch.zeros(c.N, 1, c.C, dtype=torch.double, device=c.device), c.path]
-            elif c.basepoint is False:
-                new_path = [c.path]
-            else:  # isinstance(self.basepoint, torch.Tensor) == True
-                new_path = [c.basepoint.unsqueeze(1), c.path]
-            for _ in range(random.choice([0, 0, 1, 2, 3])):
-                length = random.choice([1, 2, 3])
-                extra_path = torch.rand(c.N, length, c.C, device=c.device, dtype=torch.double)
-                path_obj.update(extra_path)
-                new_path.append(extra_path)
 
-            basepointed_path = torch.cat(new_path, dim=1)
+def _update_lengths_update_grads(maxlength):
+    update_lengths = []
+    update_grads = []
+    num = int(torch.randint(low=0, high=3, size=(1,)))
+    for _ in range(num):
+        update_lengths.append(int(torch.randint(low=1, high=maxlength, size=(1,))))
+        update_grads.append(random.choice([True, False]))
+    return update_lengths, update_grads
 
-            for start in range(-2 * path_obj.size(1), 2 * path_obj.size(1)):
-                for end in range(-2 * path_obj.size(1), 2 * path_obj.size(1)):
-                    try:
-                        sig = path_obj.signature(start, end)
-                    except ValueError:
-                        try:
-                            c.signature(store=False, path=basepointed_path[:, start:end, :], basepoint=False)
-                        except ValueError:
-                            continue
-                        else:
-                            self.fail(c.fail(start=start, end=end))
-                    try:
-                        true_sig = c.signature(store=False, path=basepointed_path[:, start:end, :], basepoint=False)
-                    except ValueError:
-                        self.fail(c.fail(start=start, end=end))
-                    if not true_sig.allclose(sig):
-                        self.fail(c.diff_fail({'start': start, 'end': end}, sig=sig, true_sig=true_sig))
 
-                    if (path_obj.signature_size(-3), path_obj.signature_size(-1)) != true_sig.shape:
-                        self.fail(c.fail(path_signature_shape=path_obj.signature_shape,
-                                         true_signature_shape=true_sig.shape))
+def test_path():
+    """Tests that Path behaves correctly."""
+    # Test small edge cases thoroughly
+    for device in h.get_devices():
+        for batch_size in (1, 2):
+            for input_stream, basepoints in zip((1, 2), ((True, h.without_grad, h.with_grad),
+                                                         (False, True, h.without_grad, h.with_grad))):
+                for input_channels in (1, 2):
+                    for depth in (1, 2):
+                        path_grad = random.choice([False, True])
+                        basepoint = random.choice(basepoints)
+                        update_lengths, update_grads = _update_lengths_update_grads(3)
+                        _test_path(device, path_grad, batch_size, input_stream, input_channels, depth,
+                                   basepoint, update_lengths, update_grads, extrarandom=False)
 
-                    if path_obj.signature_channels() != true_sig.size(-1):
-                        self.fail(c.fail(path_signature_channels=path_obj.signature_channels(),
-                                         true_signature_channels=true_sig.size(-1)))
+    # Randomly test larger cases
+    for _ in range(50):
+        device = random.choice(h.get_devices())
+        batch_size = random.choice((1, 2, 5))
+        input_stream = random.choice([3, 6, 10])
+        input_channels = random.choice([1, 2, 6])
+        depth = random.choice([1, 2, 4, 6])
+        basepoint = random.choice([False, True, h.without_grad, h.with_grad])
+        path_grad = random.choice([False, True])
+        update_lengths, update_grads = _update_lengths_update_grads(10)
+        _test_path(device, path_grad, batch_size, input_stream, input_channels, depth,
+                   basepoint, update_lengths, update_grads, extrarandom=True)
 
-                    if path_obj.shape != basepointed_path.shape:
-                        self.fail(c.fail(path_shape=path_obj.shape,
-                                         true_shape=basepointed_path.shape))
+    # Do at least one large test
+    for device in h.get_devices():
+        _test_path(device, path_grad=True, batch_size=5, input_stream=10, input_channels=6, depth=6,
+                   basepoint=True, update_lengths=[5, 6], update_grads=[False, True], extrarandom=False)
 
-                    if path_obj.channels() != basepointed_path.size(-1):
-                        self.fail(c.fail(path_channels=path_obj.channels(),
-                                         true_channels=basepointed_path.size(-1)))
 
-    def test_logsignature(self):
-        for c in utils.ConfigIter(mode=utils.all_modes, inverse=False, stream=False, N=(1, 2), depth=(1, 2, 4)):
-            path_obj = signatory.Path(c.path, c.depth, basepoint=c.basepoint)
+def _test_path(device, path_grad, batch_size, input_stream, input_channels, depth, basepoint, update_lengths,
+               update_grads, extrarandom):
+    path = h.get_path(batch_size, input_stream, input_channels, device, path_grad)
+    basepoint = h.get_basepoint(batch_size, input_channels, device, basepoint)
+    path_obj = signatory.Path(path, depth, basepoint=basepoint)
 
-            if c.basepoint is True:
-                new_path = [torch.zeros(c.N, 1, c.C, dtype=torch.double, device=c.device), c.path]
-            elif c.basepoint is False:
-                new_path = [c.path]
-            else:  # isinstance(self.basepoint, torch.Tensor) == True
-                new_path = [c.basepoint.unsqueeze(1), c.path]
-            for _ in range(random.choice([0, 0, 1, 2, 3])):
-                length = random.choice([1, 2, 3])
-                extra_path = torch.rand(c.N, length, c.C, device=c.device, dtype=torch.double)
-                path_obj.update(extra_path)
-                new_path.append(extra_path)
+    if isinstance(basepoint, torch.Tensor):
+        full_path = torch.cat([basepoint.unsqueeze(1), path], dim=1)
+    elif basepoint is True:
+        full_path = torch.cat([torch.zeros(batch_size, 1, input_channels, device=device, dtype=torch.double), path],
+                              dim=1)
+    else:
+        full_path = path
 
-            basepointed_path = torch.cat(new_path, dim=1)
+    # First of all test a Path with no updates
+    _test_signature(path_obj, full_path, depth, extrarandom)
+    _test_logsignature(path_obj, full_path, depth, extrarandom)
+    assert path_obj.depth == depth
 
-            for start in range(-2 * path_obj.size(1), 2 * path_obj.size(1)):
-                for end in range(-2 * path_obj.size(1), 2 * path_obj.size(1)):
-                    try:
-                        logsig = path_obj.logsignature(start, end, mode=c.signatory_mode)
-                    except ValueError:
-                        try:
-                            c.logsignature(store=False, path=basepointed_path[:, start:end, :], basepoint=False)
-                        except ValueError:
-                            continue
-                        else:
-                            self.fail(c.fail(start=start, end=end))
-                    try:
-                        true_logsig = c.logsignature(store=False, path=basepointed_path[:, start:end, :], basepoint=False)
-                    except ValueError:
-                        self.fail(c.fail(start=start, end=end))
-                    if not true_logsig.allclose(logsig):
-                        self.fail(c.diff_fail({'start': start, 'end': end}, logsig=logsig, true_logsig=true_logsig))
+    if len(update_lengths) > 1:
+        # Then test Path with variable amounts of updates
+        for length, grad in zip(update_lengths, update_grads):
+            new_path = torch.rand(batch_size, length, input_channels, dtype=torch.double, device=device,
+                                  requires_grad=grad)
+            path_obj.update(new_path)
+            full_path = torch.cat([full_path, new_path], dim=1)
 
-                    if c.signatory_mode != 'expand':
-                        if (path_obj.logsignature_size(-3), path_obj.logsignature_size(-1)) != true_logsig.shape:
-                            self.fail(c.fail(path_logsignature_shape=path_obj.logsignature_shape,
-                                             true_logsignature_shape=true_logsig.shape))
+        _test_signature(path_obj, full_path, depth, extrarandom)
+        _test_logsignature(path_obj, full_path, depth, extrarandom)
+        assert path_obj.depth == depth
 
-                        if path_obj.logsignature_channels() != true_logsig.size(-1):
-                            self.fail(c.fail(path_logsignature_channels=path_obj.logsignature_channels(),
-                                             true_logsignature_channels=true_logsig.size(-1)))
 
-    def test_gradient_signature(self):
-        def gradchecked(path, depth, basepoint, update, start, end):
-            path_obj = signatory.Path(path, depth, basepoint=basepoint)
-            if update is not None:
-                path_obj.update(update)
-            return path_obj.signature(start, end)
+def _test_signature(path_obj, full_path, depth, extrarandom):
+    def candidate(start=None, end=None):
+        return path_obj.signature(start, end)
 
-        for c in utils.ConfigIter(inverse=False,
-                                  stream=False,
-                                  requires_grad=True,
-                                  size=utils.random_size(5)):
-            base_length = c.path.size(1)
-            if isinstance(c.basepoint, torch.Tensor) or c.basepoint:
-                base_length += 1
-            for update_length in (False, 1, 2, 3):
-                if update_length:
-                    length = base_length + update_length
-                    update = lambda: torch.rand(c.N, update_length, c.C, dtype=torch.double, device=c.device,
-                                                requires_grad=True)
+    def true(start, end):
+        return signatory.signature(full_path[:, start:end], depth)
+
+    def extra(true_signature):
+        assert (path_obj.signature_size(-3), path_obj.signature_size(-1)) == true_signature.shape
+        assert path_obj.signature_channels() == true_signature.size(-1)
+        assert path_obj.shape == full_path.shape
+        assert path_obj.channels() == full_path.size(-1)
+
+    _test_signature_or_logsignature(path_obj, candidate, true, extra, '_BackwardShortcutBackward', extrarandom)
+
+
+def _test_logsignature(path_obj, full_path, depth, extrarandom):
+    if extrarandom:
+        if random.choice([True, False, False]):
+            modes = h.all_modes
+        else:
+            modes = (h.expand_mode, h.words_mode)
+    else:
+        modes = h.all_modes
+
+    for mode in modes:
+
+        def candidate(start=None, end=None):
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', message="The logsignature with mode='brackets' has been requested on "
+                                                          "the GPU.", category=UserWarning)
+                return path_obj.logsignature(start, end, mode=mode)
+
+        def true(start, end):
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', message="The logsignature with mode='brackets' has been requested on "
+                                                          "the GPU.", category=UserWarning)
+                return signatory.logsignature(full_path[:, start:end], depth, mode=mode)
+
+        def extra(true_logsignature):
+            if mode != h.expand_mode:
+                assert (path_obj.logsignature_size(-3),
+                        path_obj.logsignature_size(-1)) == true_logsignature.shape
+                assert path_obj.logsignature_channels() == true_logsignature.size(-1)
+
+        _test_signature_or_logsignature(path_obj, candidate, true, extra, '_SignatureToLogsignatureFunctionBackward',
+                                        extrarandom)
+
+
+def _boundaries(length):
+    yield -length - 1
+    yield -length
+    yield -1
+    yield 0
+    yield 1
+    yield length - 1
+    yield length
+    yield None
+
+
+def _start_end(length, extrarandom):
+    for start in _boundaries(length):
+        for end in _boundaries(length):
+            if (not extrarandom) or random.choice([True, False]):
+                yield start, end
+    for _ in range(5):
+        start = int(torch.randint(low=-length, high=length, size=(1,)))
+        end = int(torch.randint(low=-length, high=length, size=(1,)))
+        yield start, end
+
+
+def _test_signature_or_logsignature(path_obj, candidate, true, extra, backward_name, extrarandom):
+    # We perform multiple tests here.
+    # Test #1: That the memory usage is consistent
+    # Test #2: That the backward 'ctx' is correctly garbage collected
+    # Test #3: The forward accuracy of a particular operation
+    # Test #4: The backward accuracy of the same operation
+
+    def one_iteration(start, end):
+        gc.collect()
+        torch.cuda.synchronize()
+        torch.cuda.reset_max_memory_allocated()
+        try:
+            tensor = candidate(start, end)
+        except ValueError as e:
+            try:
+                true(start, end)
+            except ValueError:
+                return 0
+            else:
+                pytest.fail(str(e))
+        try:
+            true_tensor = true(start, end)
+        except ValueError as e:
+            pytest.fail(str(e))
+        h.diff(tensor, true_tensor)  # Test #3
+
+        extra(true_tensor)  # Any extra tests
+
+        if tensor.requires_grad:
+            grad = torch.rand_like(tensor)
+            tensor.backward(grad)
+            path_grads = []
+            for path in path_obj.path:
+                if path.grad is None:
+                    path_grads.append(None)
                 else:
-                    length = base_length
-                    update = lambda: None
-
-                for start in range(0, length + 1):
-                    for end in range(start + 2, length + 1):
-                        try:
-                            autograd.gradcheck(gradchecked, (c.path, c.depth, c.basepoint, update(), start, end))
-                        except Exception:
-                            self.fail(c.fail(base_length=base_length, length=length, update_length=update_length))
-
-    def test_gradient_logsignature(self):
-        def gradchecked(path, depth, basepoint, update, start, end, mode):
-            path_obj = signatory.Path(path, depth, basepoint=basepoint)
-            if update is not None:
-                path_obj.update(update)
-            return path_obj.logsignature(start, end, mode=mode)
-
-        for c in utils.ConfigIter(mode=utils.all_modes,
-                                  inverse=False,
-                                  stream=False,
-                                  requires_grad=True,
-                                  size=utils.random_size(5)):
-            base_length = c.path.size(1)
-            if isinstance(c.basepoint, torch.Tensor) or c.basepoint:
-                base_length += 1
-            for update_length in (False, 1, 2, 3):
-                if update_length:
-                    length = base_length + update_length
-                    update = lambda: torch.rand(c.N, update_length, c.C, dtype=torch.double, device=c.device,
-                                                requires_grad=True)
+                    path_grads.append(path.grad.clone())
+                    path.grad.zero_()
+            true_tensor.backward(grad)
+            for path, path_grad in zip(path_obj.path, path_grads):
+                if path_grad is None:
+                    assert (path.grad is None) or (path.grad.nonzero().numel() == 0)
                 else:
-                    length = base_length
-                    update = lambda: None
-
-                for start in range(0, length + 1):
-                    for end in range(start + 2, length + 1):
-                        try:
-                            autograd.gradcheck(gradchecked, (c.path, c.depth, c.basepoint, update(), start, end,
-                                                             c.signatory_mode))
-                        except Exception:
-                            self.fail(c.fail(base_length=base_length, length=length, update_length=update_length,
-                                             start=start, end=end))
-
-    def test_ctx_dies_signature(self):
-        for c in utils.ConfigIter(inverse=False,
-                                  stream=False,
-                                  requires_grad=True,
-                                  size=utils.random_size(5, min_length=3)):
-            path_obj = signatory.Path(c.path, c.depth, basepoint=c.basepoint)
-            signatory_out = path_obj.signature(1, None)
-            ctx = signatory_out.grad_fn
+                    h.diff(path.grad, path_grad)  # Test #4
+                    path.grad.zero_()
+            ctx = tensor.grad_fn
+            assert type(ctx).__name__ == backward_name
             ref = weakref.ref(ctx)
             del ctx
-            del signatory_out
+            del tensor
             gc.collect()
-            self.assertIsNone(ref(), c.fail())
+            assert ref() is None  # Test #2
+        torch.cuda.synchronize()
+        return torch.cuda.max_memory_allocated()
 
-    def test_ctx_dies_logsignature(self):
-        for c in utils.ConfigIter(mode=utils.all_modes,
-                                  inverse=False,
-                                  stream=False,
-                                  requires_grad=True,
-                                  size=utils.random_size(5, min_length=3)):
-            path_obj = signatory.Path(c.path, c.depth, basepoint=c.basepoint)
-            signatory_out = path_obj.logsignature(1, None, mode=c.signatory_mode)
-            ctx = signatory_out.grad_fn
-            ref = weakref.ref(ctx)
-            del ctx
-            del signatory_out
-            gc.collect()
-            self.assertIsNone(ref(), c.fail())
+    # Computations involving the start or not operate differently, so we take the max over both
+    memory_used = max(one_iteration(0, None), one_iteration(1, None))
+    for start, end in _start_end(path_obj.size(1), extrarandom):
+        # This one seems to be a bit inconsistent with how much memory is used on each run, so we give some
+        # leeway by doubling
+        assert one_iteration(start, end) <= 2 * memory_used

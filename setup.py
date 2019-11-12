@@ -31,7 +31,7 @@ if not sys.platform.startswith('win'):  # linux or mac
     extra_compile_args.append('-fvisibility=hidden')
 
 if sys.platform.startswith('win'):  # windows
-    extra_compile_args.append('/OPENMP')
+    extra_compile_args.append('/openmp')
 else:  # linux or mac
     extra_compile_args.append('-fopenmp')
 
