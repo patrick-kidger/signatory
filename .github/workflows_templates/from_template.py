@@ -337,7 +337,8 @@ r"""  python -m pip install iisignature pytest
 # but we use it for consistency with the other two OS)
 terminate_linux = "",
 
-# Setup for running on Mac
+# Setup for running on Mac. Need to install LLVM to get OpenMP support. Must happen outside the sudo'd file as Homebrew
+# can't be run as root.
 setup_mac = \
 r"""name: Mac
 <<if_>> && (matrix.os == '<<mac>>')
@@ -345,6 +346,11 @@ env:
   PYTHON_VERSION: ${{ matrix.python-version }}
 run: |
   set -x
+  brew update
+  brew install llvm libomp
+  echo '[build_ext]
+  include_dirs=/usr/local/include:/usr/local/opt/llvm/include
+  library_dirs=/usr/local/lib:/usr/local/opt/llvm/lib' > setup.cfg
   echo 'set -ex
   . $CONDA/etc/profile.d/conda.sh
   conda create -n myenv python=$PYTHON_VERSION -y
@@ -353,14 +359,9 @@ run: |
   conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
   python command.py should_not_import""",
 
-# Builds bdist_wheel on Mac. Need to install LLVM to get OpenMP support.
+# Builds bdist_wheel on Mac.
 build_mac = \
-"""  brew update
-  brew install llvm libomp
-  echo "[build_ext]
-  include_dirs=/usr/local/include:/usr/local/opt/llvm/include
-  library_dirs=/usr/local/lib:/usr/local/opt/llvm/lib" > setup.cfg
-  MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel""",
+"""  MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel""",
 
 # Install from sdist or bdist_wheel on Mac
 install_local_mac = \
