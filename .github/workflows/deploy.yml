@@ -114,7 +114,7 @@ jobs:
         ret = retry(lambda: not subprocess.run('python -m pip install signatory==' + metadata.version + '-torch${{ matrix.pytorch-version }} --only-binary signatory').returncode);
         sys.exit(not ret)
         " &&
-        python -m pip install iisignature &&
+        python -m pip install iisignature pytest &&
         python -c "import os;
         import subprocess;
         import sys;
@@ -141,7 +141,7 @@ jobs:
         retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
         SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
         retry python -m pip install signatory==$SIGNATORY_VERSION-torch${{ matrix.pytorch-version }} --no-binary signatory
-        python -m pip install iisignature
+        python -m pip install iisignature pytest
         python -c "import os
         import subprocess
         import sys
@@ -165,7 +165,12 @@ jobs:
         python -m pip install --upgrade pip
         conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
         python command.py should_not_import
-        MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel
+        brew update
+        brew install llvm libomp
+        echo "[build_ext]
+        include_dirs=/usr/local/include:/usr/local/opt/llvm/include
+        library_dirs=/usr/local/lib:/usr/local/opt/llvm/lib" > setup.cfg
+        MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel
         pip install twine
         twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/*
         retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
@@ -176,6 +181,7 @@ jobs:
         python setup.py install
         cd ..
         rm -rf iisignature
+        python -m pip install pytest
         python -c "import os
         import subprocess
         import sys

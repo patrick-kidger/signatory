@@ -175,7 +175,7 @@ jobs:
         python command.py should_not_import &&
         python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel &&
         for %%f in (./dist/*) do (python -m pip install ./dist/%%~nxf) &&
-        python -m pip install iisignature &&
+        python -m pip install iisignature pytest &&
         python -c "import os;
         import subprocess;
         import sys;
@@ -206,7 +206,7 @@ jobs:
         print(x[0])
         sys.exit(len(x) != 1)")
         python -m pip install ./dist/$SIGNATORY_INSTALLED
-        python -m pip install iisignature
+        python -m pip install iisignature pytest
         python -c "import os
         import subprocess
         import sys
@@ -230,7 +230,12 @@ jobs:
         python -m pip install --upgrade pip
         conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
         python command.py should_not_import
-        MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel
+        brew update
+        brew install llvm libomp
+        echo "[build_ext]
+        include_dirs=/usr/local/include:/usr/local/opt/llvm/include
+        library_dirs=/usr/local/lib:/usr/local/opt/llvm/lib" > setup.cfg
+        MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel
         SIGNATORY_INSTALLED=$(python -c "import os
         import sys
         x = os.listdir('\''dist'\'')
@@ -242,6 +247,7 @@ jobs:
         python setup.py install
         cd ..
         rm -rf iisignature
+        python -m pip install pytest
         python -c "import os
         import subprocess
         import sys

@@ -274,7 +274,7 @@ install_remote_windows = \
 
 # Runs tests on Windows
 test_windows = \
-r"""  python -m pip install iisignature &&
+r"""  python -m pip install iisignature pytest &&
   python -c "import os;
   import subprocess;
   import sys;
@@ -323,7 +323,7 @@ install_remote_linux = \
 
 # Runs tests on Linux
 test_linux = \
-r"""  python -m pip install iisignature
+r"""  python -m pip install iisignature pytest
   python -c "import os
   import subprocess
   import sys
@@ -353,8 +353,14 @@ run: |
   conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
   python command.py should_not_import""",
 
-# Builds bdist_wheel on Mac
-build_mac = '  MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel',
+# Builds bdist_wheel on Mac. Need to install LLVM to get OpenMP support.
+build_mac = \
+"""  brew update
+  brew install llvm libomp
+  echo "[build_ext]
+  include_dirs=/usr/local/include:/usr/local/opt/llvm/include
+  library_dirs=/usr/local/lib:/usr/local/opt/llvm/lib" > setup.cfg
+  MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel""",
 
 # Install from sdist or bdist_wheel on Mac
 install_local_mac = \
@@ -378,6 +384,7 @@ test_mac = \
   python setup.py install
   cd ..
   rm -rf iisignature
+  python -m pip install pytest
   python -c "import os
   import subprocess
   import sys
