@@ -225,9 +225,6 @@ jobs:
         set -x
         brew update
         brew install llvm libomp
-        echo '[build_ext]
-        include_dirs=/usr/local/include:/usr/local/opt/llvm/include
-        library_dirs=/usr/local/lib:/usr/local/opt/llvm/lib' > setup.cfg
         echo 'set -ex
         . $CONDA/etc/profile.d/conda.sh
         conda create -n myenv python=$PYTHON_VERSION -y
@@ -235,6 +232,8 @@ jobs:
         python -m pip install --upgrade pip
         conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
         python command.py should_not_import
+        export LDFLAGS="-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib"
+        export CPPFLAGS="-I/usr/local/opt/llvm/include"
         MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build="_torch${{ matrix.pytorch-version }}" bdist_wheel
         SIGNATORY_INSTALLED=$(python -c "import os
         import sys

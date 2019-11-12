@@ -111,9 +111,6 @@ jobs:
         set -x
         brew update
         brew install llvm libomp
-        echo '[build_ext]
-        include_dirs=/usr/local/include:/usr/local/opt/llvm/include
-        library_dirs=/usr/local/lib:/usr/local/opt/llvm/lib' > setup.cfg
         echo 'set -ex
         . $CONDA/etc/profile.d/conda.sh
         conda create -n myenv python=$PYTHON_VERSION -y
