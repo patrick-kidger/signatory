@@ -23,7 +23,7 @@ where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to down
 
     For example, if you are using PyTorch 1.3.0 and want Signatory 1.1.4, then you should run:
 
-    .. oode-block:: bash
+    .. code-block:: bash
 
         pip install signatory==1.1.4-torch1.3.0
 
