@@ -103,7 +103,7 @@ def validate_tests(tests, depends):
     for test in tests:
         signatory_functionality_graph.mark(test)
         for depend in depends:
-            signatory_functionality_graph.add_directed_edge(test, depend, os.path.basename(inspect.stack()[1].filename))
+            signatory_functionality_graph.add_directed_edge(test, depend, os.path.basename(inspect.stack()[1][1]))
 
     signatory_mock = argparse.Namespace()
     for string in it.chain(tests, depends):

@@ -134,7 +134,7 @@ def test(args):
         pytest_args.extend(['--tb=long', '-ra', '--durations=0'])
         if args.args is not None:
             pytest_args.extend(args.args)
-        return pytest.main(pytest_args)
+        return pytest.main(pytest_args) == 0
 
 
 def benchmark(args):
@@ -317,6 +317,5 @@ def should_not_import(args=()):
             
 if __name__ == '__main__':
     result = main()
-    # not 'if not result'
-    if result is False:
-        sys.exit(1)
+    if isinstance(result, bool):
+        sys.exit(not result)
