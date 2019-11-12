@@ -23,8 +23,7 @@ import warnings
 
 from . import backend
 from . import utility
-# noinspection PyUnresolvedReferences
-from . import _impl
+from . import impl
 
 # noinspection PyUnreachableCode
 if False:
@@ -54,8 +53,8 @@ class _SignatureFunction(autograd.Function):
 
         basepoint, basepoint_value, initial, initial_value = interpet_forward_args(ctx, path, basepoint, initial)
 
-        signature_, path_increments = _impl.signature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
-                                                              initial, initial_value)
+        signature_, path_increments = impl.signature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
+                                                             initial, initial_value)
         ctx.save_for_backward(signature_, path_increments)
         ctx.depth = depth
         ctx.stream = stream
@@ -70,9 +69,9 @@ class _SignatureFunction(autograd.Function):
     def backward(ctx, grad_result):
         signature_, path_increments = ctx.saved_tensors
 
-        grad_path, grad_basepoint, grad_initial = _impl.signature_backward(grad_result, signature_, path_increments,
-                                                                           ctx.depth, ctx.stream, ctx.basepoint,
-                                                                           ctx.inverse, ctx.initial)
+        grad_path, grad_basepoint, grad_initial = impl.signature_backward(grad_result, signature_, path_increments,
+                                                                          ctx.depth, ctx.stream, ctx.basepoint,
+                                                                          ctx.inverse, ctx.initial)
 
         grad_basepoint, grad_initial = interpret_backward_grad(ctx, grad_basepoint, grad_initial)
 
@@ -84,7 +83,7 @@ def _signature_checkargs(path, depth, basepoint, initial):
     basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path.size(-2), path.size(-1), path.dtype,
                                                              path.device)
     initial, initial_value = backend.interpret_initial(initial)
-    _impl.signature_checkargs(path, depth, basepoint, basepoint_value, initial, initial_value)
+    impl.signature_checkargs(path, depth, basepoint, basepoint_value, initial, initial_value)
 
 
 def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
@@ -107,7 +106,7 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
             # backward pass (whilst the batch trick does), so we don't use it if we're going to perform a backward
             # operation.
             return
-        threshold = _impl.hardware_concurrency()
+        threshold = impl.hardware_concurrency()
         if threshold == 0:
             # Indicates that we can't get the amount of hardware concurrency, which is a bit weird.
             # In this case let's not try to be clever.
@@ -312,7 +311,7 @@ def signature_channels(channels, depth):
         An int specifying the number of channels in the signature of the path.
     """
 
-    return _impl.signature_channels(channels, depth)
+    return impl.signature_channels(channels, depth)
 
 
 def extract_signature_term(sigtensor, channels, depth):
@@ -351,12 +350,12 @@ class _SignatureCombineFunction(autograd.Function):
         ctx.input_channels = input_channels
         ctx.depth = depth
         ctx.save_for_backward(*sigtensors)
-        return _impl.signature_combine_forward(list(sigtensors), input_channels, depth)
+        return impl.signature_combine_forward(list(sigtensors), input_channels, depth)
 
     @staticmethod
     def backward(ctx, grad):
         sigtensors = ctx.saved_tensors
-        grad = _impl.signature_combine_backward(grad, list(sigtensors), ctx.input_channels, ctx.depth)
+        grad = impl.signature_combine_backward(grad, list(sigtensors), ctx.input_channels, ctx.depth)
         return (None, None) + tuple(grad)
 
 

@@ -348,9 +348,6 @@ run: |
   set -x
   brew update
   brew install llvm libomp
-  echo '[build_ext]
-  include_dirs=/usr/local/include:/usr/local/opt/llvm/include
-  library_dirs=/usr/local/lib:/usr/local/opt/llvm/lib' > setup.cfg
   echo 'set -ex
   . $CONDA/etc/profile.d/conda.sh
   conda create -n myenv python=$PYTHON_VERSION -y
@@ -361,7 +358,9 @@ run: |
 
 # Builds bdist_wheel on Mac.
 build_mac = \
-"""  MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build="_torch${{ matrix.pytorch-version }}" bdist_wheel""",
+"""  export LDFLAGS="-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib"
+  export CPPFLAGS="-I/usr/local/opt/llvm/include"
+  MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build="_torch${{ matrix.pytorch-version }}" bdist_wheel""",
 
 # Install from sdist or bdist_wheel on Mac
 install_local_mac = \

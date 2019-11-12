@@ -24,8 +24,7 @@ import warnings
 import weakref
 
 from . import signature_module as smodule
-# noinspection PyUnresolvedReferences
-from . import _impl
+from . import impl
 
 # noinspection PyUnreachableCode
 if False:
@@ -34,11 +33,11 @@ if False:
 
 def _interpret_mode(mode):
     if mode == "expand":
-        return _impl.LogSignatureMode.Expand
+        return impl.LogSignatureMode.Expand
     elif mode == "brackets":
-        return _impl.LogSignatureMode.Brackets
+        return impl.LogSignatureMode.Brackets
     elif mode == "words":
-        return _impl.LogSignatureMode.Words
+        return impl.LogSignatureMode.Words
     else:
         raise ValueError("Invalid values for argument 'mode'. Valid values are 'expand', 'brackets', or 'words'.")
 
@@ -48,7 +47,7 @@ class _SignatureToLogsignatureFunction(autograd.Function):
     def forward(ctx, signature, channels, depth, stream, mode, lyndon_info):
         mode = _interpret_mode(mode)
 
-        logsignature_, lyndon_info_capsule = _impl.signature_to_logsignature_forward(signature, channels, depth, stream,
+        logsignature_, lyndon_info_capsule = impl.signature_to_logsignature_forward(signature, channels, depth, stream,
                                                                                      mode, lyndon_info)
         ctx.save_for_backward(signature.detach())
         ctx.channels = channels
@@ -64,8 +63,8 @@ class _SignatureToLogsignatureFunction(autograd.Function):
     def backward(ctx, grad_logsignature):
         signature, = ctx.saved_tensors
 
-        grad_signature = _impl.signature_to_logsignature_backward(grad_logsignature, signature, ctx.channels, ctx.depth,
-                                                                  ctx.stream, ctx.mode, ctx.lyndon_info_capsule)
+        grad_signature = impl.signature_to_logsignature_backward(grad_logsignature, signature, ctx.channels, ctx.depth,
+                                                                 ctx.stream, ctx.mode, ctx.lyndon_info_capsule)
 
         return grad_signature, None, None, None, None, None
 
@@ -158,7 +157,7 @@ class SignatureToLogSignature(nn.Module):
             return cls._lyndon_info_capsule_cache[(in_channels, depth, mode)]
         except KeyError:
             mode = _interpret_mode(mode)
-            lyndon_info_capsule = cls._RefHolder(_impl.make_lyndon_info(in_channels, depth, mode))
+            lyndon_info_capsule = cls._RefHolder(impl.make_lyndon_info(in_channels, depth, mode))
             cls._lyndon_info_capsule_cache[(in_channels, depth, mode)] = lyndon_info_capsule
             return lyndon_info_capsule
 

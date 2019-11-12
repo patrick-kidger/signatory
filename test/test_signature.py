@@ -174,8 +174,8 @@ def _test_batch_trick(class_, device, path_grad, batch_size, input_stream, input
     if device == 'cuda':
         threshold = 512
     else:
-        from signatory import _impl
-        threshold = _impl.hardware_concurrency()
+        from signatory import impl
+        threshold = impl.hardware_concurrency()
         if threshold < 2:
             return  # can't test the batch trick in this case
     if round(float(threshold) / batch_size) < 2:

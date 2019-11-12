@@ -19,13 +19,10 @@ Documentation: signatory.readthedocs.io
 """
 
 
-import functools as ft
-import sys
 import torch  # must be imported before anything from signatory
-import types
 
 try:
-    from . import _impl
+    from . import impl
 except ImportError as e:
     if 'specified procedure could not be found' in str(e):
         raise ImportError('Caught ImportError:\n```\n{}\n```\nThis can probably be fixed by updating your version of '
@@ -35,41 +32,6 @@ except ImportError as e:
                           'PyTorch. See the FAQ in the documentation.'.format(str(e)))
     else:
         raise
-
-
-if sys.platform.startswith('darwin'):
-    # It seems that either the use of clang or running on Mac means that exceptions don't get properly translated by
-    # pybind11. In particular it raises RuntimeError("Caught an unknown exception!") rather than anything else.
-    # We only use ValueErrors so we just translate to that; this is pretty much the best we can do.
-    class compat_module(_impl.__class__):
-        wraps = {}  # should really be an instance attribute but we only have one instance of this class, so it doesn't
-                    # matter
-
-        def _get_wrapped(self, obj):
-            if isinstance(obj, types.BuiltinFunctionType):
-                try:
-                    return self.__class__.wraps[obj]
-                except KeyError:
-                    @ft.wraps(obj)
-                    def obj_wrapper(*args, **kwargs):
-                        try:
-                            return obj(*args, **kwargs)
-                        except RuntimeError as e:
-                            if 'unknown exception' in str(e):
-                                raise ValueError("Exception raised. Unfortunately C++-to-Python translation of "
-                                                 "exceptions doesn't work properly on a Mac so that's all we know.")
-                            else:
-                                raise
-                    self.__class__.wraps[obj] = obj_wrapper
-                    return obj_wrapper
-            else:
-                return obj
-
-        def __getattribute__(self, item):
-            obj = super(compat_module, self).__getattribute(item)
-            return self._get_wrapped(obj)
-
-    _impl.__class__ = compat_module
 
 
 from .augment import Augment

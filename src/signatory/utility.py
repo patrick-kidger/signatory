@@ -16,10 +16,8 @@
 
 
 import itertools as it
-import math
 
-# noinspection PyUnresolvedReferences
-from . import _impl
+from . import impl
 
 
 # noinspection PyUnreachableCode
@@ -48,7 +46,7 @@ def lyndon_words(channels, depth):
         then ordered lexicographically within each length class.
     """
 
-    return _impl.lyndon_words(channels, depth)
+    return impl.lyndon_words(channels, depth)
 
 
 def lyndon_brackets(channels, depth):
@@ -68,7 +66,7 @@ def lyndon_brackets(channels, depth):
         A list. Each element corresponds to a single Lyndon word with its standard bracketing. The words are ordered by
         length, and then ordered lexicographically within each length class."""
 
-    return _impl.lyndon_brackets(channels, depth)
+    return impl.lyndon_brackets(channels, depth)
 
 
 def all_words(channels, depth):
@@ -110,10 +108,10 @@ def max_parallelism(value=None):
 
     Calling without arguments will return the current value.
     Passing a value of 1 will disable parallelism.
-    Passing :code:`-1`, :code:`math.inf` or :code:`np.inf` will enable unlimited parallelism.
+    Passing :code:`-1`, :code:`math.inf`, :code:`np.inf` or :code:`float('inf')` will enable unlimited parallelism.
     """
     if value is not None:
-        if value == math.inf:  # also true for np.inf
+        if value == float('inf'):
             value = -1
-        _impl.set_max_parallelism(value)
-    return _impl.get_max_parallelism()
+        impl.set_max_parallelism(value)
+    return impl.get_max_parallelism()

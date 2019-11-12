@@ -17,4 +17,4 @@ everything here is experimental and may change without notice.
 """
 
 
-from ._impl import (lyndon_words_to_basis_transform,)
+from .impl import (lyndon_words_to_basis_transform,)

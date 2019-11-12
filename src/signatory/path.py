@@ -22,7 +22,7 @@ from torch.autograd import function as autograd_function
 from . import backend
 from . import signature_module as smodule
 from . import logsignature_module as lmodule
-from . import _impl
+from . import impl
 
 # noinspection PyUnreachableCode
 if False:
@@ -74,14 +74,14 @@ class _BackwardShortcut(autograd.Function):
         # path_increments = path[1:] - path[:-1]
         # Except it doesn't waste time copying values like torch.cat would
 
-        grad_path, _, _ = _impl.signature_backward(grad_signature,
-                                                   signature,
-                                                   path_increments,
-                                                   ctx.depth,
-                                                   False,  # stream
-                                                   False,  # basepoint
-                                                   False,  # inverse
-                                                   False)  # initial
+        grad_path, _, _ = impl.signature_backward(grad_signature,
+                                                  signature,
+                                                  path_increments,
+                                                  ctx.depth,
+                                                  False,  # stream
+                                                  False,  # basepoint
+                                                  False,  # inverse
+                                                  False)  # initial
 
         result = [None, None]
         start = 0

@@ -15,6 +15,7 @@
 """Configures the tests."""
 
 
+import copy
 import pytest
 import signatory
 import sys
@@ -71,7 +72,7 @@ def pytest_collection_finish(session):
 @pytest.fixture(scope='module')
 def path_hack(request):
     """Hacks the PYTHONPATH to be able to import other things."""
-    original_path = sys.path.copy()
+    original_path = copy.copy(sys.path)
     add_to_path = getattr(request.module, 'add_to_path')
     if isinstance(add_to_path, (tuple, list)):
         sys.path.extend(add_to_path)
