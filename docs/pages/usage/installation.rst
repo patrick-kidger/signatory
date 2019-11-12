@@ -8,7 +8,7 @@ Available for Linux, Mac, Windows.
 
 Requires `PyTorch <http://pytorch.org/>`__ 1.2.0 or 1.3.0.
 
-Installation is simple:
+Installation is pretty simple:
 
 .. code-block:: bash
 
@@ -16,14 +16,18 @@ Installation is simple:
 
 where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is |version|) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
 
-Then just ``import signatory`` inside Python.
-
 .. command.readme off (GitHub doesn't support using admonitions this way, and just uses indented text instead.)
 .. admonition:: Example
 
     .. command.readme on
 
-    For example, if you are using PyTorch 1.2.0 and want Signatory 1.1.4, then you should run ``pip install signatory==1.1.4-torch1.2.0``.
+    For example, if you are using PyTorch 1.3.0 and want Signatory 1.1.4, then you should run:
+
+    .. oode-block:: bash
+
+        pip install signatory==1.1.4-torch1.3.0
+
+Then just ``import signatory`` inside Python.
 
 .. command.readme off
 .. caution::

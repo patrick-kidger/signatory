@@ -62,7 +62,7 @@ jobs:
         import metadata;
         sleep = lambda t: time.sleep(t) or True;
         retry = lambda fn: fn() or (sleep(20) and fn()) or (sleep(40) and fn()) or (sleep(120) and fn()) or (sleep(240) and fn());
-        ret = retry(lambda: not subprocess.run('python -m pip install signatory==' + metadata.version + '-torch${{ matrix.pytorch-version }}').returncode);
+        ret = retry(lambda: not subprocess.run('python -m pip install signatory==' + metadata.version + '-torch${{ matrix.pytorch-version }} --only-binary signatory').returncode);
         sys.exit(not ret)
         " &&
         python -m pip install iisignature &&
@@ -91,7 +91,7 @@ jobs:
         python command.py should_not_import
         retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
         SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-        retry python -m pip install signatory==$SIGNATORY_VERSION-torch${{ matrix.pytorch-version }}
+        retry python -m pip install signatory==$SIGNATORY_VERSION-torch${{ matrix.pytorch-version }} --no-binary signatory
         python -m pip install iisignature
         python -c "import os
         import subprocess
@@ -118,7 +118,7 @@ jobs:
         python command.py should_not_import
         retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
         SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-        retry python -m pip install signatory==$SIGNATORY_VERSION-torch${{ matrix.pytorch-version }}
+        retry python -m pip install signatory==$SIGNATORY_VERSION-torch${{ matrix.pytorch-version }} --only-binary signatory
         git clone https://github.com/bottler/iisignature.git
         cd iisignature
         python setup.py install

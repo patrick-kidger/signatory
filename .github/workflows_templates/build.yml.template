@@ -92,7 +92,7 @@ jobs:
 
   build:
     <<strategy>>
-    needs: [check_version, check_readme]
+    needs: [check_version, check_readme, check_workflows]
     steps:
     - <<checkout_code>>
       

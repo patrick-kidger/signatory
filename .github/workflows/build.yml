@@ -146,7 +146,7 @@ jobs:
           - os: windows-2016
             python-version: 2.7.13
       fail-fast: false
-    needs: [check_version, check_readme]
+    needs: [check_version, check_readme, check_workflows]
     steps:
     - name: Checkout code
       if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
