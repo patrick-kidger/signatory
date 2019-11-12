@@ -161,7 +161,7 @@ def test2(args):
     with torch.cuda.device(args.device) if args.device != -1 else _NullContext():
         print('Using ' + _get_device())
         pytest_args = [os.path.join(_here, 'test2', args.test)]
-        pytest_args.extend(['-x', '--tb=long', '-ra', '--durations=0'])
+        pytest_args.extend(['--tb=long', '-ra', '--durations=0'])
         if args.args is not None:
             pytest_args.extend(args.args)
         return pytest.main(pytest_args)

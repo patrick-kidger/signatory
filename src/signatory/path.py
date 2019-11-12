@@ -54,29 +54,25 @@ class _BackwardShortcut(autograd.Function):
         signature = saved_tensors[0]
         path_pieces = saved_tensors[1:]
 
-        if len(path_pieces) > 1:
-            length = 0
-            for piece in path_pieces:
-                length += piece.size(-3)
-            p = path_pieces[0]
-            path_increments = torch.empty(length - 1, p.size(-2), p.size(-1), device=p.device, dtype=p.dtype)
-            torch.sub(p[1:], p[:-1], out=path_increments[:p.size(0) - 1])
-            prev_piece = p
-            next_path_increment = p.size(0) - 1
-            for piece in path_pieces[1:]:
-                torch.sub(piece[0], prev_piece[-1], out=path_increments[next_path_increment])
-                next_path_increment += 1
-                next_next_path_increment = next_path_increment + piece.size(0) - 1
-                torch.sub(piece[1:], piece[:-1], out=path_increments[next_path_increment:next_next_path_increment])
-                next_path_increment = next_next_path_increment
-                prev_piece = piece
-            # The above is basically the same as:
-            # path = torch.cat(path_pieces, dim=0)
-            # path_increments = path[1:] - path[:-1]
-            # Except it doesn't waste time copying values like torch.cat would
-        else:
-            path = path_pieces[0]
-            path_increments = path[1:] - path[:-1]
+        length = 0
+        for piece in path_pieces:
+            length += piece.size(-3)
+        p = path_pieces[0]
+        path_increments = torch.empty(length - 1, p.size(-2), p.size(-1), device=p.device, dtype=p.dtype)
+        torch.sub(p[1:], p[:-1], out=path_increments[:p.size(0) - 1])
+        prev_piece = p
+        next_path_increment = p.size(0) - 1
+        for piece in path_pieces[1:]:
+            torch.sub(piece[0], prev_piece[-1], out=path_increments[next_path_increment])
+            next_path_increment += 1
+            next_next_path_increment = next_path_increment + piece.size(0) - 1
+            torch.sub(piece[1:], piece[:-1], out=path_increments[next_path_increment:next_next_path_increment])
+            next_path_increment = next_next_path_increment
+            prev_piece = piece
+        # The above is basically the same as:
+        # path = torch.cat(path_pieces, dim=0)
+        # path_increments = path[1:] - path[:-1]
+        # Except it doesn't waste time copying values like torch.cat would
 
         grad_path, _, _ = _impl.signature_backward(grad_signature,
                                                    signature,

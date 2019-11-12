@@ -92,7 +92,47 @@ jobs:
         readme_old = io.open('README.rst.old', 'r', encoding='utf-8')
         sys.exit(readme.read() != readme_old.read())
         "
-  
+
+  check_workflows:
+      runs-on: ${{ matrix.os }}
+      strategy:
+        matrix:
+          os: [ubuntu-16.04]
+          python-version: [3.7.0]
+          pytorch-version: [1.2.0]
+      
+      steps:
+      - name: Checkout code
+        if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+        uses: actions/checkout@v1
+
+      - name: Install Python
+        if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+        uses: actions/setup-python@v1
+        with:
+          python-version: '3.7'
+
+      - name: Compare Workflows
+        if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+        run: |
+          cp .github/workflows/build.yml .github/workflows/build.yml.old
+          cp .github/workflows/deploy.yml .github/workflows/deploy.yml.old
+          cp .github/workflows/log_dispatch.yml .github/workflows/log_dispatch.yml.old
+          cp .github/workflows/test_deployed.yml .github/workflows/test_deployed.yml.old
+          python command.py workflows
+          python -c "import io
+          import sys
+          build = io.open('.github/workflows/build.yml', 'r', encoding='utf-8')
+          build_old = io.open('.github/workflows/build.yml.old', 'r', encoding='utf-8')
+          deploy = io.open('.github/workflows/deploy.yml', 'r', encoding='utf-8')
+          deploy_old = io.open('.github/workflows/deploy.yml.old', 'r', encoding='utf-8')
+          log_dispatch = io.open('.github/workflows/log_dispatch.yml', 'r', encoding='utf-8')
+          log_dispatch_old = io.open('.github/workflows/log_dispatch.yml.old', 'r', encoding='utf-8')
+          test_deployed = io.open('.github/workflows/test_deployed.yml', 'r', encoding='utf-8')
+          test_deployed_old = io.open('.github/workflows/test_deployed.yml.old', 'r', encoding='utf-8')
+          result = (build.read() == build_old.read()) and (deploy.read() == deploy_old.read()) and (log_dispatch.read() == log_dispatch_old.read()) and (test_deployed.read() == test_deployed_old.read())
+          sys.exit(not result)
+          "
 
   build:
     runs-on: ${{ matrix.os }}

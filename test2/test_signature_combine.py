@@ -113,7 +113,6 @@ def test_backward():
             for batch_size, input_stream, input_channels in h.random_sizes():
                 for depth in (1, 2, 4, 6):
                     inverse = random.choice([False, True])
-                    print(signature_combine, amount, device, batch_size, input_stream, input_channels, depth, inverse)
                     _test_backward(signature_combine, amount, device, batch_size, input_stream, input_channels,
                                    depth, inverse)
 

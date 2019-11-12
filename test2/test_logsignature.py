@@ -241,16 +241,29 @@ def _test_shape(logsignature, mode, batch_size, input_stream, input_channels, de
     assert logsignature.shape == correct_shape
 
 
-def test_backward():
+def test_backward_expand_words():
     """Tests that the backwards operation through the logsignature gives the correct values."""
     for class_ in (False, True):
         for device in h.get_devices():
             for batch_size, input_stream, input_channels, basepoint in h.random_sizes_and_basepoint():
                 for depth in (1, 2, 4, 6):
-                    for mode in h.all_modes:
+                    for mode in (h.expand_mode, h.words_mode):
                         stream = random.choice([False, True])
                         inverse = random.choice([False, True])
-                        print(class_, device, batch_size, input_stream, input_channels, basepoint, depth, mode, stream, inverse)
+                        _test_backward(class_, device, batch_size, input_stream, input_channels, depth, stream,
+                                       basepoint, inverse, mode)
+
+
+@pytest.mark.slow
+def test_backward_brackets():
+    """Tests that the backwards operation through the logsignature gives the correct values."""
+    for class_ in (False, True):
+        for device in h.get_devices():
+            for batch_size, input_stream, input_channels, basepoint in h.random_sizes_and_basepoint():
+                for depth in (1, 2, 4, 6):
+                    for mode in (h.brackets_mode,):
+                        stream = random.choice([False, True])
+                        inverse = random.choice([False, True])
                         _test_backward(class_, device, batch_size, input_stream, input_channels, depth, stream,
                                        basepoint, inverse, mode)
 
@@ -409,8 +422,8 @@ def _test_repeat_and_memory_leaks(class_, path_grad, batch_size, input_stream, i
 
     memory_used = one_iteration()
 
-    # The calculations are multithreaded and therefore not quite deterministic in the stream==True case. This means that
-    # they sometimes use a bit of extra peak memory.
+    # The calculations are essentially parallel and therefore not quite deterministic in the stream==True case. This
+    # means that they sometimes use a bit of extra peak memory.
     if stream:
         memory_used *= 2
 

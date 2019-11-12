@@ -28,6 +28,19 @@ if not hasattr(signatory.SignatureToLogSignature, '_lyndon_info_capsule_cache'):
 signatory.SignatureToLogSignature._lyndon_info_capsule_cache = {}
 
 
+def pytest_addoption(parser):
+    parser.addoption('--slow', action='store_true', dest='slow', default=False, help="Run slow tests as well.")
+
+
+def pytest_configure(config):
+    config.addinivalue_line('markers', 'slow: mark a test as being slow and excluded from default test runs')
+    if not config.option.slow:
+        if hasattr(config.option, 'markexpr') and len(config.option.markexpr) > 0:
+            config.option.markexpr = '(' + config.option.markexpr + ') and not slow'
+        else:
+            config.option.markexpr = 'not slow'
+
+
 def pytest_collection_finish(session):
     cycle = v.signatory_functionality_graph.get_cycle()
     if cycle is not None:

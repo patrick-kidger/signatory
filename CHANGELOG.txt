@@ -1,10 +1,11 @@
 1.1.4
 -----
+Dramatically improved the speed of several calculations.
 Added logsignature calculations to Path.
 Added the signature_to_logsignature function.
 Added the multi_signature_combine function.
+Added the max_parallelism function.
 Improved speed and stability of the backwards operation through Path.
-Dramatically improved the speed of several calculations, in particular the the forward calculation of signatures and logsignatures (via parallelisation and use of TensorAccessors).
 Added (fixed) memory benchmarking
 
 1.1.3

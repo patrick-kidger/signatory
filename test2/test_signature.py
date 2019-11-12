@@ -287,11 +287,11 @@ def _test_backward(class_, device, batch_size, input_stream, input_channels, dep
     iisignature_signature_result.backward(grad)
 
     # iisignature uses float32 for this calculation so we need a lower tolerance
-    h.diff(path.grad, path_grad, atol=1e-5)
+    h.diff(path.grad, path_grad, atol=1e-4)
     if isinstance(basepoint, torch.Tensor) and basepoint.requires_grad:
-        h.diff(basepoint.grad, basepoint_grad, atol=1e-5)
+        h.diff(basepoint.grad, basepoint_grad, atol=1e-4)
     if isinstance(initial, torch.Tensor) and initial.requires_grad:
-        h.diff(initial.grad, initial_grad, atol=1e-5)
+        h.diff(initial.grad, initial_grad, atol=1e-4)
 
 
 def test_no_adjustments():

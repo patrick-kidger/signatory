@@ -60,7 +60,35 @@ jobs:
         readme_old = io.open('README.rst.old', 'r', encoding='utf-8')
         sys.exit(readme.read() != readme_old.read())
         "
-  
+
+  check_workflows:
+      <<strategy_single>>
+      steps:
+      - <<checkout_code>>
+
+      - <<install_python>>
+
+      - name: Compare Workflows
+        <<if_>>
+        run: |
+          cp .github/workflows/build.yml .github/workflows/build.yml.old
+          cp .github/workflows/deploy.yml .github/workflows/deploy.yml.old
+          cp .github/workflows/log_dispatch.yml .github/workflows/log_dispatch.yml.old
+          cp .github/workflows/test_deployed.yml .github/workflows/test_deployed.yml.old
+          python command.py workflows
+          python -c "import io
+          import sys
+          build = io.open('.github/workflows/build.yml', 'r', encoding='utf-8')
+          build_old = io.open('.github/workflows/build.yml.old', 'r', encoding='utf-8')
+          deploy = io.open('.github/workflows/deploy.yml', 'r', encoding='utf-8')
+          deploy_old = io.open('.github/workflows/deploy.yml.old', 'r', encoding='utf-8')
+          log_dispatch = io.open('.github/workflows/log_dispatch.yml', 'r', encoding='utf-8')
+          log_dispatch_old = io.open('.github/workflows/log_dispatch.yml.old', 'r', encoding='utf-8')
+          test_deployed = io.open('.github/workflows/test_deployed.yml', 'r', encoding='utf-8')
+          test_deployed_old = io.open('.github/workflows/test_deployed.yml.old', 'r', encoding='utf-8')
+          result = (build.read() == build_old.read()) and (deploy.read() == deploy_old.read()) and (log_dispatch.read() == log_dispatch_old.read()) and (test_deployed.read() == test_deployed_old.read())
+          sys.exit(not result)
+          "
 
   build:
     <<strategy>>

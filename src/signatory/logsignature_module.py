@@ -169,6 +169,10 @@ class SignatureToLogSignature(nn.Module):
         Returns:
             As :func:`signatory.signature_to_logsignature`.
         """
+        if signature.is_cuda and self._mode == 'brackets':
+            warnings.warn("The logsignature with mode='brackets' has been requested on the GPU. This mode is quite "
+                          "slow to calculate, and the GPU offers no speedup. Consider mode='words' instead.")
+
         return _signature_to_logsignature(signature, self._channels, self._depth, self._stream, self._mode,
                                           self._lyndon_info_capsule.item)
 
@@ -318,10 +322,6 @@ class LogSignature(nn.Module):
         Returns:
             As :func:`signatory.logsignature`.
         """
-
-        if path.is_cuda and self._mode == 'brackets':
-            warnings.warn("The logsignature with mode='brackets' has been requested on the GPU. This mode is quite "
-                          "slow to calculate, and the GPU offers no speedup. Consider mode='words' instead.")
 
         signature = smodule.signature(path, self._depth, stream=self._stream, basepoint=basepoint,
                                       inverse=self._inverse, initial=None)
