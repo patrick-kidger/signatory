@@ -255,7 +255,7 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
 
 
 class Signature(nn.Module):
-    """Module wrapper around the :func:`signatory.signature` function.
+    """:class:`torch.nn.Module` wrapper around the :func:`signatory.signature` function.
 
     Arguments:
         depth (int): as :func:`signatory.signature`.
@@ -277,11 +277,11 @@ class Signature(nn.Module):
         """The forward operation.
 
         Arguments:
-            path (torch.Tensor): As :func:`signatory.signature`.
+            path (:class:`torch.Tensor`): As :func:`signatory.signature`.
 
-            basepoint (bool or torch.Tensor, optional): As :func:`signatory.signature`.
+            basepoint (bool or :class:`torch.Tensor`, optional): As :func:`signatory.signature`.
 
-            initial (None or torch.Tensor, optional): As :func:`signatory.signature`.
+            initial (None or :class:`torch.Tensor`, optional): As :func:`signatory.signature`.
 
         Returns:
             As :func:`signatory.signature`.
@@ -364,24 +364,18 @@ def signature_combine(sigtensor1, sigtensor2, input_channels, depth, inverse=Fal
     # type: (torch.Tensor, torch.Tensor, int, int, bool) -> torch.Tensor
     r"""Combines two signatures into a single signature.
 
-    This is done by computing a single tensor product:
-
-    .. math::
-
-        \text{sigtensor1} \otimes \text{sigtensor2}
-
     Usage is most clear by example. See :ref:`examples-combine`.
 
-    See also :func:`signatory.multi_signature_combine` for a more general version. (There are no advantages to using
-    :func:`signatory.signature_combine` over :func:`signatory.multi_signature_combine`.)
+    See also :func:`signatory.multi_signature_combine` for a more general version.
 
     Arguments:
-        sigtensor1 (:class:`torch.Tensor`): The signature of a path, of dimensions :attr:`(batch, signature_channels)`.
+        sigtensor1 (:class:`torch.Tensor`): The signature of a path, as returned by :func:`signatory.signature`. This
+            should be a two-dimensional tensor.
 
-        sigtensor2 (:class:`torch.Tensor`): The signature of a second path, of dimensions
-            :attr:`(batch, signature_channels)`. When the signature of the second path was created, it must have been
-            called with :attr:`basepoint` set to the final value of the path that created :attr:`sigtensor1`. (See
-            :ref:`examples-combine`.)
+        sigtensor2 (:class:`torch.Tensor`): The signature of a second path, as returned by :func:`signatory.signature`,
+            with the same shape as :attr:`sigtensor1`. Note that when the signature of the second path was created, it
+            should have been called with :attr:`basepoint` set to the final value of the path that created
+            :attr:`sigtensor1`. (See :ref:`examples-combine`.)
 
         input_channels (int): The number of channels in the two paths that were used to compute :attr:`sigtensor1` and
             :attr:`sigtensor2`. This must be the same for both :attr:`sigtensor1` and :attr:`sigtensor2`.
@@ -394,15 +388,13 @@ def signature_combine(sigtensor1, sigtensor2, input_channels, depth, inverse=Fal
 
     Returns:
         Let :attr:`path1` be the path whose signature is :attr:`sigtensor1`. Let :attr:`path2` be the path whose
-        signature is :attr:`sigtensor2`. Then this function returns the signature of :attr:`path1` and :attr:`path2`
-        concatenated with each other. (The interpretation is usually that :attr:`path2` represents an extension of
-        :attr:`path1`.)
+        signature is :attr:`sigtensor2`. Then this function returns the signature of the concatenation of :attr:`path1`
+        and :attr:`path2` along their stream dimension.
 
     .. danger::
 
-        There are two subtle bugs which can occur when using this function incautiously. First of all, make sure
-        that :attr:`sigtensor2` is created with an appropriate :attr:`basepoint`. Secondly, ensure that :attr:`inverse`
-        is set to whatever value of :attr:`inverse` was used to create :attr:`sigtensor1` and :attr:`sigtensor2`.
+        There is a subtle bug which can occur when using this function incautiously. Make sure that :attr:`sigtensor2`
+        is created with an appropriate :attr:`basepoint`, see :ref:`examples-combine`.
 
         If this is not done then the return value of this function will be essentially meaningless numbers.
     """
@@ -413,19 +405,11 @@ def multi_signature_combine(sigtensors, input_channels, depth, inverse=False):
     # type: (List[torch.Tensor], int, int, bool) -> torch.Tensor
     r"""Combines multiple signatures into a single signature.
 
-    This is done by computing multiple tensor products:
-
-    .. math::
-
-        \text{sigtensor}_0 \otimes \text{sigtensor}_1 \otimes \cdots \otimes \text{sigtensor}_k
-
-    where each :attr:`sigtensors` is a list of :math:`\text{sigtensor}_i` for :math:`i = 0, 1, \ldots, k`.
-
-    See also :func:`signatory.signature_combine`.
+    See also :func:`signatory.signature_combine` for a simpler version.
 
     Arguments:
-        sigtensors (list of :class:`torch.Tensor`): Signature of multiple paths, each with dimensions
-            :attr:`(batch, signature_channels)`.
+        sigtensors (list of :class:`torch.Tensor`): Signature of multiple paths, all of the same shape. They should all
+            be two-dimensional tensors.
 
         input_channels (int): As :func:`signatory.signature_combine`.
 
@@ -434,8 +418,10 @@ def multi_signature_combine(sigtensors, input_channels, depth, inverse=False):
         inverse (bool, optional): As :func:`signatory.signature_combine`.
 
     Returns:
-        Let :math:`\text{path}_i` be the path whose signature is :math:`\text{sigtensor}_i`. Then this function returns
-        the signature of every :math:`\text{path}_i` concatenated together.
+        Let :attr:`sigtensors` be a list of tensors, call them :math:`\text{sigtensor}_i` for
+        :math:`i = 0, 1, \ldots, k`. Let :math:`\text{path}_i` be the path whose signature is
+        :math:`\text{sigtensor}_i`. Then this function returns the signature of the concatenation of
+        :math:`\text{path}_i` along their stream dimension.
 
     .. danger::
 

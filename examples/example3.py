@@ -33,7 +33,7 @@ class SigNet3(nn.Module):
         self.signature1 = signatory.Signature(depth=sig_depth,
                                               stream=True)
 
-        # +5 because self.augment1 is used to add time, and 2 other
+        # +5 because self.augment1 is used to add time, and 4 other
         # channels, as well
         sig_channels1 = signatory.signature_channels(channels=in_channels + 5,
                                                      depth=sig_depth)

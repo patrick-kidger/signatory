@@ -290,6 +290,7 @@ def readme(args=()):
                         out_line = line
                     if ':ref:' in out_line:
                         raise RuntimeError('refs not supported')
+                    out_line = out_line.replace('|version|', metadata.version)
                     out_data.append(out_line)
         return ''.join(out_data)
 

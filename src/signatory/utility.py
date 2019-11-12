@@ -36,6 +36,9 @@ def lyndon_words(channels, depth):
     :attr:`channels`. Each letter is represented by an integer :math:`i` in the range
     :math:`0 \leq i < \text{channels}`.
 
+    Logsignatures may be thought of as a sum of coefficients of Lyndon words. This gives the words in the order that
+    they correspond to the values returned by :func:`signatory.logsignature` with :code:`mode="words"`.
+
     Arguments:
         channels (int): The size of the alphabet.
         depth (int): The maximum word length.
@@ -54,6 +57,9 @@ def lyndon_brackets(channels, depth):
     alphabet of size :attr:`channels`. Each letter is represented by an integer :math:`i` in the range
     :math:`0 \leq i < \text{channels}`.
 
+    Logsignatures may be thought of as a sum of coefficients of Lyndon brackets. This gives the brackets in the order
+    that they correspond to the values returned by :func:`signatory.logsignature` with :code:`mode="brackets"`.
+
     Arguments:
         channels (int): The size of the alphabet.
         depth (int): The maximum word length.
@@ -70,6 +76,12 @@ def all_words(channels, depth):
     r"""Computes the collection of all words up to length :attr:`depth` in an alphabet of size
     :attr:`channels`. Each letter is represented by an integer :math:`i` in the range
     :math:`0 \leq i < \text{channels}`.
+
+    Signatures may be thought of as a sum of coefficients of words. This gives the words in the order that they
+    correspond to the values returned by :func:`signatory.signature`.
+
+    Logsignatures may be thought of as a sum of coefficients of words. This gives the words in the order that they
+    correspond to the values returned by :func:`signatory.logsignature` with :code:`mode="expand"`.
 
     Arguments:
         channels (int): The size of the alphabet.

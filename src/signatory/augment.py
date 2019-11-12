@@ -25,9 +25,15 @@ if False:
 
 
 class Augment(nn.Module):
-    r"""Augmenting the stream before feeding it into a signature is often useful; the hope is to obtain higher-order
-    information in the signature. One way to do this is in a data-dependent way is to apply a feedforward neural network
-    to sections of the stream, so as to obtain another stream; on this stream the signature is then applied.
+    r"""Augmenting a stream of data before feeding it into a signature is often useful; the hope is to obtain
+    higher-order information in the signature. One way to do this is in a data-dependent way is to apply a feedforward
+    neural network to sections of the stream, so as to obtain another stream; on this stream the signature is then
+    applied; that is what this :class:`torch.nn.Module` does.
+
+    Thus this :class:`torch.nn.Module` is essentially unrelated to signatures, but is provided as it is often useful in
+    the same context. As described in
+    `Deep Signature Transforms -- Bonnier et al. 2019 <https://arxiv.org/abs/1905.08494>`__,
+    it is often advantageous to augment a path before taking the signature.
 
     The input path is expected to be a three-dimensional tensor, with dimensions :math:`(N, L, C)`, where :math:`N` is
     the batch size, :math:`L` is the length of the input sequence, and :math:`C` denotes the number of channels. Thus
@@ -58,13 +64,6 @@ class Augment(nn.Module):
 
     where :math:`T` is a constant appropriately chosen so that the first entry moves between :math:`0` and :math:`1` as
     :math:`i` varies. (Specifically, :math:`T = L - k + 1 + 2 \times \text{padding}`.)
-
-    For further details see `Deep Signature Transforms -- Bonnier et al. 2019 <https://arxiv.org/abs/1905.08494>`_. This
-    Module is here more for convenience: it doesn't directly relate to the signature transform; it's just useful to have
-    around when you are using the signature transform.
-
-    This Module represents a reasonably general form of a stream-preserving neural network, in the sense of the above
-    linked paper.
 
     Arguments:
         in_channels (int): Number of channels :math:`C` in the input stream.

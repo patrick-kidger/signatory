@@ -106,11 +106,11 @@ def _backward_shortcut(signature, path_pieces, depth):
 
 
 class Path(object):
-    """Calculates signatures on intervals of an input path.
+    """Calculates signatures and logsignatures on intervals of an input path.
 
-    By doing some precomputation, it can rapidly calculate the signature of the input path over any interval. This is
-    particularly useful if you need the signature of a Path over many different intervals: using this class will be much
-    faster than computing the signature of each sub-path each time.
+    By doing some precomputation, it can rapidly calculate the signature or logsignature over any slice of the input
+    path. This is particularly useful if you need the signature or logsignature of a path over many different intervals:
+    using this class will be much faster than computing the signature or logsignature of each sub-path each time.
 
     Arguments:
         path (torch.Tensor): As :func:`signatory.signature`.
@@ -161,11 +161,16 @@ class Path(object):
                 the signature on.
 
         Returns:
-            The signature on the interval :attr:`[start, end]`.
+            The signature on the interval :code:`[start, end]`.
 
-            Let :attr:`p = torch.cat(self.path, dim=1)`, so that it is all given paths (from both initialisation and
-            :meth:`signatory.Path.update`) concatenated together, additionally with any basepoint prepended. Then this
-            function will return a value equal to :attr:`signatory.signature(p[start:end], depth)`.
+            In the simplest case, when :attr:`path` and :attr:`depth` are the arguments that this class was initialised
+            with (and :attr:`basepoint` was not passed), then this function returns a value equal to
+            :code:`signatory.signature(path[start:end], depth)`.
+
+            In general, let :code:`p = torch.cat(self.path, dim=1)`, so that it is all given paths (including those
+            :attr:`path` from both initialistion and :meth:`signatory.Path.update`, and any :attr:`basepoint`)
+            concatenated together. Then this function will return a value equal to
+            :code:`signatory.signature(p[start:end], depth)`.
         """
 
         # Record for error messages if need be

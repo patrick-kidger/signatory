@@ -12,7 +12,7 @@ import metadata
 project = metadata.project.title()
 copyright = metadata.copyright
 author = metadata.author
-release = metadata.version
+version = release = metadata.version
 
 # must have installed py2annotate in order generate docs
 extensions = ['sphinx.ext.napoleon', 'sphinx.ext.autodoc', 'py2annotate', 'sphinx.ext.intersphinx',

@@ -19,11 +19,21 @@ Check out `this <https://arxiv.org/abs/1603.03788>`__ for a primer on the use of
 
 Installation
 ############
-Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7 and Linux, Mac, Windows.
+Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7.
 
-Requires `PyTorch <http://pytorch.org/>`__.
+Available for Linux, Mac, Windows.
 
-Install via ``pip install signatory==<SIGNATORY_VERSION>-torch<TORCH_VERSION>``, where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.1.4) and ``<TORCH_VERSION>`` is the version of PyTorch you are using (supported versions are PyTorch 1.2.0 and 1.3.0). Then just ``import signatory`` inside Python.
+Requires `PyTorch <http://pytorch.org/>`__ 1.2.0 or 1.3.0.
+
+Installation is simple:
+
+.. code-block:: bash
+
+    pip install signatory==<SIGNATORY_VERSION>-torch<TORCH_VERSION>
+
+where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.1.4) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
+
+Then just ``import signatory`` inside Python.
 
 
     For example, if you are using PyTorch 1.2.0 and want Signatory 1.1.4, then you should run ``pip install signatory==1.1.4-torch1.2.0``.

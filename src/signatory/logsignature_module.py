@@ -81,18 +81,20 @@ def _signature_to_logsignature(signature, channels, depth, stream, mode, lyndon_
 
 def signature_to_logsignature(signature, channels, depth, stream=False, mode="words"):
     # type: (torch.Tensor, int, int, bool, str) -> torch.Tensor
-    """Converts a signature to a logsignature.
+    """Calculates the logsignature corresponding to a signature.
 
     Arguments:
         signature (:class:`torch.Tensor`): The result of a call to :func:`signatory.signature`.
 
-        channels (int): The number of input channels of the path that :func:`signatory.signature` was called with.
+        channels (int): The number of input channels of the :attr:`path` that :func:`signatory.signature` was called
+            with.
 
-        depth (int): The :attr:`depth` that :func:`signatory.signature` was called with.
+        depth (int): The value of :attr:`depth` that :func:`signatory.signature` was called with.
 
-        stream (bool, optional): Defaults to False. The :attr:`stream` that :func:`signatory.signature` was called with.
+        stream (bool, optional): Defaults to False. The value of :attr:`stream` that :func:`signatory.signature` was
+            called with.
 
-        mode (str, optional): Defaults to "words". As :func:`signatory.logsignature`.
+        mode (str, optional): Defaults to :code:`"words"`. As :func:`signatory.logsignature`.
 
     Example:
         .. code-block:: python
@@ -106,19 +108,20 @@ def signature_to_logsignature(signature, channels, depth, stream=False, mode="wo
             logsignature = signatory.signature_to_logsignature(signature, channels, depth)
 
     Returns:
-        A :class:`torch.Tensor` representing the logsignature corresponding to the given signature.
+        A :class:`torch.Tensor` representing the logsignature corresponding to the given signature. See
+        :func:`signatory.logsignature`.
     """
     # Go via the class so that it uses a cached lyndon info capsule, if we have one already for some reason.
     return SignatureToLogSignature(channels, depth, stream, mode)(signature)
 
 
 class SignatureToLogSignature(nn.Module):
-    """Module wrapper around the :func:`signatory.signature_to_logsignature` function.
+    """:class:`torch.nn.Module` wrapper around the :func:`signatory.signature_to_logsignature` function.
 
-    Calling this Module on an input :code:`signature` with the same depth and number of channels as the last input
-    :code:`path` it was called with will be faster than the corresponding :func:`signatory.signature_to_logsignature`
-    function, as this Module caches the result of certain computations which depend only on this value. (For larger
-    depths or numbers of channels, this speedup will be substantial.)
+    Calling this :class:`torch.nn.Module` on an input :code:`signature` with the same number of channels as the last
+    :code:`signature` it was called with will be faster than multiple calls to the
+    :func:`signatory.signature_to_logsignature` function, in the same way that :class:`signatory.LogSignature` will be
+    faster than :func:`signatory.logsignature`.
 
     Arguments:
         channels (int): as :func:`signatory.signature_to_logsignature`.
@@ -164,7 +167,7 @@ class SignatureToLogSignature(nn.Module):
         """The forward operation.
 
         Arguments:
-            signature (torch.Tensor): As :func:`signatory.signature_to_logsignature`.
+            signature (:class:`torch.Tensor`): As :func:`signatory.signature_to_logsignature`.
 
         Returns:
             As :func:`signatory.signature_to_logsignature`.
@@ -192,7 +195,8 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
     The :attr:`modes` argument determines how the logsignature is represented.
 
     Note that if performing many logsignature calculations for the same depth and size of input, then you will
-    see a performance boost by using :class:`signatory.LogSignature` over :func:`signatory.logsignature`.
+    see a performance boost (at the cost of using a little extra memory) by using :class:`signatory.LogSignature`
+    instead of :func:`signatory.logsignature`.
 
     Arguments:
         path (:class:`torch.Tensor`): as :func:`signatory.signature`.
@@ -205,24 +209,24 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
 
         inverse (bool, optional): as :func:`signatory.signature`.
 
-        mode (str, optional): Defaults to :attr:`"words"`. How the output should be presented. Valid values are
-            :attr:`"words"`, :attr:`"brackets"`, or :attr:`"expand"`. Precisely what each of these options mean is
+        mode (str, optional): Defaults to :code:`"words"`. How the output should be presented. Valid values are
+            :code:`"words"`, :code:`"brackets"`, or :code:`"expand"`. Precisely what each of these options mean is
             described in the
             "Returns" section below. For machine learning applications, :code:`"words"` is the appropriate choice. The
             other two options are mostly only interesting for mathematicians.
 
     Returns:
-        A :class:`torch.Tensor`. If :code:`mode == "expand"` then it will be of the same shape as the returned tensor
-        from :func:`signatory.signature`. If :code:`mode in ("brackets", "words")` then it will again be of the
-        same shape, except that the channel dimension will instead be of size
-        :code:`signatory.logsignature_channels(C, depth)`, where :code:`C` is the number of input channels, i.e.
-        :code:`path.size(-1)`.
-        (Thus the logsignature is much smaller than the signature, which is often the point of using the logsignature
-        over the signature in the first place.)
+        A :class:`torch.Tensor`, of almost the same shape as the tensor returned from :func:`signatory.signature` called
+        with the same arguments.
 
-        We now go on to explain what the different values for :attr:`mode` mean. This discussion is in the "Returns"
-        section because the value of :attr:`mode` essentially just determines how the output is represented; the
-        mathematical meaning is the same in all cases.
+        If :code:`mode == "expand"` then it will be exactly the same shape as the returned tensor from
+        :func:`signatory.signature`.
+
+        If :code:`mode in ("brackets", "words")` then the channel dimension will instead be of size
+        :code:`signatory.logsignature_channels(path.size(-1), depth)`. (Where :code:`path.size(-1)` is the number of
+        input channels.)
+
+        The different modes correspond to different mathematical representations of the logsignature.
 
         .. tip::
 
@@ -230,13 +234,13 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
             sense to you, then you probably want to leave :attr:`mode` on its default value of :code:`"words"` and it
             will all be fine!
 
-        If :attr:`mode == "expand"` then the logsignature is presented as a member of the tensor algebra; the numbers
+        If :code:`mode == "expand"` then the logsignature is presented as a member of the tensor algebra; the numbers
         returned correspond to the coefficients of all words in the tensor algebra.
 
-        If :attr:`mode == "brackets"` then the logsignature is presented in terms of the coefficients of the Lyndon
+        If :code:`mode == "brackets"` then the logsignature is presented in terms of the coefficients of the Lyndon
         basis of the free Lie algebra.
 
-        If :attr:`mode == "words"` then the logsignature is presented in terms of the coefficients of a particular
+        If :code:`mode == "words"` then the logsignature is presented in terms of the coefficients of a particular
         computationally efficient basis of the free Lie algebra (that is not a Hall basis). Every basis element is given
         as a sum of Lyndon brackets. When each bracket is expanded out and the sum computed, the sum will contain
         precisely one Lyndon word (and some collection of non-Lyndon words). Moreover
@@ -251,12 +255,14 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
 
 
 class LogSignature(nn.Module):
-    """Module wrapper around the :func:`signatory.logsignature` function.
+    """:class:`torch.nn.Module` wrapper around the :func:`signatory.logsignature` function.
 
-    Calling this Module on an input :code:`path` with the same number of channels as the last input :code:`path` it was
-    called with will be faster than the corresponding :func:`signatory.logsignature` function, as this Module caches the
-    result of certain computations which depend only on this value. (For larger depths or numbers of channels, this
-    speedup will be substantial.)
+    This :class:`torch.nn.Module` performs certain optimisations to allow it to calculate multiple logsignatures faster
+    than multiple calls to :func:`signatory.logsignature`.
+
+    Specifically, these optimisations will apply if this :class:`torch.nn.Module` is called with an input :code:`path`
+    with the same number of channels as the last input :code:`path` it was called with, as is likely to be very common
+    in machine learning set-ups. For larger depths or numbers of channels, this speedup will be substantial.
 
     Arguments:
         depth (int): as :func:`signatory.logsignature`.
@@ -288,17 +294,9 @@ class LogSignature(nn.Module):
 
     def prepare(self, in_channels):
         # type: (int) -> None
-        """Prepares for computing logsignatures of a certain size.
-
-        There is some nontrivial computation which must be done for every logsignature computation of a certain size,
-        and which is the same for all logsignature computations of that size. (Where 'size' refers to a specific
-        combination of input channels, depth of logsignature, and mode.)
-
-        :class:`signatory.LogSignature` caches this information, to help speed up later logsignature computations.
-        Normally this information will simply be computed and cached the first time it is needed.
-
-        This method allows for computing and cache this information up front, before performing any logsignature
-        computations at all (for example, for benchmarking reasons).
+        """Prepares for computing logsignatures for paths of the specified number of channels. This will be done
+        anyway automatically whenever this :class:`torch.nn.Module` is called, if it hasn't been called already; this
+        method simply allows to have it done earlier, for example when benchmarking.
 
         Arguments:
             in_channels (int): The number of input channels of the path that this instance will subsequently be called
@@ -315,7 +313,7 @@ class LogSignature(nn.Module):
         """The forward operation.
 
         Arguments:
-            path (torch.Tensor): As :func:`signatory.logsignature`.
+            path (:class:`torch.Tensor`): As :func:`signatory.logsignature`.
 
             basepoint (bool or torch.Tensor, optional): As :func:`signatory.logsignature`.
 
