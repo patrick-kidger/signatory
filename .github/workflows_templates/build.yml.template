@@ -30,7 +30,7 @@ jobs:
         import metadata
         version_msg = subprocess.run('pip install signatory==', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         print('Version msg: ', version_msg)
-        version_re = re.compile(rb'from versions: ([-0-9\. ,torch]*)\)')
+        version_re = re.compile(rb'from versions: ([_0-9\. ,torch]*)\)')
         last_version = version_re.search(version_msg.stderr).group(1).split(b', ')[-1]
         print('Last version: ', last_version)
         print('This version: ', metadata.version)

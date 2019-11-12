@@ -50,7 +50,7 @@ jobs:
         import metadata
         version_msg = subprocess.run('pip install signatory==', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         print('Version msg: ', version_msg)
-        version_re = re.compile(rb'from versions: ([-0-9\. ,torch]*)\)')
+        version_re = re.compile(rb'from versions: ([_0-9\. ,torch]*)\)')
         last_version = version_re.search(version_msg.stderr).group(1).split(b', ')[-1]
         print('Last version: ', last_version)
         print('This version: ', metadata.version)
@@ -173,7 +173,7 @@ jobs:
         python -m pip install --upgrade pip &&
         conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y &&
         python command.py should_not_import &&
-        python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel &&
+        python setup.py egg_info --tag-build="_torch${{ matrix.pytorch-version }}" bdist_wheel &&
         for %%f in (./dist/*) do (python -m pip install ./dist/%%~nxf) &&
         python -m pip install iisignature pytest &&
         python -c "import os;
@@ -199,7 +199,7 @@ jobs:
         python -m pip install --upgrade pip
         conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
         python command.py should_not_import
-        python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" sdist
+        python setup.py egg_info --tag-build="_torch${{ matrix.pytorch-version }}" sdist
         SIGNATORY_INSTALLED=$(python -c "import os
         import sys
         x = os.listdir('dist')
@@ -223,6 +223,11 @@ jobs:
         PYTHON_VERSION: ${{ matrix.python-version }}
       run: |
         set -x
+        brew update
+        brew install llvm libomp
+        echo '[build_ext]
+        include_dirs=/usr/local/include:/usr/local/opt/llvm/include
+        library_dirs=/usr/local/lib:/usr/local/opt/llvm/lib' > setup.cfg
         echo 'set -ex
         . $CONDA/etc/profile.d/conda.sh
         conda create -n myenv python=$PYTHON_VERSION -y
@@ -230,12 +235,7 @@ jobs:
         python -m pip install --upgrade pip
         conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
         python command.py should_not_import
-        brew update
-        brew install llvm libomp
-        echo "[build_ext]
-        include_dirs=/usr/local/include:/usr/local/opt/llvm/include
-        library_dirs=/usr/local/lib:/usr/local/opt/llvm/lib" > setup.cfg
-        MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build="-torch${{ matrix.pytorch-version }}" bdist_wheel
+        MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build="_torch${{ matrix.pytorch-version }}" bdist_wheel
         SIGNATORY_INSTALLED=$(python -c "import os
         import sys
         x = os.listdir('\''dist'\'')
