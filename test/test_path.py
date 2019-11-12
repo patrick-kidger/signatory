@@ -187,8 +187,9 @@ def _test_signature_or_logsignature(path_obj, candidate, true, extra, backward_n
 
     def one_iteration(start, end):
         gc.collect()
-        torch.cuda.synchronize()
-        torch.cuda.reset_max_memory_allocated()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.reset_max_memory_allocated()
         try:
             tensor = candidate(start, end)
         except ValueError as e:
@@ -230,8 +231,11 @@ def _test_signature_or_logsignature(path_obj, candidate, true, extra, backward_n
             del tensor
             gc.collect()
             assert ref() is None  # Test #2
-        torch.cuda.synchronize()
-        return torch.cuda.max_memory_allocated()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            return torch.cuda.max_memory_allocated()
+        else:
+            return 0
 
     # Computations involving the start or not operate differently, so we take the max over both
     memory_used = max(one_iteration(0, None), one_iteration(1, None))
