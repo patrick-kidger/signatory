@@ -25,11 +25,11 @@ Available for Linux, Mac, Windows.
 
 Requires `PyTorch <http://pytorch.org/>`__ 1.2.0 or 1.3.0.
 
-Installation is pretty simple:
+Installation is reasonably simple:
 
 .. code-block:: bash
 
-    pip install signatory==<SIGNATORY_VERSION>.torch<TORCH_VERSION>
+    pip install signatory==<SIGNATORY_VERSION>.<TORCH_VERSION>
 
 where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.1.4) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
 
@@ -38,12 +38,14 @@ where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to down
 
     .. code-block:: bash
 
-        pip install signatory==1.1.4.torch1.3.0
+        pip install signatory==1.1.4.1.3.0
 
-Then just ``import signatory`` inside Python.
+    Yes, this looks a bit odd. This is needed to work a `limitation of PyTorch <https://github.com/pytorch/pytorch/issues/28754>`__ and the `restrictive specification of pip <https://www.python.org/dev/peps/pep-0440/>`__.
+
+After installation, just ``import signatory`` inside Python.
 
 
-    Take care **not** to run ``pip install signatory``, as this will likely download the wrong version. This care is needed due to a `limitation of PyTorch <https://github.com/pytorch/pytorch/issues/28754>`__.
+    Take care **not** to run ``pip install signatory``, as this will likely download the wrong version.
 
 Installation from source is also possible; please consult the `documentation <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__. This also includes information on how to run the tests and benchmarks.
 
