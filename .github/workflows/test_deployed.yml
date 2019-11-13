@@ -21,7 +21,7 @@ jobs:
     strategy:
       matrix:
         os: [windows-2016, ubuntu-16.04, macOS-10.14]
-        python-version: [2.7.13, 3.5.4, 3.6.2, 3.7.0]
+        python-version: [2.7.13, 3.5.4, 3.6.9, 3.7.0]
         pytorch-version: [1.2.0, 1.3.0]
         exclude:
           # PyTorch doesn't support this combination
@@ -30,19 +30,19 @@ jobs:
       fail-fast: false
     steps:
     - name: Checkout code
-      if: ((github.event_name == '-no-event-' && (false)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger test_deployed ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+      if: ((github.event_name == '-no-event-' && (false)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger test_deployed ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
       uses: actions/checkout@v1
       with:
         ref: master
         
     - name: Install Python
-      if: ((github.event_name == '-no-event-' && (false)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger test_deployed ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+      if: ((github.event_name == '-no-event-' && (false)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger test_deployed ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
       uses: actions/setup-python@v1
       with:
         python-version: '3.7'
 
     - name: Windows
-      if: ((github.event_name == '-no-event-' && (false)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger test_deployed ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *')))) && (matrix.os == 'windows-2016')
+      if: ((github.event_name == '-no-event-' && (false)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger test_deployed ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *')))) && (matrix.os == 'windows-2016')
       env:
         PYTHON_VERSION: ${{ matrix.python-version }}
       shell: cmd
@@ -62,7 +62,7 @@ jobs:
         import metadata;
         sleep = lambda t: time.sleep(t) or True;
         retry = lambda fn: fn() or (sleep(20) and fn()) or (sleep(40) and fn()) or (sleep(120) and fn()) or (sleep(240) and fn());
-        ret = retry(lambda: not subprocess.run('python -m pip install signatory==' + metadata.version + '.torch${{ matrix.pytorch-version }} --only-binary signatory').returncode);
+        ret = retry(lambda: not subprocess.run('python -m pip install --index-url https://test.pypi.org/simple/ signatory==' + metadata.version + '.torch${{ matrix.pytorch-version }} --only-binary signatory').returncode);
         sys.exit(not ret)
         " &&
         python -m pip install iisignature pytest &&
@@ -77,7 +77,7 @@ jobs:
         echo done
 
     - name: Linux
-      if: ((github.event_name == '-no-event-' && (false)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger test_deployed ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *')))) && (matrix.os == 'ubuntu-16.04')
+      if: ((github.event_name == '-no-event-' && (false)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger test_deployed ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *')))) && (matrix.os == 'ubuntu-16.04')
       env:
         PYTHON_VERSION: ${{ matrix.python-version }}
       # Deliberately only creating an sdist; see FAQ
@@ -91,7 +91,7 @@ jobs:
         python command.py should_not_import
         retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
         SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-        retry python -m pip install signatory==$SIGNATORY_VERSION.torch${{ matrix.pytorch-version }} --no-binary signatory
+        retry python -m pip install --index-url https://test.pypi.org/simple/ signatory==$SIGNATORY_VERSION.torch${{ matrix.pytorch-version }} --no-binary signatory
         python -m pip install iisignature pytest
         python -c "import os
         import subprocess
@@ -104,7 +104,7 @@ jobs:
       
 
     - name: Mac
-      if: ((github.event_name == '-no-event-' && (false)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger test_deployed ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *')))) && (matrix.os == 'macOS-10.14')
+      if: ((github.event_name == '-no-event-' && (false)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger test_deployed ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *')))) && (matrix.os == 'macOS-10.14')
       env:
         PYTHON_VERSION: ${{ matrix.python-version }}
       run: |
@@ -120,7 +120,7 @@ jobs:
         python command.py should_not_import
         retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
         SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-        retry python -m pip install signatory==$SIGNATORY_VERSION.torch${{ matrix.pytorch-version }} --only-binary signatory
+        retry python -m pip install --index-url https://test.pypi.org/simple/ signatory==$SIGNATORY_VERSION.torch${{ matrix.pytorch-version }} --only-binary signatory
         git clone https://github.com/bottler/iisignature.git
         cd iisignature
         python setup.py install
