@@ -21,7 +21,7 @@ Installation
 ############
 Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7 and Linux, Mac, Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.2.0 or 1.3.0.
 
-Installation via:
+Install via:
 
 .. code-block:: bash
 
@@ -61,7 +61,7 @@ Usage is straightforward. As a simple example,
     batch, stream, channels = 1, 10, 2
     depth = 4
     path = torch.rand(batch, stream, channels)
-    signatory.signature(path, depth)
+    signature = signatory.signature(path, depth)
 
 For further examples, see the `documentation <https://signatory.readthedocs.io/en/latest/pages/examples/examples.html>`__.
 

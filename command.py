@@ -288,7 +288,7 @@ def readme(args=()):
                 "    batch, stream, channels = 1, 10, 2\n"
                 "    depth = 4\n"
                 "    path = torch.rand(batch, stream, channels)\n"
-                "    signatory.signature(path, depth)\n"
+                "    signature = signatory.signature(path, depth)\n"
                 "\n"
                 "For further examples, see the `documentation <https://signatory.readthedocs.io/en/latest/pages/examples/examples.html>`__.")
 
