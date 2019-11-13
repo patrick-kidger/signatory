@@ -22,3 +22,5 @@ At the heart of the package is the :func:`signatory.signature` function.
 .. autofunction:: signatory.extract_signature_term
 
 .. autofunction:: signatory.signature_combine
+
+.. autofunction:: signatory.multi_signature_combine

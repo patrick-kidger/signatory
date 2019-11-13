@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import webbrowser
 #### DO NOT IMPORT NON-(STANDARD LIBRARY) MODULES HERE
 # Instead, lazily import them inside the command.
@@ -47,43 +48,45 @@ def main():
     test_parser = subparsers.add_parser('test', parents=[deviceparser], description="Run tests")
     benchmark_parser = subparsers.add_parser('benchmark', parents=[deviceparser], description="Run speed benchmarks")
     docs_parser = subparsers.add_parser('docs', description="Build documentation")
-    genreadme_parser = subparsers.add_parser('genreadme', description="Generate the README from the documentation.")
+    readme_parser = subparsers.add_parser('readme', description="Generate the README from the documentation.")
+    workflows_parser = subparsers.add_parser('workflows', description="Generate the GitHub workflows from templates.")
     should_not_import_parser = subparsers.add_parser('should_not_import', description="Tests that Signatory _cannot_ "
                                                                                       "be imported.")
 
     test_parser.set_defaults(cmd=test)
     benchmark_parser.set_defaults(cmd=benchmark)
     docs_parser.set_defaults(cmd=docs)
-    genreadme_parser.set_defaults(cmd=genreadme)
+    readme_parser.set_defaults(cmd=readme)
+    workflows_parser.set_defaults(cmd=workflows)
     should_not_import_parser.set_defaults(cmd=should_not_import)
 
-    test_parser.add_argument('-f', '--failfast', action='store_true', help='Stop tests on first failure.')
-    test_parser.add_argument('-n', '--nonames', action='store_false', dest='names',
-                             help="Don't print names and start time of the tests being run.")
-    test_parser.add_argument('-t', '--notimes', action='store_false', dest='times',
-                             help="Don't print the overall times of the tests that have been run.")
+    test_parser.add_argument('-t', '--test', default='', help="What to test. Defaults to all tests.")
+    test_parser.add_argument('-a', '--args', nargs=argparse.REMAINDER,
+                             help="All other arguments are forwarded on to pytest.")
 
     benchmark_parser.add_argument('-e', '--noesig', action='store_false', dest='test_esig',
                                   help="Skip esig tests as esig is typically very slow.")
     benchmark_parser.add_argument('-g', '--nogpu', action='store_false', dest='test_signatory_gpu',
                                   help="Skip Signatory GPU tests, (perhaps if you don't have a GPU installed).")
-    benchmark_parser.add_argument('-a', '--ratio', action='store_false',
-                                  help="Skip computing and plotting the improvement ratio of Signatory over "
+    benchmark_parser.add_argument('-a', '--ratio', action='store_true',
+                                  help="Enable computing and plotting the improvement ratio of Signatory over "
                                        "iisignature or esig.")
     benchmark_parser.add_argument('-m', '--measure', choices=('time', 'memory'), default='time',
-                                  help="Whether to measure speed or memory usage.")
+                                  help="Whether to measure speed or memory usage. Defaults to time.")
     benchmark_parser.add_argument('-f', '--fns', choices=('sigf', 'sigb', 'logsigf', 'logsigb', 'all'), default='all',
                                   help="Which functions to run: signature forwards, signature backwards, logsignature "
-                                       "forwards, logsignature backwards, or all of them.")
+                                       "forwards, logsignature backwards, or all of them. Defaults to all.")
     benchmark_parser.add_argument('-t', '--type', choices=('typical', 'depths', 'channels', 'small'), default='typical',
                                   help="What kind of benchmark to run. 'typical' tests on two typical size/depth "
                                        "combinations and prints the results as a table to stdout. 'depth' and "
                                        "'channels' are more thorough benchmarks (and will taking correspondingly "
-                                       "longer to run!) testing multiple depths or multiple channels respectively.")
-    benchmark_parser.add_argument('-o', '--output', choices=('table', 'graph', 'none'), default='table',
+                                       "longer to run!) testing multiple depths or multiple channels respectively. "
+                                       "Defaults to typical.")
+    benchmark_parser.add_argument('-o', '--output', choices=('table', 'graph', 'graphsave', 'none'), default='table',
                                   help="How to format the output. 'table' formats as a table, 'graph' formats as a "
-                                       "graph. 'none' prints no output at all (perhaps if you're retrieving the results"
-                                       " programmatically by importing command.py instead).")
+                                       "graph. 'graphsave' formats as a graph but saves it rather than displaying it. "
+                                       "'none' prints no output at all (perhaps if you're retrieving the results"
+                                       " programmatically by importing command.py instead). Defaults to table.")
                                   
     docs_parser.add_argument('-o', '--open', action='store_true',
                              help="Open the documentation in a web browser as soon as it is built.")
@@ -98,10 +101,10 @@ def main():
         print("Please enter a command. Use -h to see available commands.")
 
 
-here = os.path.realpath(os.path.dirname(__file__))
+_here = os.path.realpath(os.path.dirname(__file__))
 
 
-def get_device():
+def _get_device():
     import torch
     try:
         return 'CUDA device ' + str(torch.cuda.current_device())
@@ -109,7 +112,7 @@ def get_device():
         return 'no CUDA device'
 
 
-class NullContext(object):
+class _NullContext(object):
     def __enter__(self):
         pass
 
@@ -118,20 +121,20 @@ class NullContext(object):
 
 
 def test(args):
-    """Run all tests.
-    The package 'iisignature' will need to be installed, to test against.
-    It can be installed via `pip install iisignature`
-    """
     try:
         import iisignature  # fail fast here if necessary
     except ImportError:
         raise ImportError("The iisignature package is required for running tests. It can be installed via 'pip "
                           "install iisignature'")
-    import test.runner
+    import pytest
     import torch
-    with torch.cuda.device(args.device) if args.device != -1 else NullContext():
-        print('Using ' + get_device())
-        return test.runner.main(failfast=args.failfast, times=args.times, names=args.names)
+    with torch.cuda.device(args.device) if args.device != -1 else _NullContext():
+        print('Using ' + _get_device())
+        pytest_args = [os.path.join(_here, 'test', args.test)]
+        pytest_args.extend(['--tb=long', '-ra', '--durations=0'])
+        if args.args is not None:
+            pytest_args.extend(args.args)
+        return pytest.main(pytest_args) == 0
 
 
 def benchmark(args):
@@ -147,10 +150,10 @@ def benchmark(args):
         raise ImportError("The esig package is required for running tests. It can be installed via 'pip "
                           "install esig'")
                           
-    import test.benchmark as bench
+    import benchmark.benchmark as bench
     import torch
-    with torch.cuda.device(args.device) if args.device != -1 else NullContext():
-        print('Using ' + get_device())
+    with torch.cuda.device(args.device) if args.device != -1 else _NullContext():
+        print('Using ' + _get_device())
         if args.type == 'typical':
             runner = bench.BenchmarkRunner.typical(ratio=args.ratio,
                                                    test_esig=args.test_esig,
@@ -177,11 +180,13 @@ def benchmark(args):
                                                  fns=args.fns)
         else:
             raise RuntimeError
-        if args.output == 'graph':
+        if args.output in ('graph', 'graphsave'):
             runner.check_graph()
         runner.run()
         if args.output == 'graph':
             runner.graph()
+        elif args.output == 'graphsave':
+            runner.graph(save=True)
         elif args.output == 'table':
             runner.table()
         elif args.output == 'none':
@@ -202,26 +207,31 @@ def docs(args=()):
         raise ImportError("The py2annotate package is required for running tests. It can be installed via 'pip "
                           "install py2annotate'")
     try:
-        shutil.rmtree(os.path.join(here, "docs", "_build"))
+        shutil.rmtree(os.path.join(_here, "docs", "_build"))
     except FileNotFoundError:
         pass
-    subprocess.Popen("sphinx-build -M html {} {}".format(os.path.join(here, "docs"), os.path.join(here, "docs", "_build"))).wait()
+    subprocess.Popen("sphinx-build -M html {} {}".format(os.path.join(_here, "docs"), os.path.join(_here, "docs", "_build"))).wait()
     if args.open:
-        webbrowser.open_new_tab('file:///{}'.format(os.path.join(here, 'docs', '_build', 'html', 'index.html')))
+        webbrowser.open_new_tab('file:///{}'.format(os.path.join(_here, 'docs', '_build', 'html', 'index.html')))
+
+
+def workflows(args=()):
+    """The GitHub workflows are generated from templates."""
+    sys.path.insert(0, os.path.join(_here, '.github', 'workflows_templates'))
+    import from_template
+    from_template.main()
+    sys.path = sys.path[1:]
 
     
-def genreadme(args=()):
+def readme(args=()):
     """The readme is generated automatically from the documentation."""
     
     outs = []
     includestr = '.. include::'
-    on = '.. genreadme on'
-    off = '.. genreadme off'
-    insert = '.. genreadme insert '  # space at end is important
+    on = '.. command.readme on'
+    off = '.. command.readme off'
+    insert = '.. command.readme insert '  # space at end is important
     reference = re.compile(r'^\.\. [\w-]+:$')
-    
-    inserts = {'install_from_source': "Installation from source is also possible; please consult the `documentation "
-                                      "<https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__."}
 
     def parse_file(filename):
         out_data = []
@@ -230,9 +240,9 @@ def genreadme(args=()):
             skipping = False
             for line in data:
                 stripline = line.strip()
-                if stripline == on:
+                if stripline.startswith(on):
                     skipping = False
-                elif stripline == off:
+                elif stripline.startswith(off):
                     skipping = True
                 elif skipping:
                     pass
@@ -240,35 +250,54 @@ def genreadme(args=()):
                     pass
                 else:
                     if stripline.startswith(insert):
-                        out_line = inserts[stripline[len(insert):]] + '\n'
+                        indent = line.find(insert)
+                        out_line = line[:indent] + line[indent + len(insert):]
                     elif stripline.startswith(includestr):
                         # [1:] to remove the leading / at the start; otherwise ends up being parsed as root
                         subfilename = stripline[len(includestr):].strip()[1:]
-                        out_line = parse_file(os.path.join(here, 'docs', subfilename))
+                        out_line = parse_file(os.path.join(_here, 'docs', subfilename))
                     else:
                         out_line = line
                     if ':ref:' in out_line:
                         raise RuntimeError('refs not supported')
+                    out_line = out_line.replace('|version|', metadata.version)
                     out_data.append(out_line)
         return ''.join(out_data)
 
     def read_from_files(filenames):
         for filename in filenames:
-            filename = os.path.join(here, filename)
+            filename = os.path.join(_here, filename)
             outs.append(parse_file(filename))
 
-    read_from_files([os.path.join(here, 'docs', 'index.rst'),
-                     os.path.join(here, 'docs', 'pages', 'understanding', 'whataresignatures.rst'),
+    read_from_files([os.path.join(_here, 'docs', 'index.rst'),
+                     os.path.join(_here, 'docs', 'pages', 'understanding', 'whataresignatures.rst'),
                      os.path.join('docs', 'pages', 'usage', 'installation.rst')])
 
     outs.append("Documentation\n"
                 "#############\n"
                 "The documentation is available `here <https://signatory.readthedocs.io>`__.")
 
-    read_from_files([os.path.join(here, 'docs', 'pages', 'miscellaneous', 'citation.rst'),
-                     os.path.join(here, 'docs', 'pages', 'miscellaneous', 'acknowledgements.rst')])
+    outs.append("Example\n"
+                "#######\n"
+                "Usage is straightforward.\n"
+                "\n"
+                ".. code-block:: python\n"
+                "\n"
+                "    import signatory\n"
+                "    import torch\n"
+                "    # batch size is 1\n"
+                "    # length of input stream is 10\n"
+                "    # number of channels is 2\n"
+                "    x = torch.rand(1, 10, 2)\n"
+                "    # Compute signature to depth 4\n"
+                "    signatory.signature(x, 4)\n"
+                "\n"
+                "For further examples, see the `documentation <https://signatory.readthedocs.io/en/latest/pages/examples/examples.html>`__.")
 
-    with io.open(os.path.join(here, 'README.rst'), 'w', encoding='utf-8') as f:
+    read_from_files([os.path.join(_here, 'docs', 'pages', 'miscellaneous', 'citation.rst'),
+                     os.path.join(_here, 'docs', 'pages', 'miscellaneous', 'acknowledgements.rst')])
+
+    with io.open(os.path.join(_here, 'README.rst'), 'w', encoding='utf-8') as f:
         f.write('\n\n'.join(outs))
 
 
@@ -288,6 +317,5 @@ def should_not_import(args=()):
             
 if __name__ == '__main__':
     result = main()
-    # not 'if not result'
-    if result is False:
-        sys.exit(1)
+    if isinstance(result, bool):
+        sys.exit(not result)

@@ -20,71 +20,171 @@ import torch
 from torch import nn
 from torch import autograd
 from torch.autograd import function as autograd_function
+import warnings
+import weakref
 
-from . import backend
-from . import compatibility as compat
-# noinspection PyUnresolvedReferences
-from . import _impl
+from . import signature_module as smodule
+from . import impl
 
 # noinspection PyUnreachableCode
 if False:
     from typing import Any, Union
 
 
-def _mode_convert(mode):
+def _interpret_mode(mode):
     if mode == "expand":
-        return _impl.LogSignatureMode.Expand
+        return impl.LogSignatureMode.Expand
     elif mode == "brackets":
-        return _impl.LogSignatureMode.Brackets
+        return impl.LogSignatureMode.Brackets
     elif mode == "words":
-        return _impl.LogSignatureMode.Words
+        return impl.LogSignatureMode.Words
     else:
         raise ValueError("Invalid values for argument 'mode'. Valid values are 'expand', 'brackets', or 'words'.")
 
 
-# noinspection PyProtectedMember
-class _LogSignatureFunction(autograd.Function):
+class _SignatureToLogsignatureFunction(autograd.Function):
     @staticmethod
-    def forward(ctx, path, depth, stream, basepoint, inverse, mode, lyndon_info):
-        # lyndon_info isn't a documented parameter because it's only used internally in the package.
-        # It must be either None (as in logsignature) or the result of a call to _impl._make_lyndon_info (as in
-        # LogSignature).
+    def forward(ctx, signature, channels, depth, stream, mode, lyndon_info):
+        mode = _interpret_mode(mode)
 
-        mode = _mode_convert(mode)
-        ctx.basepoint = basepoint
+        logsignature_, lyndon_info_capsule = impl.signature_to_logsignature_forward(signature, channels, depth, stream,
+                                                                                     mode, lyndon_info)
+        ctx.save_for_backward(signature.detach())
+        ctx.channels = channels
+        ctx.depth = depth
+        ctx.stream = stream
+        ctx.mode = mode
+        ctx.lyndon_info_capsule = lyndon_info_capsule
 
-        basepoint, basepoint_value = backend.interpret_basepoint(basepoint, path)
-
-        path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
-        with compat.mac_exception_catcher:
-            result, backwards_info = _impl.logsignature_forward(path, depth, stream, basepoint, basepoint_value,
-                                                                inverse, mode, lyndon_info)
-        if ctx.requires_grad:
-            ctx.backwards_info = backwards_info
-            ctx.save_for_backward(result)
-
-        # would like to transpose here but we can't because of PyTorch bug 24413, so instead we have to transpose at
-        # every call site instead.
-        return result
+        return logsignature_
 
     @staticmethod
     @autograd_function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
-    def backward(ctx, grad_result):
-        # Because in the forward pass we transpose at every call site, our grad_result comes to us here
-        # already-transposed. so we don't need to do it here.
+    def backward(ctx, grad_logsignature):
+        signature, = ctx.saved_tensors
 
-        # Just to check that the result of the forward pass hasn't been modified in-place. (Which would make the result
-        # of the backwards calculation be incorrect!) The reason we don't actually use the tensor is because another
-        # handle to it is already saved in ctx.backwards_info, which we do use.
-        _ = ctx.saved_tensors
+        grad_signature = impl.signature_to_logsignature_backward(grad_logsignature, signature, ctx.channels, ctx.depth,
+                                                                 ctx.stream, ctx.mode, ctx.lyndon_info_capsule)
 
-        with compat.mac_exception_catcher:
-            grad_path, grad_basepoint = _impl.logsignature_backward(grad_result, ctx.backwards_info)
-        grad_path = grad_path.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
-        if not isinstance(ctx.basepoint, torch.Tensor):
-            grad_basepoint = None
+        return grad_signature, None, None, None, None, None
 
-        return grad_path, None, None, grad_basepoint, None, None, None
+
+def _signature_to_logsignature(signature, channels, depth, stream, mode, lyndon_info):
+    if stream:
+        signature = signature.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
+    logsignature_ = _SignatureToLogsignatureFunction.apply(signature, channels, depth, stream, mode, lyndon_info)
+    if stream:
+        logsignature_ = logsignature_.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
+    return logsignature_
+
+
+def signature_to_logsignature(signature, channels, depth, stream=False, mode="words"):
+    # type: (torch.Tensor, int, int, bool, str) -> torch.Tensor
+    """Calculates the logsignature corresponding to a signature.
+
+    Arguments:
+        signature (:class:`torch.Tensor`): The result of a call to :func:`signatory.signature`.
+
+        channels (int): The number of input channels of the :attr:`path` that :func:`signatory.signature` was called
+            with.
+
+        depth (int): The value of :attr:`depth` that :func:`signatory.signature` was called with.
+
+        stream (bool, optional): Defaults to False. The value of :attr:`stream` that :func:`signatory.signature` was
+            called with.
+
+        mode (str, optional): Defaults to :code:`"words"`. As :func:`signatory.logsignature`.
+
+    Example:
+        .. code-block:: python
+
+            import signatory
+            import torch
+            batch, stream, channels = 8, 8, 8
+            depth = 3
+            path = torch.rand(batch, stream, channels)
+            signature = signatory.signature(path, depth)
+            logsignature = signatory.signature_to_logsignature(signature, channels, depth)
+
+    Returns:
+        A :class:`torch.Tensor` representing the logsignature corresponding to the given signature. See
+        :func:`signatory.logsignature`.
+    """
+    # Go via the class so that it uses a cached lyndon info capsule, if we have one already for some reason.
+    return SignatureToLogSignature(channels, depth, stream, mode)(signature)
+
+
+class SignatureToLogSignature(nn.Module):
+    """:class:`torch.nn.Module` wrapper around the :func:`signatory.signature_to_logsignature` function.
+
+    Calling this :class:`torch.nn.Module` on an input :code:`signature` with the same number of channels as the last
+    :code:`signature` it was called with will be faster than multiple calls to the
+    :func:`signatory.signature_to_logsignature` function, in the same way that :class:`signatory.LogSignature` will be
+    faster than :func:`signatory.logsignature`.
+
+    Arguments:
+        channels (int): as :func:`signatory.signature_to_logsignature`.
+
+        depth (int): as :func:`signatory.signature_to_logsignature`.
+
+        stream (bool, optional): as :func:`signatory.signature_to_logsignature`.
+
+        mode (str, optional): as :func:`signatory.signature_to_logsignature`.
+    """
+
+    _lyndon_info_capsule_cache = weakref.WeakValueDictionary()
+
+    # Many objects - in particular PyCapsules - aren't weakref-able, so we wrap them in this.
+    class _RefHolder(object):
+        def __init__(self, item):
+            self.item = item
+
+    def __init__(self, channels, depth, stream=False, mode="words", **kwargs):
+        # type: (int, int, bool, str, **Any) -> None
+        super(SignatureToLogSignature, self).__init__(**kwargs)
+
+        self._channels = channels
+        self._depth = depth
+        self._stream = stream
+        self._mode = mode
+
+        self._lyndon_info_capsule = self._get_lyndon_info(channels, depth, mode)
+
+    @classmethod
+    def _get_lyndon_info(cls, in_channels, depth, mode):
+        try:
+            # This computation can be pretty slow! We definitely want to reuse it between instances
+            return cls._lyndon_info_capsule_cache[(in_channels, depth, mode)]
+        except KeyError:
+            mode = _interpret_mode(mode)
+            lyndon_info_capsule = cls._RefHolder(impl.make_lyndon_info(in_channels, depth, mode))
+            cls._lyndon_info_capsule_cache[(in_channels, depth, mode)] = lyndon_info_capsule
+            return lyndon_info_capsule
+
+    def forward(self, signature):
+        # type: (torch.Tensor) -> torch.Tensor
+        """The forward operation.
+
+        Arguments:
+            signature (:class:`torch.Tensor`): As :func:`signatory.signature_to_logsignature`.
+
+        Returns:
+            As :func:`signatory.signature_to_logsignature`.
+        """
+        if signature.is_cuda and self._mode == 'brackets':
+            warnings.warn("The logsignature with mode='brackets' has been requested on the GPU. This mode is quite "
+                          "slow to calculate, and the GPU offers no speedup. Consider mode='words' instead.")
+
+        return _signature_to_logsignature(signature, self._channels, self._depth, self._stream, self._mode,
+                                          self._lyndon_info_capsule.item)
+
+    def extra_repr(self):
+        return ('channels={channels}, depth={depth}, stream={stream}, mode{mode}'
+                .format(channels=self._channels, depth=self._depth, stream=self._stream, mode=self._mode))
+
+
+# Alias
+SignatureToLogsignature = SignatureToLogSignature
 
 
 def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode="words"):
@@ -94,7 +194,8 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
     The :attr:`modes` argument determines how the logsignature is represented.
 
     Note that if performing many logsignature calculations for the same depth and size of input, then you will
-    see a performance boost by using :class:`signatory.LogSignature` over :func:`signatory.logsignature`.
+    see a performance boost (at the cost of using a little extra memory) by using :class:`signatory.LogSignature`
+    instead of :func:`signatory.logsignature`.
 
     Arguments:
         path (:class:`torch.Tensor`): as :func:`signatory.signature`.
@@ -107,35 +208,39 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
 
         inverse (bool, optional): as :func:`signatory.signature`.
 
-        mode (str, optional): Defaults to :attr:`"words"`. How the output should be presented. Valid values are
-            :attr:`"expand"`, :attr:`"brackets"`, or :attr:`"words"`. Precisely what each of these options mean is
+        mode (str, optional): Defaults to :code:`"words"`. How the output should be presented. Valid values are
+            :code:`"words"`, :code:`"brackets"`, or :code:`"expand"`. Precisely what each of these options mean is
             described in the
-            "Returns" section below. As a rule of thumb: use :attr:`"words"` for new projects (as it is the fastest),
-            and use :attr:`"brackets"` for compatibility with other projects which do not provide equivalent
-            functionality to :attr:`"words"`. (Such as `iisignature <https://github.com/bottler/iisignature>`__). The
-            mode :attr:`"expand"` is mostly only interesting for mathematicians.
+            "Returns" section below. For machine learning applications, :code:`"words"` is the appropriate choice. The
+            other two options are mostly only interesting for mathematicians.
 
     Returns:
-        A :class:`torch.Tensor`. If :attr:`mode == "expand"` then it will be of the same shape as the returned tensor
-        from :func:`signatory.signature`. If :attr:`mode in ("brackets", "words")` then it will again be of the
-        same shape, except that the channel dimension will instead be of size
-        :attr:`signatory.logsignature_channels(C, depth)`, where :attr:`C` is the number of input channels, i.e.
-        :attr:`path.size(-1)`.
-        (Thus the logsignature is much smaller than the signature, which is the whole point of using the logsignature
-        over the signature in the first place.)
+        A :class:`torch.Tensor`, of almost the same shape as the tensor returned from :func:`signatory.signature` called
+        with the same arguments.
 
-        We now go on to explain what the different values for :attr:`mode` mean. This discussion is in the "Returns"
-        section because the value of :attr:`mode` essentially just determines how the output is represented; the
-        mathematical meaning is the same in all cases.
+        If :code:`mode == "expand"` then it will be exactly the same shape as the returned tensor from
+        :func:`signatory.signature`.
 
-        If :attr:`mode == "expand"` then the logsignature is presented as a member of the tensor algebra; the numbers
+        If :code:`mode in ("brackets", "words")` then the channel dimension will instead be of size
+        :code:`signatory.logsignature_channels(path.size(-1), depth)`. (Where :code:`path.size(-1)` is the number of
+        input channels.)
+
+        The different modes correspond to different mathematical representations of the logsignature.
+
+        .. tip::
+
+            If you haven't studied tensor algebras and free Lie algebras, and none of the following explanation makes
+            sense to you, then you probably want to leave :attr:`mode` on its default value of :code:`"words"` and it
+            will all be fine!
+
+        If :code:`mode == "expand"` then the logsignature is presented as a member of the tensor algebra; the numbers
         returned correspond to the coefficients of all words in the tensor algebra.
 
-        If :attr:`mode == "brackets"` then the logsignature is presented in terms of the coefficients of the Lyndon
+        If :code:`mode == "brackets"` then the logsignature is presented in terms of the coefficients of the Lyndon
         basis of the free Lie algebra.
 
-        If :attr:`mode == "words"` then the logsignature is presented in terms of the coefficients of a particular
-        computationally efficient basis of the free Lie algebra that is not a Hall basis. Every basis element is given
+        If :code:`mode == "words"` then the logsignature is presented in terms of the coefficients of a particular
+        computationally efficient basis of the free Lie algebra (that is not a Hall basis). Every basis element is given
         as a sum of Lyndon brackets. When each bracket is expanded out and the sum computed, the sum will contain
         precisely one Lyndon word (and some collection of non-Lyndon words). Moreover
         every Lyndon word is represented uniquely in this way. We identify these basis elements with each corresponding
@@ -145,24 +250,18 @@ def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode
         In all cases, the ordering corresponds to the ordering on words given by first ordering the words by length,
         and then ordering each length class lexicographically.
     """
-    # noinspection PyUnresolvedReferences
-    result = _LogSignatureFunction.apply(path, depth, stream, basepoint, inverse, mode, None)
-
-    # We have to do the transpose outside of autograd.Function.apply to avoid a PyTorch bug.
-    # https://github.com/pytorch/pytorch/issues/24413
-    if stream:
-        result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere and we
-                                         # don't want to change it.
-    return result
+    return LogSignature(depth, stream=stream, inverse=inverse, mode=mode)(path, basepoint=basepoint)
 
 
 class LogSignature(nn.Module):
-    """Module wrapper around the :func:`signatory.logsignature` function.
+    """:class:`torch.nn.Module` wrapper around the :func:`signatory.logsignature` function.
 
-    Calling this module on an input :attr:`path` with the same number of channels as the last input :attr:`path` it was
-    called with will be faster than the corresponding :func:`signatory.logsignature` function, as this module caches the
-    result of certain computations which depend only on this value. (For larger depths or numbers of channels, this
-    speedup will be substantial.)
+    This :class:`torch.nn.Module` performs certain optimisations to allow it to calculate multiple logsignatures faster
+    than multiple calls to :func:`signatory.logsignature`.
+
+    Specifically, these optimisations will apply if this :class:`torch.nn.Module` is called with an input :code:`path`
+    with the same number of channels as the last input :code:`path` it was called with, as is likely to be very common
+    in machine learning set-ups. For larger depths or numbers of channels, this speedup will be substantial.
 
     Arguments:
         depth (int): as :func:`signatory.logsignature`.
@@ -177,25 +276,43 @@ class LogSignature(nn.Module):
     def __init__(self, depth, stream=False, inverse=False, mode="words", **kwargs):
         # type: (int, bool, bool, str, **Any) -> None
         super(LogSignature, self).__init__(**kwargs)
-        self.depth = depth
-        self.stream = stream
-        self.inverse = inverse
-        self.mode = mode
+        self._depth = depth
+        self._stream = stream
+        self._inverse = inverse
+        self._mode = mode
 
-    @staticmethod
-    # This computation can be pretty slow! We definitely want to reuse it between instances
-    @compat.lru_cache(maxsize=None)
-    def lyndon_info_cache(channels, depth, mode):
-        mode = _mode_convert(mode)
-        with compat.mac_exception_catcher:
-            return _impl.make_lyndon_info(channels, depth, mode)
+        self._signature_to_logsignature_instance = None
+        self._last_channels = None
 
+    def _get_signature_to_logsignature_instance(self, channels):
+        if self._signature_to_logsignature_instance is None or self._last_channels != channels:
+            self._last_channels = channels
+            self._signature_to_logsignature_instance = SignatureToLogSignature(channels, self._depth, self._stream,
+                                                                               self._mode)
+        return self._signature_to_logsignature_instance
+
+    def prepare(self, in_channels):
+        # type: (int) -> None
+        """Prepares for computing logsignatures for paths of the specified number of channels. This will be done
+        anyway automatically whenever this :class:`torch.nn.Module` is called, if it hasn't been called already; this
+        method simply allows to have it done earlier, for example when benchmarking.
+
+        Arguments:
+            in_channels (int): The number of input channels of the path that this instance will subsequently be called
+                with. (corresponding to :code:`path.size(-1)`.)
+        """
+
+        # In particular does not return anything
+        self._get_signature_to_logsignature_instance(in_channels)
+
+    # Deliberately no 'initial' argument. To support that for logsignatures we'd need to be able to expand a
+    # (potentially compressed) logsignature into a signature first. (Which is possible in principle.)
     def forward(self, path, basepoint=False):
         # type: (torch.Tensor, Union[bool, torch.Tensor]) -> torch.Tensor
         """The forward operation.
 
         Arguments:
-            path (torch.Tensor): As :func:`signatory.logsignature`.
+            path (:class:`torch.Tensor`): As :func:`signatory.logsignature`.
 
             basepoint (bool or torch.Tensor, optional): As :func:`signatory.logsignature`.
 
@@ -203,22 +320,13 @@ class LogSignature(nn.Module):
             As :func:`signatory.logsignature`.
         """
 
-        lyndon_info = self.lyndon_info_cache(path.size(-1), self.depth, self.mode)
-        # don't call logsignature itself because that (deliberately) doesn't expose a lyndon_info argument.
-        # noinspection PyProtectedMember, PyUnresolvedReferences
-        result = _LogSignatureFunction.apply(path, self.depth, self.stream, basepoint, self.inverse, self.mode,
-                                             lyndon_info)
-
-        # We have to do the transpose outside of autograd.Function.apply to avoid a PyTorch bug.
-        # https://github.com/pytorch/pytorch/issues/24413
-        if self.stream:
-            result = result.transpose(0, 1)  # NOT .transpose_ - the underlying TensorImpl (in C++) is used elsewhere
-                                             # and we don't want to change it.
-        return result
+        signature = smodule.signature(path, self._depth, stream=self._stream, basepoint=basepoint,
+                                      inverse=self._inverse, initial=None)
+        return self._get_signature_to_logsignature_instance(path.size(-1))(signature)
 
     def extra_repr(self):
-        return ('depth={depth}, stream={stream}, basepoint={basepoint}, mode{mode}'
-                .format(depth=self.depth, stream=self.stream, basepoint=str(self.basepoint)[:6], mode=self.mode))
+        return ('depth={depth}, stream={stream}, inverse={inverse}, mode{mode}'
+                .format(depth=self._depth, stream=self._stream, inverse=self._inverse, mode=self._mode))
 
 
 # Alias
@@ -265,7 +373,8 @@ def logsignature_channels(in_channels, depth):
 
     Arguments:
         in_channels (int): The number of channels in the input; that is, the dimension of the space that the input path
-            resides in.
+            resides in. If calling :func:`signatory.logsignature` with argument :attr:`path` then :attr:`in_channels`
+            should be equal to :attr:`path.size(-1)`.
 
         depth (int): The depth of the signature that is being computed.
 

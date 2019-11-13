@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
-"""An example for the documentation.
-Placed here as we also test it to make sure the examples work."""
+"""A simple example."""
 
 
+# start-literal-include
 import signatory
 import torch
 from torch import nn

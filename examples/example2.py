@@ -16,6 +16,7 @@
 Placed here as we also test it to make sure the examples work."""
 
 
+# start-literal-include
 import signatory
 import torch
 from torch import nn

@@ -55,7 +55,7 @@ In fact, the :class:`signatory.Path` class supports adding data to it as well:
 
 .. note::
 
-    To be able to compute signatures over intervals like this, it is clear that :class:`signatory.Path` must hold information about the whole stream of data in memory.
+    To be able to compute signatures over intervals like this, then of course :class:`signatory.Path` must hold information about the whole stream of data in memory.
 
     If only the signature of the whole path is of interest then the main :func:`signatory.signature` function will work fine.
 

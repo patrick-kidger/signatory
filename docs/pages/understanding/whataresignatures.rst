@@ -6,7 +6,7 @@ If you're reading this then it's probably because you already know what the sign
 
 The *signature transform* is a transformation that takes in a stream of data (often a time series), and returns a collection of statistics about that stream of data, called the *signature*. This collection of statistics determines the path essentially uniquely. Importantly, the signature is rich enough that every continuous function of the input stream may be approximated arbitrarily well by a linear function of its signature; the signature transform is what we call a *universal nonlinearity*. If you're doing machine learning then you probably understand why this is such a desirable property!
 
-.. genreadme off
+.. command.readme off
 
 The definition of the signature transform can be a little bit intimidating -
 
@@ -26,6 +26,6 @@ In principle the signature transform is quite similar to the Fourier transform: 
 
     It turns out that order and area are actually in some sense the same concept. For a (very simplistic) example of this: consider the functions :math:`f(x) = x(1-x)` and :math:`g(x) = x(x-1)` for :math:`x \in [0, 1]`. Then the area of :math:`f` is :math:`\int_0^1 f(x) \mathrm{d} x = \tfrac{1}{6}` whilst the area of :math:`g` is :math:`\int_0^1 g(x) \mathrm{d} x = \tfrac{-1}{6}`. Meanwhile, the graph of :math:`f` goes *up* then *down*, whilst the graph of :math:`g` goes *down* then *up*: the order of the ups and downs corresponds to the area.
 
-.. genreadme on
+.. command.readme on
 
 Check out `this <https://arxiv.org/abs/1603.03788>`__ for a primer on the use of the signature transform in machine learning, just as a feature transformation, and `this <https://arxiv.org/abs/1905.08494>`__ for a more in-depth look at integrating the signature transform into neural networks.

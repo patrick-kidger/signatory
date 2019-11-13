@@ -16,6 +16,7 @@
 
 
 import setuptools
+import sys
 try:
     import torch.utils.cpp_extension as cpp
 except ImportError:
@@ -23,6 +24,16 @@ except ImportError:
     
 import metadata
 
+extra_compile_args = []
+
+# fvisibility flag because of https://pybind11.readthedocs.io/en/stable/faq.html#someclass-declared-with-greater-visibility-than-the-type-of-its-field-someclass-member-wattributes
+if not sys.platform.startswith('win'):  # linux or mac
+    extra_compile_args.append('-fvisibility=hidden')
+
+if sys.platform.startswith('win'):  # windows
+    extra_compile_args.append('/openmp')
+else:  # linux or mac
+    extra_compile_args.append('-fopenmp')
 
 ext_modules = [cpp.CppExtension(name='_impl',
                                 sources=['src/logsignature.cpp',
@@ -36,8 +47,7 @@ ext_modules = [cpp.CppExtension(name='_impl',
                                          'src/misc.hpp',
                                          'src/signature.hpp',
                                          'src/tensor_algebra_ops.hpp'],
-                                extra_compile_args=['-fvisibility=hidden'])]
-# fvisibility flag because of https://pybind11.readthedocs.io/en/stable/faq.html#someclass-declared-with-greater-visibility-than-the-type-of-its-field-someclass-member-wattributes
+                                extra_compile_args=extra_compile_args)]
 
 
 setuptools.setup(name=metadata.project,

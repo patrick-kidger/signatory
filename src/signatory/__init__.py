@@ -12,12 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
+"""Signatory: Differentiable computations of the signature and logsignature transforms, on both CPU and GPU.
+
+Project homepage: github.com/patrick-kidger/signatory
+Documentation: signatory.readthedocs.io
+"""
 
 
 import torch  # must be imported before anything from signatory
 
+try:
+    from . import impl
+except ImportError as e:
+    if 'specified procedure could not be found' in str(e):
+        raise ImportError('Caught ImportError:\n```\n{}\n```\nThis can probably be fixed by updating your version of '
+                          'Python, e.g. from 3.6.6 to 3.6.9. See the FAQ in the documentation.'.format(str(e)))
+    elif 'Symbol not found' in str(e):
+        raise ImportError('Caught Import Error:\n```\n{}\n```\nThis can probably be fixed by changing your version of '
+                          'PyTorch. See the FAQ in the documentation.'.format(str(e)))
+    else:
+        raise
+
+
 from .augment import Augment
-from .logsignature_module import (logsignature,
+from .logsignature_module import (signature_to_logsignature,
+                                  SignatureToLogSignature,
+                                  SignatureToLogsignature,
+                                  logsignature,
                                   LogSignature,
                                   Logsignature,  # alias for LogSignature
                                   logsignature_channels)
@@ -26,12 +47,15 @@ from .signature_module import (signature,
                                Signature,
                                signature_channels,
                                extract_signature_term,
-                               signature_combine)
+                               signature_combine,
+                               multi_signature_combine)
+from . import unstable  # make it available as an attribute here, but don't import any unstable objects themselves
 from .utility import (lyndon_words,
                       lyndon_brackets,
-                      all_words)
+                      all_words,
+                      max_parallelism)
 
 
-__version__ = "1.1.3"
+__version__ = "1.1.4"
 
 del torch

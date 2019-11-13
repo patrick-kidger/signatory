@@ -5,12 +5,18 @@ Logsignatures
 
 .. currentmodule:: signatory
 
-Note that if performing many logsignature calculations for the same depth and size of input, then you will likely see a performance boost by using :class:`signatory.LogSignature` over :class:`signatory.logsignature`.
-
 .. autofunction:: signatory.logsignature
 
 .. autoclass:: signatory.LogSignature
 
     .. automethod:: signatory.LogSignature.forward
 
+    .. automethod:: signatory.LogSignature.prepare
+
 .. autofunction:: signatory.logsignature_channels
+
+.. autofunction:: signatory.signature_to_logsignature
+
+.. autoclass:: signatory.SignatureToLogSignature
+
+    .. automethod:: signatory.SignatureToLogSignature.forward

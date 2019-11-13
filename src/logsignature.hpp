@@ -25,18 +25,26 @@
 #include "misc.hpp"
 
 namespace signatory {
+    // Modes for the return value of logsignature
+    // See signatory.logsignature for further documentation
+    enum class LogSignatureMode { Expand, Brackets, Words };
+
     // Makes a LyndonInfo PyCapsule
     py::object make_lyndon_info(int64_t channels, s_size_type depth, LogSignatureMode mode);
 
-    // See signatory.logsignature for documentation
+    // See signatory.signature_to_logsignature for documentation
     std::tuple<torch::Tensor, py::object>
-    logsignature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint,
-                         torch::Tensor basepoint_value, bool inverse, LogSignatureMode mode,
-                         py::object lyndon_info_capsule);
+    signature_to_logsignature_forward(torch::Tensor signature, int64_t input_channel_size, s_size_type depth,
+                                      bool stream, LogSignatureMode mode, py::object lyndon_info_capsule);
 
-    // See signatory.logsignature for documentation
-    std::tuple<torch::Tensor, torch::Tensor>
-    logsignature_backward(torch::Tensor grad_logsignature, py::object backwards_info_capsule);
+    // See signatory.signature_to_logsignature for documentation
+    torch::Tensor signature_to_logsignature_backward(torch::Tensor grad_logsignature,
+                                                     torch::Tensor signature,
+                                                     int64_t input_channel_size,
+                                                     s_size_type depth,
+                                                     bool stream,
+                                                     LogSignatureMode mode,
+                                                     py::object lyndon_info_capsule);
 }  // namespace signatory
 
 #endif //SIGNATORY_LOGSIGNATURE_HPP

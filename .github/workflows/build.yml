@@ -11,7 +11,7 @@ name: Build and test
 # Arguments:
 # event_name: pull_request
 # event_cond: true
-# trigger: -not-available-  # not available via repository_dispatch (there's no pull request to test!)
+# trigger: -not-available-  # not available via repository_dispatch (we'd need a way to specify which pull request we want tested; not obvious if that's possible)
 
 
 on:
@@ -19,7 +19,6 @@ on:
   pull_request:
     branches:
       - master
-    
 
 jobs:
   check_version:
@@ -28,96 +27,151 @@ jobs:
       matrix:
         os: [ubuntu-16.04]
         python-version: [3.7.0]
+        pytorch-version: [1.2.0]
     
     steps:
     - name: Checkout code
-      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
       uses: actions/checkout@v1
 
     - name: Install Python
-      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
       uses: actions/setup-python@v1
       with:
         python-version: '3.7'
 
     - name: Check version
-      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
       run: |
         python -c "import itertools as it
         import re
         import subprocess
         import sys
         import metadata
-        version_msg = subprocess.run('pip install --index-url https://test.pypi.org/simple/ signatory==', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        version_msg = subprocess.run('pip install signatory==', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         print('Version msg: ', version_msg)
-        version_re = re.compile(rb'from versions: ([0-9\. ,]*)\)')
+        version_re = re.compile(rb'from versions: ([0-9\. ,torch]*)\)')
         last_version = version_re.search(version_msg.stderr).group(1).split(b', ')[-1]
-        print('Last version: ', last_version)
-        print('This version: ', metadata.version)
-        last_version = [int(i) for i in last_version.split(b'.')]
-        this_version = [int(i) for i in metadata.version.split('.')]
-        last_version_ = [l for t, l in it.zip_longest(this_version, last_version, fillvalue=0)]
-        this_version_ = [t for t, l in it.zip_longest(this_version, last_version, fillvalue=0)]
-        sys.exit(tuple(this_version_) <= tuple(last_version_))
+        print('(Raw) last version: ', last_version)
+        print('(Raw) this version: ', metadata.version)
+        last_version_ = []
+        for i in last_version.split(b'.'):
+            if b'torch' in i:
+                break
+            last_version_.append(int(i))
+        this_version_ = []
+        for i in metadata.version.split('.'):
+            if 'torch' in i:
+                break
+            this_version_.append(int(i))
+        print('(No torch) last version: ', last_version_)
+        print('(No torch) this version: ', this_version_)
+        last_version__ = tuple(l for t, l in it.zip_longest(this_version_, last_version_, fillvalue=0))
+        this_version__ = tuple(t for t, l in it.zip_longest(this_version_, last_version_, fillvalue=0))
+        print('(Final) last version: ', last_version__)
+        print('(Final) this version: ', this_version__)
+        sys.exit(this_version__ <= last_version__)
         "
-  
-  
+
+
   check_readme:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-16.04]
         python-version: [3.7.0]
+        pytorch-version: [1.2.0]
     
     steps:
     - name: Checkout code
-      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
       uses: actions/checkout@v1
 
     - name: Install Python
-      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
       uses: actions/setup-python@v1
       with:
         python-version: '3.7'
 
     - name: Compare READMEs
-      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
       run: |
         cp README.rst README.rst.old
-        python command.py genreadme
+        python command.py readme
         python -c "import io
         import sys
         readme = io.open('README.rst', 'r', encoding='utf-8')
         readme_old = io.open('README.rst.old', 'r', encoding='utf-8')
         sys.exit(readme.read() != readme_old.read())
         "
-  
+
+  check_workflows:
+      runs-on: ${{ matrix.os }}
+      strategy:
+        matrix:
+          os: [ubuntu-16.04]
+          python-version: [3.7.0]
+          pytorch-version: [1.2.0]
+      
+      steps:
+      - name: Checkout code
+        if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+        uses: actions/checkout@v1
+
+      - name: Install Python
+        if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+        uses: actions/setup-python@v1
+        with:
+          python-version: '3.7'
+
+      - name: Compare Workflows
+        if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+        run: |
+          cp .github/workflows/build.yml .github/workflows/build.yml.old
+          cp .github/workflows/deploy.yml .github/workflows/deploy.yml.old
+          cp .github/workflows/log_dispatch.yml .github/workflows/log_dispatch.yml.old
+          cp .github/workflows/test_deployed.yml .github/workflows/test_deployed.yml.old
+          python command.py workflows
+          python -c "import io
+          import sys
+          build = io.open('.github/workflows/build.yml', 'r', encoding='utf-8')
+          build_old = io.open('.github/workflows/build.yml.old', 'r', encoding='utf-8')
+          deploy = io.open('.github/workflows/deploy.yml', 'r', encoding='utf-8')
+          deploy_old = io.open('.github/workflows/deploy.yml.old', 'r', encoding='utf-8')
+          log_dispatch = io.open('.github/workflows/log_dispatch.yml', 'r', encoding='utf-8')
+          log_dispatch_old = io.open('.github/workflows/log_dispatch.yml.old', 'r', encoding='utf-8')
+          test_deployed = io.open('.github/workflows/test_deployed.yml', 'r', encoding='utf-8')
+          test_deployed_old = io.open('.github/workflows/test_deployed.yml.old', 'r', encoding='utf-8')
+          result = (build.read() == build_old.read()) and (deploy.read() == deploy_old.read()) and (log_dispatch.read() == log_dispatch_old.read()) and (test_deployed.read() == test_deployed_old.read())
+          sys.exit(not result)
+          "
 
   build:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [windows-2016, ubuntu-16.04, macOS-10.14]
-        python-version: [2.7.13, 3.5.4, 3.6.2, 3.7.0]
+        python-version: [2.7.13, 3.5.4, 3.6.9, 3.7.0]
+        pytorch-version: [1.2.0, 1.3.0]
         exclude:
           # PyTorch doesn't support this combination
           - os: windows-2016
             python-version: 2.7.13
       fail-fast: false
-    needs: [check_version, check_readme]
+    needs: [check_version, check_readme, check_workflows]
     steps:
     - name: Checkout code
-      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
       uses: actions/checkout@v1
       
     - name: Install Python
-      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
+      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *'))))
       uses: actions/setup-python@v1
       with:
         python-version: '3.7'
 
     - name: Windows
-      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *')))) && (matrix.os == 'windows-2016')
+      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *')))) && (matrix.os == 'windows-2016')
       env:
         PYTHON_VERSION: ${{ matrix.python-version }}
       shell: cmd
@@ -129,11 +183,12 @@ jobs:
         %CONDA%/Scripts/conda create -n myenv python=%PYTHON_VERSION% -y &&
         %CONDA%/Scripts/activate myenv &&
         python -m pip install --upgrade pip &&
-        conda install pytorch -c pytorch -y &&
+        conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y &&
         python command.py should_not_import &&
-        python setup.py bdist_wheel &&
+        python setup.py egg_info --tag-build=".torch${{ matrix.pytorch-version }}" bdist_wheel &&
+        python command.py should_not_import &&
         for %%f in (./dist/*) do (python -m pip install ./dist/%%~nxf) &&
-        python -m pip install iisignature &&
+        python -m pip install iisignature pytest &&
         python -c "import os;
         import subprocess;
         import sys;
@@ -145,7 +200,7 @@ jobs:
         echo done
 
     - name: Linux
-      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *')))) && (matrix.os == 'ubuntu-16.04')
+      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *')))) && (matrix.os == 'ubuntu-16.04')
       env:
         PYTHON_VERSION: ${{ matrix.python-version }}
       # Deliberately only creating an sdist; see FAQ
@@ -155,16 +210,17 @@ jobs:
         conda create -n myenv python=$PYTHON_VERSION -y
         conda activate myenv
         python -m pip install --upgrade pip
-        conda install pytorch -c pytorch -y
+        conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
         python command.py should_not_import
-        python setup.py sdist
+        python setup.py egg_info --tag-build=".torch${{ matrix.pytorch-version }}" sdist
+        python command.py should_not_import
         SIGNATORY_INSTALLED=$(python -c "import os
         import sys
         x = os.listdir('dist')
         print(x[0])
         sys.exit(len(x) != 1)")
         python -m pip install ./dist/$SIGNATORY_INSTALLED
-        python -m pip install iisignature
+        python -m pip install iisignature pytest
         python -c "import os
         import subprocess
         import sys
@@ -176,19 +232,24 @@ jobs:
       
 
     - name: Mac
-      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.2') && matrix.python-version == '3.6.2') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *')))) && (matrix.os == 'macOS-10.14')
+      if: ((github.event_name == 'pull_request' && (true)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger -not-available- ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-10.14') && matrix.os == 'macOS-10.14') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 2.7.13') && matrix.python-version == '2.7.13') || (contains(github.event.action, '-pv 3.5.4') && matrix.python-version == '3.5.4') || (contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || contains(github.event.action, '-pv *')))) && (matrix.os == 'macOS-10.14')
       env:
         PYTHON_VERSION: ${{ matrix.python-version }}
       run: |
         set -x
+        brew update
+        brew install llvm libomp
         echo 'set -ex
         . $CONDA/etc/profile.d/conda.sh
         conda create -n myenv python=$PYTHON_VERSION -y
         conda activate myenv
         python -m pip install --upgrade pip
-        conda install pytorch -c pytorch -y
+        conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
         python command.py should_not_import
-        MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ python setup.py bdist_wheel
+        export LDFLAGS="-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib"
+        export CPPFLAGS="-I/usr/local/opt/llvm/include"
+        MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build=".torch${{ matrix.pytorch-version }}" bdist_wheel
+        python command.py should_not_import
         SIGNATORY_INSTALLED=$(python -c "import os
         import sys
         x = os.listdir('\''dist'\'')
@@ -200,6 +261,7 @@ jobs:
         python setup.py install
         cd ..
         rm -rf iisignature
+        python -m pip install pytest
         python -c "import os
         import subprocess
         import sys

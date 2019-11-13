@@ -2,43 +2,80 @@
 
 Installation
 ############
-Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7 and Linux, Mac, Windows.
+Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7.
 
-Requires `PyTorch <http://pytorch.org/>`__. Tested with PyTorch version 1.2.0, but should work with all recent versions.
+Available for Linux, Mac, Windows.
 
-Install via ``pip install signatory``. Then just ``import signatory`` inside Python.
+Requires `PyTorch <http://pytorch.org/>`__ 1.2.0 or 1.3.0.
 
-.. genreadme insert install_from_source
+Installation is pretty simple:
 
-.. genreadme off
+.. code-block:: bash
 
-..
-    The FAQ link has to be a direct link, not a reference, so that it works on the GitHub README.
-    And furthermore GitHub's READMEs don't like comments, so we have to toggle genreadme either side of this comment.
+    pip install signatory==<SIGNATORY_VERSION>.torch<TORCH_VERSION>
 
-.. genreadme on
+where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is |version|) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
 
-If you have any problems with installation then check the `FAQ <https://signatory.readthedocs.io/en/latest/pages/miscellaneous/faq.html>`__. If that doesn't help then feel free to `open an issue <https://github.com/patrick-kidger/signatory/issues>`__.
+.. command.readme off (GitHub doesn't support using admonitions this way, and just uses indented text instead.)
+.. admonition:: Example
 
-.. genreadme off
+    .. command.readme on
+
+    For example, if you are using PyTorch 1.3.0 and want Signatory 1.1.4, then you should run:
+
+    .. code-block:: bash
+
+        pip install signatory==1.1.4.torch1.3.0
+
+Then just ``import signatory`` inside Python.
+
+.. command.readme off
+.. caution::
+
+    .. command.readme on
+
+    Take care **not** to run ``pip install signatory``, as this will likely download the wrong version. This care is needed due to a `limitation of PyTorch <https://github.com/pytorch/pytorch/issues/28754>`__.
+
+.. command.readme insert Installation from source is also possible; please consult the `documentation <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__. This also includes information on how to run the tests and benchmarks.
+
+If you have any problems with installation then check the `FAQ <https://signatory.readthedocs.io/en/latest/pages/miscellaneous/faq.html#miscellaneous-faq-importing>`__. If that doesn't help then feel free to `open an issue <https://github.com/patrick-kidger/signatory/issues>`__.
+
+.. command.readme off
 
 .. _usage-install-from-source:
 
 Install from source
 ^^^^^^^^^^^^^^^^^^^
-For most use-cases, the prebuilt binaries available as described above should be sufficient. If installing a binary fails, or you want to run the tests yourself, or you want to try eking out a little extra speed with a specific-to-you compilation, then you'll need to install from source. You'll need to be able to compile C++. You must have already installed `PyTorch <http://pytorch.org/>`__, as this is a requirement to run ``setup.py``. Then:
+For most use-cases, the prebuilt binaries available as described above should be sufficient. However installing from source is also perfectly feasible, and usually not too tricky.
+
+You'll need to have a C++ compiler installed and known to ``pip``, and furthermore this must be the same compiler that PyTorch uses. (This is ``msvc`` on Windows, ``gcc`` on Linux, and ``clang`` on Macs.) You must have already installed `PyTorch <http://pytorch.org/>`__. (You don't have to compile PyTorch itself from source, though!)
+
+Then run **either**
+
+.. code-block:: bash
+
+    pip install signatory==<SIGNATORY_VERSION>.torch<TORCH_VERSION> --no-binary signatory
+
+(where ``<SIGNATORY_VERSION>`` and ``<TORCH_VERSION>`` are as above.)
+
+**or**
 
 .. code-block:: bash
 
     git clone https://github.com/patrick-kidger/signatory.git
     cd signatory
     python setup.py install
-    
-Subsequent to this,
 
-- Tests can be run, see ``python command.py test --help``. This requires installing `iisignature <https://github.com/bottler/iisignature>`__.
-- Speed benchmarks can be performed, see ``python command.py benchmark --help``. This requires installing `iisignature <https://github.com/bottler/iisignature>`__ and `esig <https://pypi.org/project/esig/>`__.
-- Documentation built via ``python command.py docs``. This requires installing `Sphinx <https://pypi.org/project/Sphinx/>`__, `sphinx_rtd_theme <https://pypi.org/project/sphinx-rtd-theme/>`__, `py2annotate <https://github.com/patrick-kidger/py2annotate>`__ and `subprocess32 <https://pypi.org/project/subprocess32/>`__.
+If you chose the first option then you'll get just the files necessary to run Signatory.
+
+If you choose the second option then tests, benchmarking code, and code to build the documentation will also be provided. Subsequent to this,
+
+- | Tests can be run, see ``python command.py test --help``.
+  | This requires installing `iisignature <https://github.com/bottler/iisignature>`__ and `pytest <https://pytest.org>`__.
+- | Speed and memory  benchmarks can be performed, see ``python command.py benchmark --help``.
+  | This requires installing `iisignature <https://github.com/bottler/iisignature>`__, `esig <https://pypi.org/project/esig/>`__, and `memory profiler <https://pypi.org/project/memory-profiler/su>`__.
+- | Documentation can be built via ``python command.py docs``.
+  | This requires installing `Sphinx <https://pypi.org/project/Sphinx/>`__, `sphinx_rtd_theme <https://pypi.org/project/sphinx-rtd-theme/>`__ and `py2annotate <https://github.com/patrick-kidger/py2annotate>`__.
 
 .. note::
     
@@ -52,12 +89,18 @@ Subsequent to this,
         
     (the exact command will depend on your operating system and version of Visual Studio).
     
-    If on a Mac then the installation command may instead look like
+    If on a Mac then the installation command should instead look like either
+
+    .. code-block:: bash
+
+            MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ pip install signatory==<SIGNATORY_VERSION>.torch<TORCH_VERSION> --no-binary signatory
+
+    or
     
     .. code-block:: bash
     
         MACOSX_DEPLOYMENT_TARGET=10.9 CC=clang CXX=clang++ python setup.py install
 
-.. note::
+    depending on the choice of installation method.
 
-    Your C++ compiler must be the same as the one used to compile PyTorch for your platform. (If this is not the case then a large warning will appear during compilation of Signatory, and the installation will probably fail.)
+A helpful point of reference for getting this to work might be the `official build scripts <https://github.com/patrick-kidger/signatory/blob/master/.github/workflows/build.yml>`__ for Signatory.

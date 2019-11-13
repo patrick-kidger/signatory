@@ -26,10 +26,6 @@
 
 
 namespace signatory {
-    // Modes for the return value of logsignature
-    // See signatory.logsignature for further documentation
-    enum class LogSignatureMode { Expand, Brackets, Words };
-
     // signed-ness is important because we'll sometimes iterate downwards
     // it is very deliberately not called 'size_type' because otherwise when using it in e.g. the constructor for
     // something inheriting from std::vector, then 'size_type' will there refer to std::vector::size_type instead.
@@ -46,82 +42,34 @@ namespace signatory {
     constexpr auto channel_dim = -1;
 
     // See signatory.signature_channels for documentation
-    int64_t signature_channels(int64_t input_channels, int64_t depth);
+    int64_t signature_channels(int64_t input_channel_size, int64_t depth);
+
+    // See signatory.max_parallelism for documentation
+    // But basically, this is the amount of extra parallelisation we allow ourselves for those operations which, as a
+    // result of parallelising, use extra memory.
+    // As a result this should be used to bound the parallelisation whenever this is the case. (And should _not_ be used
+    // to bound all parallelisation!)
+    void set_max_parallelism(int64_t value);
+    int64_t get_max_parallelism();
 
     namespace misc {
-        // Encapsulates the things necessary for certain computations. This will get passed around through
-        // most such functions.
-        struct MinimalSpec {
-            MinimalSpec(int64_t input_channels, s_size_type depth);
+        inline torch::TensorOptions make_opts(torch::Tensor tensor);
 
-            int64_t input_channels;
-            s_size_type depth;
-        };
-
-        // Encapsulates all the things that aren't tensors for signature and logsignature computations. This will get
-        // passed around through most such functions.
-        struct SigSpec : MinimalSpec {
-            SigSpec(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, bool inverse);
-
-            torch::TensorOptions opts;
-            int64_t input_stream_size;
-            int64_t batch_size;
-            int64_t output_stream_size;
-            int64_t output_channels;
-            int64_t n_output_dims;
-            torch::Tensor reciprocals;
-            bool stream;
-            bool basepoint;
-            bool inverse;
-        };
+        inline torch::Tensor make_reciprocals(s_size_type depth, torch::TensorOptions opts);
 
         // Argument 'in' is assumed to be a tensor with channel dimension of size minimalspec.input_channels.
         // It is sliced up along that dimension, and the resulting tensors placed into 'out'.
         // Each resulting tensor corresponds to one of the (tensor, not scalar) terms in the signature.
-        inline void slice_by_term(torch::Tensor in, std::vector<torch::Tensor>& out, const MinimalSpec& minimalspec);
+        inline void slice_by_term(torch::Tensor in, std::vector<torch::Tensor>& out, int64_t input_channel_size,
+                                  s_size_type depth);
 
         // Argument 'in' is assumed to be a tensor for which its first dimension corresponds to the stream dimension.
         // Its slices along a particular index of that dimension are put in 'out'.
-        inline void slice_at_stream(std::vector<torch::Tensor> in, std::vector<torch::Tensor>& out,
+        inline void slice_at_stream(const std::vector<torch::Tensor>& in, std::vector<torch::Tensor>& out,
                                     int64_t stream_index);
-
-        inline bool is_even(s_size_type index);
-
-        // Retains information needed for the backwards pass.
-        struct BackwardsInfo{
-            BackwardsInfo(SigSpec&& sigspec_, const std::vector<torch::Tensor>& stream_vector_,
-                          torch::Tensor signature_, torch::Tensor path_increments_, bool initial_);
-
-            void set_logsignature_data(const std::vector<torch::Tensor>& signature_vector_,
-                                       py::object lyndon_info_capsule_,
-                                       LogSignatureMode mode_,
-                                       int64_t logsignature_channels_);
-
-            SigSpec sigspec;
-            std::vector<torch::Tensor> signature_by_term;
-            torch::Tensor signature;
-            torch::Tensor path_increments;
-            bool initial;
-
-            py::object lyndon_info_capsule;
-            LogSignatureMode mode;
-            int64_t logsignature_channels;
-
-            constexpr static auto capsule_name = "signatory.BackwardsInfoCapsule";
-        };
 
         // Checks the arguments for a bunch of functions only depending on channels and depth.
         void checkargs_channels_depth(int64_t channels, s_size_type depth);
-
-        // Checks the arguments for the forwards pass in the signature function (kept here for consistency with the
-        // other checkarg functions).
-        void checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value,
-                       bool initial, torch::Tensor initial_value);
-
-        // Checks the arguments for the backwards pass in the signature and logsignature function. Only grad_out is
-        // checked to make sure it is as expected. The objects we get from the PyCapsule-wrapped BackwardsInfo object
-        // are assumed to be correct.
-        void checkargs_backward(torch::Tensor grad_out, const SigSpec& sigspec, int64_t num_channels=-1);
     }  // namespace signatory::misc
 }  // namespace signatory
 

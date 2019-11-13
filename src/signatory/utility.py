@@ -17,14 +17,12 @@
 
 import itertools as it
 
-# noinspection PyUnresolvedReferences
-from . import compatibility as compat
-from . import _impl
+from . import impl
 
 
 # noinspection PyUnreachableCode
 if False:
-    from typing import List, Tuple, Union
+    from typing import List, Optional, Union
     # what we actually want, but can't make sense of in the auto-generated documentation
     # LyndonBracket = Union[int, List['LyndonBracket']]
     LyndonBracket = Union[int, List]
@@ -36,6 +34,9 @@ def lyndon_words(channels, depth):
     :attr:`channels`. Each letter is represented by an integer :math:`i` in the range
     :math:`0 \leq i < \text{channels}`.
 
+    Logsignatures may be thought of as a sum of coefficients of Lyndon words. This gives the words in the order that
+    they correspond to the values returned by :func:`signatory.logsignature` with :code:`mode="words"`.
+
     Arguments:
         channels (int): The size of the alphabet.
         depth (int): The maximum word length.
@@ -45,8 +46,7 @@ def lyndon_words(channels, depth):
         then ordered lexicographically within each length class.
     """
 
-    with compat.mac_exception_catcher:
-        return _impl.lyndon_words(channels, depth)
+    return impl.lyndon_words(channels, depth)
 
 
 def lyndon_brackets(channels, depth):
@@ -54,6 +54,9 @@ def lyndon_brackets(channels, depth):
     r"""Computes the collection of all Lyndon words, in their standard bracketing, up to length :attr:`depth` in an
     alphabet of size :attr:`channels`. Each letter is represented by an integer :math:`i` in the range
     :math:`0 \leq i < \text{channels}`.
+
+    Logsignatures may be thought of as a sum of coefficients of Lyndon brackets. This gives the brackets in the order
+    that they correspond to the values returned by :func:`signatory.logsignature` with :code:`mode="brackets"`.
 
     Arguments:
         channels (int): The size of the alphabet.
@@ -63,8 +66,7 @@ def lyndon_brackets(channels, depth):
         A list. Each element corresponds to a single Lyndon word with its standard bracketing. The words are ordered by
         length, and then ordered lexicographically within each length class."""
 
-    with compat.mac_exception_catcher:
-        return _impl.lyndon_brackets(channels, depth)
+    return impl.lyndon_brackets(channels, depth)
 
 
 def all_words(channels, depth):
@@ -72,6 +74,12 @@ def all_words(channels, depth):
     r"""Computes the collection of all words up to length :attr:`depth` in an alphabet of size
     :attr:`channels`. Each letter is represented by an integer :math:`i` in the range
     :math:`0 \leq i < \text{channels}`.
+
+    Signatures may be thought of as a sum of coefficients of words. This gives the words in the order that they
+    correspond to the values returned by :func:`signatory.signature`.
+
+    Logsignatures may be thought of as a sum of coefficients of words. This gives the words in the order that they
+    correspond to the values returned by :func:`signatory.logsignature` with :code:`mode="expand"`.
 
     Arguments:
         channels (int): The size of the alphabet.
@@ -93,11 +101,17 @@ def all_words(channels, depth):
     return list(generator())
 
 
-# This is deliberately an undocumented function as it's pretty esoteric
-def lyndon_words_to_basis_transform(channels, depth):
-    # type: (int, int) -> List[Tuple[int, int, int]]
-    """Computes the collection of transforms needed to go from a basis of the free Lie algebra in terms of Lyndon words
-    to a basis of the free Lie algebra in terms of the Lyndon basis."""
+def max_parallelism(value=None):
+    # type: (Optional[int]) -> int
+    """Gets or sets the maximum amount of parallelism used in Signatory's computations. Higher values will typically
+    result in quicker computations but will use more memory.
 
-    with compat.mac_exception_catcher:
-        return _impl.lyndon_words_to_basis_transform(channels, depth)
+    Calling without arguments will return the current value.
+    Passing a value of 1 will disable parallelism.
+    Passing :code:`-1`, :code:`math.inf`, :code:`np.inf` or :code:`float('inf')` will enable unlimited parallelism.
+    """
+    if value is not None:
+        if value == float('inf'):
+            value = -1
+        impl.set_max_parallelism(value)
+    return impl.get_max_parallelism()

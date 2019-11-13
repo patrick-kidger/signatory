@@ -19,22 +19,58 @@ Check out `this <https://arxiv.org/abs/1603.03788>`__ for a primer on the use of
 
 Installation
 ############
-Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7 and Linux, Mac, Windows.
+Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7.
 
-Requires `PyTorch <http://pytorch.org/>`__. The Mac and Windows precompiled binaries currently require PyTorch version 1.2.0. Version 1.3.0 support coming soon!
+Available for Linux, Mac, Windows.
 
-Install via ``pip install signatory``. Then just ``import signatory`` inside Python.
+Requires `PyTorch <http://pytorch.org/>`__ 1.2.0 or 1.3.0.
 
-Installation from source is also possible; please consult the `documentation <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__.
+Installation is pretty simple:
+
+.. code-block:: bash
+
+    pip install signatory==<SIGNATORY_VERSION>.torch<TORCH_VERSION>
+
+where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.1.4) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
 
 
-If you have any problems with installation then check the `FAQ <https://signatory.readthedocs.io/en/latest/pages/miscellaneous/faq.html>`__. If that doesn't help then feel free to `open an issue <https://github.com/patrick-kidger/signatory/issues>`__.
+    For example, if you are using PyTorch 1.3.0 and want Signatory 1.1.4, then you should run:
+
+    .. code-block:: bash
+
+        pip install signatory==1.1.4.torch1.3.0
+
+Then just ``import signatory`` inside Python.
+
+
+    Take care **not** to run ``pip install signatory``, as this will likely download the wrong version. This care is needed due to a `limitation of PyTorch <https://github.com/pytorch/pytorch/issues/28754>`__.
+
+Installation from source is also possible; please consult the `documentation <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__. This also includes information on how to run the tests and benchmarks.
+
+If you have any problems with installation then check the `FAQ <https://signatory.readthedocs.io/en/latest/pages/miscellaneous/faq.html#miscellaneous-faq-importing>`__. If that doesn't help then feel free to `open an issue <https://github.com/patrick-kidger/signatory/issues>`__.
 
 
 
 Documentation
 #############
 The documentation is available `here <https://signatory.readthedocs.io>`__.
+
+Example
+#######
+Usage is straightforward.
+
+.. code-block:: python
+
+    import signatory
+    import torch
+    # batch size is 1
+    # length of input stream is 10
+    # number of channels is 2
+    x = torch.rand(1, 10, 2)
+    # Compute signature to depth 4
+    signatory.signature(x, 4)
+
+For further examples, see the `documentation <https://signatory.readthedocs.io/en/latest/pages/examples/examples.html>`__.
 
 
 Citation
@@ -46,7 +82,7 @@ If you found this library useful in your research, please consider citing
     @misc{signatory,
         title={{Signatory: differentiable computations of the signature and logsignature transforms, on both CPU and GPU}},
         author={Kidger, Patrick},
-        note={https://github.com/patrick-kidger/signatory},
+        note={\texttt{https://github.com/patrick-kidger/signatory}},
         year={2019}
     }
 
