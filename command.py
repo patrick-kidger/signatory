@@ -279,23 +279,20 @@ def readme(args=()):
 
     outs.append("Example\n"
                 "#######\n"
-                "Usage is straightforward.\n"
+                "Usage is straightforward. As a simple example,\n"
                 "\n"
                 ".. code-block:: python\n"
                 "\n"
                 "    import signatory\n"
                 "    import torch\n"
-                "    # batch size is 1\n"
-                "    # length of input stream is 10\n"
-                "    # number of channels is 2\n"
-                "    x = torch.rand(1, 10, 2)\n"
-                "    # Compute signature to depth 4\n"
-                "    signatory.signature(x, 4)\n"
+                "    batch, stream, channels = 1, 10, 2\n"
+                "    depth = 4\n"
+                "    path = torch.rand(batch, stream, channels)\n"
+                "    signature = signatory.signature(path, depth)\n"
                 "\n"
                 "For further examples, see the `documentation <https://signatory.readthedocs.io/en/latest/pages/examples/examples.html>`__.")
 
-    read_from_files([os.path.join(_here, 'docs', 'pages', 'miscellaneous', 'citation.rst'),
-                     os.path.join(_here, 'docs', 'pages', 'miscellaneous', 'acknowledgements.rst')])
+    read_from_files([os.path.join(_here, 'docs', 'pages', 'miscellaneous', 'citation.rst')])
 
     with io.open(os.path.join(_here, 'README.rst'), 'w', encoding='utf-8') as f:
         f.write('\n\n'.join(outs))

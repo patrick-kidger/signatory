@@ -415,7 +415,7 @@ upload_unix = \
 )  # end of global_subs
 global_subs['upload_mac'] = global_subs['upload_linux'] = global_subs['upload_unix']
 
-test = True
+test = False
 if test:
     global_subs['install_extras'] = '--index-url https://test.pypi.org/simple/ '
     global_subs['upload_extras'] = '--repository-url https://test.pypi.org/legacy/ '
