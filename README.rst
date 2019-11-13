@@ -19,13 +19,9 @@ Check out `this <https://arxiv.org/abs/1603.03788>`__ for a primer on the use of
 
 Installation
 ############
-Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7.
+Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7. Available for Linux, Mac, Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.2.0 or 1.3.0.
 
-Available for Linux, Mac, Windows.
-
-Requires `PyTorch <http://pytorch.org/>`__ 1.2.0 or 1.3.0.
-
-Installation is reasonably simple:
+Installation via:
 
 .. code-block:: bash
 
@@ -40,12 +36,9 @@ where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to down
 
         pip install signatory==1.1.4.1.3.0
 
-    Yes, this looks a bit odd. This is needed to work a `limitation of PyTorch <https://github.com/pytorch/pytorch/issues/28754>`__ and the `restrictive specification of pip <https://www.python.org/dev/peps/pep-0440/>`__.
+    Yes, this looks a bit odd. This is needed to work around limitations of `PyTorch <https://github.com/pytorch/pytorch/issues/28754>`__ and `pip <https://www.python.org/dev/peps/pep-0440/>`__. Take care **not** to run ``pip install signatory``, as this will likely download the wrong version.
 
 After installation, just ``import signatory`` inside Python.
-
-
-    Take care **not** to run ``pip install signatory``, as this will likely download the wrong version.
 
 Installation from source is also possible; please consult the `documentation <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__. This also includes information on how to run the tests and benchmarks.
 
@@ -59,18 +52,16 @@ The documentation is available `here <https://signatory.readthedocs.io>`__.
 
 Example
 #######
-Usage is straightforward.
+Usage is straightforward. As a simple example,
 
 .. code-block:: python
 
     import signatory
     import torch
-    # batch size is 1
-    # length of input stream is 10
-    # number of channels is 2
-    x = torch.rand(1, 10, 2)
-    # Compute signature to depth 4
-    signatory.signature(x, 4)
+    batch, stream, channels = 1, 10, 2
+    depth = 4
+    path = torch.rand(batch, stream, channels)
+    signatory.signature(path, depth)
 
 For further examples, see the `documentation <https://signatory.readthedocs.io/en/latest/pages/examples/examples.html>`__.
 
@@ -87,11 +78,3 @@ If you found this library useful in your research, please consider citing
         note={\texttt{https://github.com/patrick-kidger/signatory}},
         year={2019}
     }
-
-
-Acknowledgements
-################
-
-The Python bindings for the C++ code were written with the aid of `pybind11 <https://github.com/pybind/pybind11>`__.
-
-For NumPy-based CPU-only signature calculations, you may also be interested in the `iisignature <https://github.com/bottler/iisignature>`__ package. The notes accompanying the iisignature project greatly helped with the implementation of Signatory.
