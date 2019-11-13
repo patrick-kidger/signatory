@@ -254,7 +254,7 @@ run: >
 
 # Builds a bdist_wheel on Windows
 build_windows = \
-"""  python setup.py egg_info --tag-build=".torch${{ matrix.pytorch-version }}" bdist_wheel &&
+"""  python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" bdist_wheel &&
   python command.py should_not_import &&""",
 
 # Install from sdist or bdist_wheel on Windows
@@ -268,7 +268,7 @@ install_remote_windows = \
   import metadata;
   sleep = lambda t: time.sleep(t) or True;
   retry = lambda fn: fn() or (sleep(20) and fn()) or (sleep(40) and fn()) or (sleep(120) and fn()) or (sleep(240) and fn());
-  ret = retry(lambda: not subprocess.run('python -m pip install <<install_extras>>signatory==' + metadata.version + '.torch${{ matrix.pytorch-version }} --only-binary signatory').returncode);
+  ret = retry(lambda: not subprocess.run('python -m pip install <<install_extras>>signatory==' + metadata.version + '.${{ matrix.pytorch-version }} --only-binary signatory').returncode);
   sys.exit(not ret)
   " &&""",
 
@@ -305,7 +305,7 @@ run: |
 
 # 'Builds' on Linux
 build_linux = \
-"""  python setup.py egg_info --tag-build=".torch${{ matrix.pytorch-version }}" sdist
+"""  python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" sdist
   python command.py should_not_import""",
 
 # Install from sdist or bdist_wheel on Linux
@@ -321,7 +321,7 @@ install_local_linux = \
 install_remote_linux = \
 """  retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
   SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-  retry python -m pip install <<install_extras>>signatory==$SIGNATORY_VERSION.torch${{ matrix.pytorch-version }} --no-binary signatory""",
+  retry python -m pip install <<install_extras>>signatory==$SIGNATORY_VERSION.${{ matrix.pytorch-version }} --no-binary signatory""",
 
 # Runs tests on Linux
 test_linux = \
@@ -362,7 +362,7 @@ run: |
 build_mac = \
 """  export LDFLAGS="-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib"
   export CPPFLAGS="-I/usr/local/opt/llvm/include"
-  MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build=".torch${{ matrix.pytorch-version }}" bdist_wheel
+  MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" bdist_wheel
   python command.py should_not_import""",
 
 # Install from sdist or bdist_wheel on Mac
@@ -378,7 +378,7 @@ install_local_mac = \
 install_remote_mac = \
 """  retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
   SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-  retry python -m pip install <<install_extras>>signatory==$SIGNATORY_VERSION.torch${{ matrix.pytorch-version }} --only-binary signatory""",
+  retry python -m pip install <<install_extras>>signatory==$SIGNATORY_VERSION.${{ matrix.pytorch-version }} --only-binary signatory""",
 
 # Runs tests on Mac
 test_mac = \

@@ -50,22 +50,14 @@ jobs:
         import metadata
         version_msg = subprocess.run('pip install signatory==', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         print('Version msg: ', version_msg)
-        version_re = re.compile(rb'from versions: ([0-9\. ,torch]*)\)')
+        version_re = re.compile(rb'from versions: ([0-9\. ,]*)\)')
         last_version = version_re.search(version_msg.stderr).group(1).split(b', ')[-1]
         print('(Raw) last version: ', last_version)
         print('(Raw) this version: ', metadata.version)
-        last_version_ = []
-        for i in last_version.split(b'.'):
-            if b'torch' in i:
-                break
-            last_version_.append(int(i))
-        this_version_ = []
-        for i in metadata.version.split('.'):
-            if 'torch' in i:
-                break
-            this_version_.append(int(i))
-        print('(No torch) last version: ', last_version_)
-        print('(No torch) this version: ', this_version_)
+        last_version_ = [int(i) for i in last_version.split(b'.')]
+        this_version_ = [int(i) for i in metadata.version.split('.')]
+        print('(As int) last version: ', last_version_)
+        print('(As int) this version: ', this_version_)
         last_version__ = tuple(l for t, l in it.zip_longest(this_version_, last_version_, fillvalue=0))
         this_version__ = tuple(t for t, l in it.zip_longest(this_version_, last_version_, fillvalue=0))
         print('(Final) last version: ', last_version__)
@@ -185,7 +177,7 @@ jobs:
         python -m pip install --upgrade pip &&
         conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y &&
         python command.py should_not_import &&
-        python setup.py egg_info --tag-build=".torch${{ matrix.pytorch-version }}" bdist_wheel &&
+        python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" bdist_wheel &&
         python command.py should_not_import &&
         for %%f in (./dist/*) do (python -m pip install ./dist/%%~nxf) &&
         python -m pip install iisignature pytest &&
@@ -212,7 +204,7 @@ jobs:
         python -m pip install --upgrade pip
         conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
         python command.py should_not_import
-        python setup.py egg_info --tag-build=".torch${{ matrix.pytorch-version }}" sdist
+        python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" sdist
         python command.py should_not_import
         SIGNATORY_INSTALLED=$(python -c "import os
         import sys
@@ -248,7 +240,7 @@ jobs:
         python command.py should_not_import
         export LDFLAGS="-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib"
         export CPPFLAGS="-I/usr/local/opt/llvm/include"
-        MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build=".torch${{ matrix.pytorch-version }}" bdist_wheel
+        MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" bdist_wheel
         python command.py should_not_import
         SIGNATORY_INSTALLED=$(python -c "import os
         import sys
