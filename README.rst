@@ -36,7 +36,9 @@ where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to down
 
         pip install signatory==1.1.4.1.3.0
 
-    Yes, this looks a bit odd. This is needed to work around limitations of `PyTorch <https://github.com/pytorch/pytorch/issues/28754>`__ and `pip <https://www.python.org/dev/peps/pep-0440/>`__. Take care **not** to run ``pip install signatory``, as this will likely download the wrong version.
+    Yes, this looks a bit odd. This is needed to work around limitations of `PyTorch <https://github.com/pytorch/pytorch/issues/28754>`__ and `pip <https://www.python.org/dev/peps/pep-0440/>`__.
+
+    Take care **not** to run ``pip install signatory``, as this will likely download the wrong version.
 
 After installation, just ``import signatory`` inside Python.
 
