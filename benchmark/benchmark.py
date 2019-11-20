@@ -137,6 +137,9 @@ def run(self):
             return math.inf
 
     def memory(self):
+        return min([self._memory() for _ in range(self.repeat * self.number)])
+
+    def _memory(self):
         files = os.listdir('.')
         memory_tmp = 'memory.tmp'
 
@@ -422,26 +425,26 @@ speedup_gpu_str = 'Ratio GPU'
 speedup_str = 'Ratio'
 
 
-signature_forward_fns = co.OrderedDict([(signatory_cpu_str, signatory_signature_forward),
-                                        (signatory_gpu_str, signatory_signature_forward_gpu),
+signature_forward_fns = co.OrderedDict([(esig_str, esig_signature_forward),
                                         (iisignature_str, iisignature_signature_forward),
-                                        (esig_str, esig_signature_forward)])
+                                        (signatory_cpu_str, signatory_signature_forward),
+                                        (signatory_gpu_str, signatory_signature_forward_gpu)])
 
 
-signature_backward_fns = co.OrderedDict([(signatory_cpu_str, signatory_signature_backward),
-                                         (signatory_gpu_str, signatory_signature_backward_gpu),
+signature_backward_fns = co.OrderedDict([(esig_str, esig_signature_backward),
                                          (iisignature_str, iisignature_signature_backward),
-                                         (esig_str, esig_signature_backward)])
+                                         (signatory_cpu_str, signatory_signature_backward),
+                                         (signatory_gpu_str, signatory_signature_backward_gpu)])
 
-logsignature_forward_fns = co.OrderedDict([(signatory_cpu_str, signatory_logsignature_forward),
-                                           (signatory_gpu_str, signatory_logsignature_forward_gpu),
+logsignature_forward_fns = co.OrderedDict([(esig_str, esig_logsignature_forward),
                                            (iisignature_str, iisignature_logsignature_forward),
-                                           (esig_str, esig_logsignature_forward)])
+                                           (signatory_cpu_str, signatory_logsignature_forward),
+                                           (signatory_gpu_str, signatory_logsignature_forward_gpu)])
 
-logsignature_backward_fns = co.OrderedDict([(signatory_cpu_str, signatory_logsignature_backward),
-                                            (signatory_gpu_str, signatory_logsignature_backward_gpu),
+logsignature_backward_fns = co.OrderedDict([(esig_str, esig_logsignature_backward),
                                             (iisignature_str, iisignature_logsignature_backward),
-                                            (esig_str, esig_logsignature_backward)])
+                                            (signatory_cpu_str, signatory_logsignature_backward),
+                                            (signatory_gpu_str, signatory_logsignature_backward_gpu)])
 
 signature_forward_fns_wrapper = {'Signature forward': signature_forward_fns}
 signature_backward_fns_wrapper = {'Signature backward': signature_backward_fns}
@@ -510,7 +513,10 @@ class BenchmarkRunner(object):
     def __init__(self, sizes, depths, ratio, test_esig, test_signatory_gpu, measure, fns):
         if measure == 'memory' and test_signatory_gpu:
             raise RuntimeError('Memory comparisons for Signatory GPU are not meaningful, as everything else operates '
-                               'on the CPU.')
+                               'on the CPU. Please disable GPU testing.')
+
+        if fns.endswith('b') and test_esig:
+            raise RuntimeError('esig does not support backward computations. Please disable esig testing.')
 
         self.sizes = sizes
         self.depths = depths

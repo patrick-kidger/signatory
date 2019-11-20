@@ -56,6 +56,6 @@ from .utility import (lyndon_words,
                       max_parallelism)
 
 
-__version__ = "1.1.4"
+__version__ = "1.1.5"
 
 del torch

@@ -17,6 +17,7 @@
 #include <torch/extension.h>
 #include <cstdint>    // int64_t
 #include <stdexcept>  // std::invalid_argument
+#include <type_traits>  // std::is_same
 #include <utility>    // std::pair
 #include <vector>     // std::vector
 
@@ -26,9 +27,14 @@
 
 namespace signatory {
     namespace ta_ops {
+
+        /************************************************
+         * Forward and backward computations for 'mult' *
+         ************************************************/
+
         namespace detail {
-            // This is the loop that's used inside some of the forward operations in the tensor algebra
-            // It corresponds to the noncommutative part of these operations.
+            // This is the loop that's used inside the forward operation of tensor multiplication in the tensor algebra
+            // It corresponds to the noncommutative part of this operation.
             void mult_inner(torch::Tensor tensor_at_depth,
                             const std::vector<torch::Tensor>& arg1,
                             const std::vector<torch::Tensor>& arg2,
@@ -43,7 +49,6 @@ namespace signatory {
                 }
             }
 
-            // This is the loop that's used inside some of the backward operations in the tensor algebra
             void mult_inner_backward(torch::Tensor grad_tensor_at_depth,
                                      std::vector<torch::Tensor>& grad_arg1,
                                      std::vector<torch::Tensor>& grad_arg2,
@@ -58,59 +63,6 @@ namespace signatory {
 
                     grad_arg1[j].unsqueeze(channel_dim).baddbmm_(out_view, arg2[k].unsqueeze(channel_dim));
                     grad_arg2[k].unsqueeze(channel_dim - 1).baddbmm_(arg1[j].unsqueeze(channel_dim - 1), out_view);
-                }
-            }
-
-            bool is_even(s_size_type index) {
-                return (index % 2) == 0;
-            }
-
-            // The coefficient of a term in the power series of the logarithm
-            torch::Scalar log_coefficient_at_depth(s_size_type depth_index, torch::Tensor reciprocals) {
-                return ((is_even(depth_index) ? -1 : 1) * reciprocals[depth_index]).item();
-            }
-
-            // Computes (sort of) multiplication in the tensor algebra.
-            // 'arg1' is assumed to be a member of the tensor algebra, with assumed scalar value 'scalar_term_value'.
-            // 'arg2' is assumed to be a member of the tensor algebra, with assumed scalar value zero.
-            // Then 'arg1' is modified to hold arg1 \otimes arg2 for some of its terms; its highest 'top_terms_to_skip'
-            // many terms are left unchanged. Thus the result ends up being a weird hybrid of what was passed in, and
-            // the result of an actual multiplication.
-            void mult_partial(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
-                              torch::Scalar scalar_term_value, s_size_type top_terms_to_skip) {
-                auto depth = arg1.size();
-                for (s_size_type depth_index = depth - top_terms_to_skip - 1; depth_index >= 0; --depth_index) {
-                    torch::Tensor tensor_at_depth = arg1[depth_index];
-
-                    // corresponding to the zero scalar assumed to be associated with arg2
-                    tensor_at_depth.zero_();
-
-                    detail::mult_inner(tensor_at_depth, arg1, arg2, depth_index);
-
-                    tensor_at_depth.add_(arg2[depth_index], scalar_term_value);
-                }
-            }
-
-            // Backwards through mult_partial.
-            // 'arg1', 'arg2', 'scalar_value_term', 'top_terms_to_skip' should be as in the forward call to
-            // mult_partial.
-            // 'grad_arg1' is the input gradient, and will be modified in-place.
-            // 'grad_arg2' is the output gradient, and will have the result of this operation added on to it.
-            void mult_partial_backward(std::vector<torch::Tensor>& grad_arg1,
-                                       std::vector<torch::Tensor>& grad_arg2,
-                                       const std::vector<torch::Tensor>& arg1,
-                                       const std::vector<torch::Tensor>& arg2,
-                                       torch::Scalar scalar_value_term,
-                                       s_size_type top_terms_to_skip) {
-                s_size_type depth = arg1.size();
-                for (s_size_type depth_index = 0; depth_index < depth - top_terms_to_skip; ++depth_index) {
-                    torch::Tensor grad_tensor_at_depth = grad_arg1[depth_index];
-
-                    grad_arg2[depth_index].add_(grad_tensor_at_depth, scalar_value_term);
-
-                    detail::mult_inner_backward(grad_tensor_at_depth, grad_arg1, grad_arg2, arg1, arg2, depth_index);
-
-                    grad_tensor_at_depth.zero_();
                 }
             }
         }  // namespace signatory::ta_ops::detail
@@ -152,6 +104,10 @@ namespace signatory {
                                                            std::vector<torch::Tensor>& grad_arg2,
                                                            const std::vector<torch::Tensor>& arg1,
                                                            const std::vector<torch::Tensor>& arg2);
+
+        /**********************************************************
+         * Forward and backward computations for 'restricted_exp' *
+         **********************************************************/
 
         void restricted_exp(torch::Tensor in, std::vector<torch::Tensor>& out, torch::Tensor reciprocals) {
             int64_t batch_size = in.size(batch_dim);
@@ -204,60 +160,649 @@ namespace signatory {
             }
         }
 
-        void mult_fused_restricted_exp(torch::Tensor next, std::vector<torch::Tensor>& prev, bool inverse,
-                                       torch::Tensor reciprocals) {
-            int64_t batch_size = next.size(batch_dim);
-            int64_t input_channel_size = next.size(channel_dim);
-            s_size_type depth = prev.size();
+        /*********************************************************************
+         * Forward and backward computations for 'mult_fused_restricted_exp' *
+         *********************************************************************/
 
-            // We're going to need to know the new increment, divided by every depth up to the maximum depth
-            // We precompute them here as we're going to need them several times.
-            torch::Tensor next_divided = next.unsqueeze(0) * reciprocals.unsqueeze(1).unsqueeze(2);
+        /* Okay, buckle up.
+         *
+         * This next bit of the code is very complicated.
+         *
+         * The mathematical operation it corresponds to is pretty involved. And we have to describe this on the CPU and
+         * on the GPU, for both the forward and backward operations. (It's really the backward operation that looks
+         * particularly bad.)
+         *
+         * These operations represent the hot loop for signature computations, so it's important that these be as
+         * efficient as possible.
+         */
 
-            int64_t left_channel_dim;
-            int64_t right_channel_dim;
-            if (inverse) {
-                left_channel_dim = channel_dim - 1;
-                right_channel_dim = channel_dim;
-            }
-            else {
-                left_channel_dim = channel_dim;
-                right_channel_dim = channel_dim - 1;
-            }
+        namespace detail {
+            void mult_fused_restricted_exp_cuda(torch::Tensor next, std::vector<torch::Tensor>& prev, bool inverse,
+                                                torch::Tensor reciprocals) {
+                // We haven't tried writing custom GPU code. But if we did it would go here. Instead this is
+                // specified in terms of the higher-level PyTorch Tensors.
 
-            for (s_size_type depth_index = depth - 1; depth_index >= 1; --depth_index) {
-                torch::Tensor scratch = prev[0] + next_divided[depth_index - 1];
-                for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
-                    auto old_scratch_size = scratch.size(channel_dim);
-                    torch::Tensor prev_view;
-                    if (inverse) {
-                        prev_view = prev[j].view({batch_size,
-                                                  input_channel_size,
-                                                  old_scratch_size});
-                    }
-                    else {
-                        prev_view = prev[j].view({batch_size,
-                                                  old_scratch_size,
-                                                  input_channel_size});
-                    }
-                    scratch = prev_view.addcmul(scratch.unsqueeze(left_channel_dim),
-                                                next_divided[k].unsqueeze(right_channel_dim));
-                    scratch = scratch.view({batch_size, old_scratch_size * input_channel_size});
-                }
-                torch::Tensor prev_view;
+                int64_t batch_size = next.size(batch_dim);
+                int64_t input_channel_size = next.size(channel_dim);
+                s_size_type depth = prev.size();
+
+                // We're going to need to know the new increment, divided by every depth up to the maximum depth
+                // We precompute them here as we're going to need them several times.
+                torch::Tensor next_divided = next.unsqueeze(0) * reciprocals.unsqueeze(1).unsqueeze(2);
+
+                int64_t left_channel_dim;
+                int64_t right_channel_dim;
                 if (inverse) {
-                    prev_view = prev[depth_index].view({batch_size,
-                                                        input_channel_size,
-                                                        scratch.size(channel_dim)});
+                    left_channel_dim = channel_dim - 1;
+                    right_channel_dim = channel_dim;
                 }
                 else {
-                    prev_view = prev[depth_index].view({batch_size,
-                                                        scratch.size(channel_dim),
-                                                        input_channel_size});
+                    left_channel_dim = channel_dim;
+                    right_channel_dim = channel_dim - 1;
                 }
-                prev_view.addcmul_(scratch.unsqueeze(left_channel_dim), next.unsqueeze(right_channel_dim));
+
+                for (s_size_type depth_index = depth - 1; depth_index >= 1; --depth_index) {
+                    torch::Tensor scratch = prev[0] + next_divided[depth_index - 1];
+                    for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
+                        auto old_scratch_size = scratch.size(channel_dim);
+                        torch::Tensor prev_view;
+                        if (inverse) {
+                            prev_view = prev[j].view({batch_size,
+                                                      input_channel_size,
+                                                      old_scratch_size});
+                        }
+                        else {
+                            prev_view = prev[j].view({batch_size,
+                                                      old_scratch_size,
+                                                      input_channel_size});
+                        }
+                        scratch = prev_view.addcmul(scratch.unsqueeze(left_channel_dim),
+                                                    next_divided[k].unsqueeze(right_channel_dim));
+                        scratch = scratch.view({batch_size, old_scratch_size * input_channel_size});
+                    }
+                    torch::Tensor prev_view;
+                    if (inverse) {
+                        prev_view = prev[depth_index].view({batch_size,
+                                                            input_channel_size,
+                                                            scratch.size(channel_dim)});
+                    }
+                    else {
+                        prev_view = prev[depth_index].view({batch_size,
+                                                            scratch.size(channel_dim),
+                                                            input_channel_size});
+                    }
+                    prev_view.addcmul_(scratch.unsqueeze(left_channel_dim), next.unsqueeze(right_channel_dim));
+                }
+                prev[0] += next;
             }
-            prev[0] += next;
+            // That's the forward operation, written in terms of high-level PyTorch tensors. That wasn't so bad, was it?
+
+            // This describes the forward operation for a single batch element on the CPU.
+            // No parallelisation is performed in this computation at the moment. We could probably add it on but it
+            // probably won't give a huge advantage.
+            // We already parallelise over the batch and stream dimensions. So to see a speedup from parallelisation
+            // here, we'd need to be computing signatures of just a few short paths, to high depths. Still, worth
+            // thinking about.
+            template <typename scalar_t, bool inverse>
+            void mult_fused_restricted_exp_cpu_inner(torch::TensorAccessor<scalar_t, 1> next_a,
+                                                     std::vector<torch::TensorAccessor<scalar_t, 1>>& prev_a,
+                                                     torch::TensorAccessor<scalar_t, 1> reciprocals_a) {
+                int64_t input_channel_size = next_a.size(0);
+                s_size_type depth = prev_a.size();
+
+                std::vector<std::vector<scalar_t>> next_divided;
+                next_divided.resize(reciprocals_a.size(0));
+                for (int64_t reciprocal_index = 0; reciprocal_index < reciprocals_a.size(0); ++reciprocal_index) {
+                    // TODO: use empty allocator
+                    next_divided[reciprocal_index].resize(input_channel_size);
+                    for (int64_t channel_index = 0; channel_index < input_channel_size; ++channel_index) {
+                        next_divided[reciprocal_index][channel_index] = reciprocals_a[reciprocal_index] *
+                                                                        next_a[channel_index];
+                    }
+                }
+
+                if (depth > 1) {
+                    std::vector<scalar_t> new_scratch;
+                    std::vector<scalar_t> old_scratch;
+                    // Figure out how large each vector is going to get by the end of the computation.
+                    if ((depth % 2) == 0) {
+                        old_scratch.reserve(pow(input_channel_size, depth - 2));
+                        new_scratch.reserve(old_scratch.size() * input_channel_size);
+                    }
+                    else {
+                        new_scratch.reserve(pow(input_channel_size, depth - 2));
+                        old_scratch.reserve(new_scratch.size() * input_channel_size);
+                    }
+
+                    for (s_size_type depth_index = depth - 1; depth_index >= 1; --depth_index) {
+                        // TODO: use empty allocator
+                        new_scratch.resize(input_channel_size);
+                        for (int64_t scratch_index = 0; scratch_index < input_channel_size; ++scratch_index) {
+                            new_scratch[scratch_index] = prev_a[0][scratch_index] +
+                                                         next_divided[depth_index - 1][scratch_index];
+                        }
+
+                        for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
+                            old_scratch.swap(new_scratch);
+                            // TODO: use empty allocator
+                            new_scratch.resize(old_scratch.size() * input_channel_size);
+                            for (int64_t old_scratch_index = 0;
+                                 old_scratch_index < static_cast<int64_t>(old_scratch.size());
+                                 ++old_scratch_index) {
+                                for (int64_t next_divided_index = 0;
+                                     next_divided_index < input_channel_size;
+                                     ++next_divided_index)
+                                {
+                                    int64_t new_scratch_index;
+                                    if (inverse) {
+                                        new_scratch_index = next_divided_index * old_scratch.size() + old_scratch_index;
+                                    }
+                                    else {
+                                        new_scratch_index = old_scratch_index * input_channel_size + next_divided_index;
+                                    }
+                                    new_scratch[new_scratch_index] = prev_a[j][new_scratch_index] +
+                                                                     old_scratch[old_scratch_index] *
+                                                                     next_divided[k][next_divided_index];
+                                }
+                            }
+                        }
+
+                        for (int64_t new_scratch_index = 0;
+                             new_scratch_index < static_cast<int64_t>(new_scratch.size());
+                             ++new_scratch_index) {
+                            for (int64_t next_index = 0; next_index < input_channel_size; ++next_index)
+                            {
+                                int64_t prev_a_index;
+                                if (inverse) {
+                                    prev_a_index = next_index * new_scratch.size() + new_scratch_index;
+                                }
+                                else {
+                                    prev_a_index = new_scratch_index * input_channel_size + next_index;
+                                }
+                                prev_a[depth_index][prev_a_index] += new_scratch[new_scratch_index] * next_a[next_index];
+                            }
+                        }
+                    }
+                }
+
+                for (int64_t channel_index = 0; channel_index < input_channel_size; ++channel_index) {
+                    prev_a[0][channel_index] += next_a[channel_index];
+                }
+            }
+
+            // This basically just parallelises over the batch elements, calling mult_fused_restricted_exp_cpu_inner on
+            // each one.
+            template <typename scalar_t>
+            void mult_fused_restricted_exp_cpu(torch::Tensor next, std::vector<torch::Tensor>& prev, bool inverse,
+                                               torch::Tensor reciprocals, int64_t batch_threads) {
+                // Convert from Tensors to TensorAccessors
+                auto next_a = next.accessor<scalar_t, 2>();
+                std::vector<torch::TensorAccessor<scalar_t, 2>> prev_a;
+                prev_a.reserve(prev.size());
+                for (auto elem : prev) {
+                    prev_a.push_back(elem.accessor<scalar_t, 2>());
+                }
+                auto reciprocals_a = reciprocals.accessor<scalar_t, 1>();
+
+                #pragma omp parallel for default(none) \
+                                         if(batch_threads > 1) \
+                                         num_threads(batch_threads) \
+                                         shared(next_a, prev_a, inverse, reciprocals_a)
+                for (int64_t batch_index = 0; batch_index < next_a.size(batch_dim); ++batch_index) {
+                    std::vector<torch::TensorAccessor<scalar_t, 1>> prev_a_at_batch;
+                    prev_a_at_batch.reserve(prev_a.size());
+                    for (auto elem: prev_a) {
+                        prev_a_at_batch.push_back(elem[batch_index]);
+                    }
+                    // Actually do the computation
+                    if (inverse) {
+                        mult_fused_restricted_exp_cpu_inner<scalar_t, /*inverse=*/true>(next_a[batch_index],
+                                                                                        prev_a_at_batch,
+                                                                                        reciprocals_a);
+                    }
+                    else {
+                        mult_fused_restricted_exp_cpu_inner<scalar_t, /*inverse=*/false>(next_a[batch_index],
+                                                                                         prev_a_at_batch,
+                                                                                         reciprocals_a);
+                    }
+                }
+            }
+
+            // If you're reading this function and trying to understand it...
+            // ...then good luck.
+            // Seriously though, it's a backward through a very complicated operation, so there isn't much getting
+            // around the fact that it's going to be a bit involved.
+            void mult_fused_restricted_exp_backward_cuda(torch::Tensor grad_next,
+                                                         std::vector<torch::Tensor>& grad_prev,
+                                                         torch::Tensor next,
+                                                         const std::vector <torch::Tensor>& prev,
+                                                         bool inverse,
+                                                         torch::Tensor reciprocals) {
+                int64_t batch_size = next.size(batch_dim);
+                int64_t input_channel_size = next.size(channel_dim);
+                s_size_type depth = prev.size();
+
+                // First of all we recompute the forward pass and record all the intermediate tensors that were used and
+                // discarded. We call these 'scratches'.
+                std::vector<std::vector<torch::Tensor>> all_scratches;
+                all_scratches.reserve(depth - 1);
+
+                torch::Tensor next_divided = next.unsqueeze(0) * reciprocals.unsqueeze(1).unsqueeze(2);
+
+                int64_t left_channel_dim;
+                int64_t right_channel_dim;
+                if (inverse) {
+                    left_channel_dim = channel_dim - 1;
+                    right_channel_dim = channel_dim;
+                }
+                else {
+                    left_channel_dim = channel_dim;
+                    right_channel_dim = channel_dim - 1;
+                }
+
+                for (s_size_type depth_index = depth - 1; depth_index >= 1; --depth_index) {
+                    all_scratches.emplace_back();
+                    std::vector<torch::Tensor>& scratches = all_scratches.back();
+                    scratches.reserve(depth_index);
+                    torch::Tensor scratch = prev[0] + next_divided[depth_index - 1];
+                    scratches.push_back(scratch);
+                    for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
+                        auto old_scratch_size = scratch.size(channel_dim);
+                        torch::Tensor prev_view;
+                        if (inverse) {
+                            prev_view = prev[j].view({batch_size,
+                                                      input_channel_size,
+                                                      old_scratch_size});
+                        }
+                        else {
+                            prev_view = prev[j].view({batch_size,
+                                                      old_scratch_size,
+                                                      input_channel_size});
+                        }
+                        scratch = prev_view.addcmul(scratch.unsqueeze(left_channel_dim),
+                                                    next_divided[k].unsqueeze(right_channel_dim));
+                        scratch = scratch.view({batch_size, old_scratch_size * input_channel_size});
+                        scratches.push_back(scratch);
+                    }
+                }
+
+                // Allocate memory for the gradient through next_divided
+
+                torch::Tensor grad_next_divided = torch::zeros_like(next_divided);
+
+                // Allocate memory for the gradient through the scratches
+
+                std::vector<std::vector<torch::Tensor>> all_grad_scratches;
+                all_grad_scratches.reserve(all_scratches.size());
+                for (const auto& scratches : all_scratches) {
+                    all_grad_scratches.emplace_back();
+                    std::vector<torch::Tensor>& grad_scratches = all_grad_scratches.back();
+                    grad_scratches.reserve(scratches.size());
+                    for (const auto& elem : scratches) {
+                        grad_scratches.push_back(torch::empty_like(elem));
+                    }
+                }
+
+                // Now do the actual backward operation
+
+                grad_next.copy_(grad_prev[0]);
+                for (s_size_type depth_index = 1, back_index = all_scratches.size() - 1;
+                     depth_index < depth;
+                     ++depth_index, --back_index) {
+                    const std::vector<torch::Tensor>& grad_scratches = all_grad_scratches[back_index];
+                    const std::vector<torch::Tensor>& scratches = all_scratches[back_index];
+
+                    torch::Tensor grad_scratch = grad_scratches.back();
+                    torch::Tensor scratch = scratches.back();
+
+                    torch::Tensor grad_prev_view;
+                    if (inverse) {
+                        grad_prev_view = grad_prev[depth_index].view({batch_size,
+                                                                      input_channel_size,
+                                                                      scratch.size(channel_dim)});
+                        torch::Tensor out = grad_scratch.unsqueeze(channel_dim - 1);
+                        torch::bmm_out(/*out=*/out,
+                                       next.unsqueeze(channel_dim - 1),
+                                       grad_prev_view);
+                        grad_next.unsqueeze(channel_dim).baddbmm_(grad_prev_view, scratch.unsqueeze(channel_dim));
+                    }
+                    else {
+                        grad_prev_view = grad_prev[depth_index].view({batch_size,
+                                                                      scratch.size(channel_dim),
+                                                                      input_channel_size});
+                        torch::Tensor out = grad_scratch.unsqueeze(channel_dim);
+                        torch::bmm_out(/*out=*/out,
+                                       grad_prev_view,
+                                       next.unsqueeze(channel_dim));
+                        grad_next.unsqueeze(channel_dim - 1).baddbmm_(scratch.unsqueeze(channel_dim - 1),
+                                                                      grad_prev_view);
+                    }
+
+                    for (s_size_type j = depth_index - 1, k = 0; j >= 1; --j, ++k) {
+                        torch::Tensor grad_scratch = grad_scratches[j];
+                        torch::Tensor grad_old_scratch = grad_scratches[j - 1];
+                        torch::Tensor old_scratch = scratches[j - 1];
+                        torch::Tensor next_divided_narrow = next_divided[k];
+                        torch::Tensor grad_next_divided_narrow = grad_next_divided[k];
+
+                        grad_prev[j] += grad_scratch;
+
+                        torch::Tensor grad_scratch_view;
+                        if (inverse) {
+                            grad_scratch_view = grad_scratch.view({batch_size,
+                                                                   input_channel_size,
+                                                                   old_scratch.size(channel_dim)});
+                            torch::Tensor out = grad_old_scratch.unsqueeze(channel_dim - 1);
+                            torch::bmm_out(/*out=*/out,
+                                           next_divided_narrow.unsqueeze(channel_dim - 1),
+                                           grad_scratch_view);
+                            grad_next_divided_narrow.unsqueeze(channel_dim).baddbmm_(grad_scratch_view,
+                                                                                     old_scratch.unsqueeze(channel_dim));
+                        }
+                        else {
+                            grad_scratch_view = grad_scratch.view({batch_size,
+                                                                   old_scratch.size(channel_dim),
+                                                                   input_channel_size});
+                            torch::Tensor out = grad_old_scratch.unsqueeze(channel_dim);
+                            torch::bmm_out(/*out=*/out,
+                                           grad_scratch_view,
+                                           next_divided_narrow.unsqueeze(channel_dim));
+                            grad_next_divided_narrow.unsqueeze(channel_dim - 1).baddbmm_(old_scratch.unsqueeze(channel_dim - 1),
+                                                                                         grad_scratch_view);
+                        }
+                    }
+                    grad_next_divided[depth_index - 1] += grad_scratches[0];
+                    grad_prev[0] += grad_scratches[0];
+                }
+
+                // Finally the do the backward from next_divided into next
+
+                if (depth > 1) {
+                    // In principle when depth == 1 then the code below should be a no-op, but BLAS throws an error here
+                    torch::Tensor grad_next_divided_view = grad_next_divided.view({depth - 1,
+                                                                                   batch_size * input_channel_size});
+                    torch::Tensor grad_next_view = grad_next.view({batch_size * input_channel_size});
+                    grad_next_view.unsqueeze(0).addmm_(reciprocals.unsqueeze(0), grad_next_divided_view);
+                }
+            }
+
+            // Alright, buckle your seatbelts. We're going to the CPU implementation now.
+
+            template <typename scalar_t>
+            int64_t mvsize(std::vector<scalar_t> obj) {
+                return obj.size();
+            }
+
+            template <typename scalar_t>
+            int64_t mvsize(torch::TensorAccessor<scalar_t, 1> obj) {
+                return obj.size(0);
+            }
+
+            // Performs either matrix-vector multiplication or transpose(vector)-matrix multiplication.
+            //
+            // 'out', 'matrix', 'vector' should each either be std::vector<scalar_t> or
+            // torch::TensorAccessor<scalar_t, 1>
+            //
+            // It must be such that the size of 'out', multiplied by the size of 'vector', is equal to the size of
+            // 'matrix'.
+            //
+            // It performs matrix-vector multiplication if flip==false, and transpose(vector)-matrix multiplication if
+            // flip==true.
+            //
+            // It adds the result on to what is already in 'out' if add==true, and stores it in 'out' if add==false.
+            template <typename scalar_t, bool flip, bool add, typename T, typename T2, typename T3>
+            void mv(T& out, const T2& matrix, const T3& vector) {
+                int64_t out_size = mvsize(out);
+                int64_t vector_size = mvsize(vector);
+
+                if (flip) {
+                    for (int64_t out_index = 0; out_index < out.size(); ++out_index) {
+                        if (add) {
+                            out[out_index] += vector[0] * matrix[out_index];
+                        }
+                        else {
+                            out[out_index] = vector[0] * matrix[out_index];
+                        }
+                    }
+                    int64_t index = out.size();
+                    for (int64_t vector_index = 1; vector_index < vector.size(0); ++vector_index) {
+                        for (int64_t out_index = 0; out_index < out.size(); ++out_index) {
+                            index += 1;
+                            out[out_index] += vector[vector_index] * matrix[index];
+                        }
+                    }
+                }
+                else {
+                    int64_t index = 0;
+                    for (int64_t out_index = 0; out_index < out.size(); ++out_index) {
+                        if (add) {
+                            out[out_index] += vector[0] * matrix[index];
+                        }
+                        else {
+                            out[out_index] = vector[0] * matrix[index];
+                        }
+                        for (int64_t vector_index = 1; vector_index < vector.size(0); ++vector_index) {
+                            index += 1;
+                            out[out_index] += vector[vector_index] * matrix[index];
+                        }
+                    }
+                }
+            }
+
+            template <typename scalar_t, bool inverse>
+            void
+            mult_fused_restricted_exp_backward_cpu_inner(torch::TensorAccessor<scalar_t, 1> grad_next_a,
+                                                         std::vector<torch::TensorAccessor<scalar_t, 1>>& grad_prev_a,
+                                                         torch::TensorAccessor<scalar_t, 1> next_a,
+                                                         const std::vector<torch::TensorAccessor<scalar_t, 1>>& prev_a,
+                                                         torch::TensorAccessor<scalar_t, 1> reciprocals_a) {
+                int64_t input_channel_size = next_a.size(channel_dim);
+                s_size_type depth = prev_a.size();
+
+                std::vector<std::vector<std::vector<scalar_t>>> all_scratches;
+                all_scratches.reserve(depth - 1);
+
+                std::vector<std::vector<scalar_t>> next_divided;
+                next_divided.resize(reciprocals_a.size(0));
+                for (int64_t reciprocal_index = 0; reciprocal_index < reciprocals_a.size(0); ++reciprocal_index) {
+                    // TODO: use empty allocator
+                    next_divided[reciprocal_index].resize(input_channel_size);
+                    for (int64_t channel_index = 0; channel_index < input_channel_size; ++channel_index) {
+                        next_divided[reciprocal_index][channel_index] = reciprocals_a[reciprocal_index] *
+                                                                        next_a[channel_index];
+                    }
+                }
+
+                if (depth > 1) {
+                    std::vector<scalar_t> new_scratch;
+                    std::vector<scalar_t> old_scratch;
+                    if ((depth % 2) == 0) {
+                        old_scratch.reserve(pow(input_channel_size, depth - 2));
+                        new_scratch.reserve(old_scratch.size() * input_channel_size);
+                    }
+                    else {
+                        new_scratch.reserve(pow(input_channel_size, depth - 2));
+                        old_scratch.reserve(new_scratch.size() * input_channel_size);
+                    }
+
+                    for (s_size_type depth_index = depth - 1; depth_index >= 1; --depth_index) {
+                        all_scratches.emplace_back();
+                        std::vector<std::vector<scalar_t>>& scratches = all_scratches.back();
+                        scratches.reserve(depth_index);
+
+                        // TODO: use empty allocator
+                        new_scratch.resize(input_channel_size);
+                        for (int64_t scratch_index = 0; scratch_index < input_channel_size; ++scratch_index) {
+                            new_scratch[scratch_index] = prev_a[0][scratch_index] +
+                                                         next_divided[depth_index - 1][scratch_index];
+                        }
+
+                        scratches.push_back(new_scratch);
+
+                        for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
+                            old_scratch.swap(new_scratch);
+                            // TODO: use empty allocator
+                            new_scratch.resize(old_scratch.size() * input_channel_size);
+                            for (int64_t old_scratch_index = 0;
+                                 old_scratch_index < static_cast<int64_t>(old_scratch.size());
+                                 ++old_scratch_index) {
+                                for (int64_t next_divided_index = 0;
+                                     next_divided_index < input_channel_size;
+                                     ++next_divided_index)
+                                {
+                                    int64_t new_scratch_index;
+                                    if (inverse) {
+                                        new_scratch_index = next_divided_index * old_scratch.size() + old_scratch_index;
+                                    }
+                                    else {
+                                        new_scratch_index = old_scratch_index * input_channel_size + next_divided_index;
+                                    }
+                                    new_scratch[new_scratch_index] = prev_a[j][new_scratch_index] +
+                                                                     old_scratch[old_scratch_index] *
+                                                                     next_divided[k][next_divided_index];
+                                }
+                            }
+
+                            scratches.push_back(new_scratch);
+                        }
+                    }
+                }
+
+                // Allocate memory for the gradient through next_divided
+
+                std::vector<std::vector<scalar_t>> grad_next_divided;
+                grad_next_divided.reserve(next_divided.size());
+                for (s_size_type next_divided_index = 0; next_divided_index < next_divided.size(); ++next_divided_index)
+                {
+                    grad_next_divided.push_back(std::vector<scalar_t> (next_divided[next_divided_index].size(), 0));
+                }
+
+                // Allocate memory for the gradient through the scratches
+
+                std::vector<std::vector<std::vector<scalar_t>>> all_grad_scratches;
+                all_grad_scratches.reserve(all_scratches.size());
+                for (const auto& scratches : all_scratches) {
+                    all_grad_scratches.emplace_back();
+                    std::vector<std::vector<scalar_t>>& grad_scratches = all_grad_scratches.back();
+                    grad_scratches.reserve(scratches.size());
+                    for (const auto& elem : scratches) {
+                        // TODO: use empty allocator
+                        grad_scratches.push_back(std::vector<scalar_t> (elem.size()));
+                    }
+                }
+
+                // Do the backward computation
+
+                for (int64_t index = 0; index < grad_prev_a[0].size(0); ++index) {
+                    grad_next_a[index] = grad_prev_a[0][index];
+                }
+                for (s_size_type depth_index = 1, back_index = all_scratches.size() - 1;
+                     depth_index < depth;
+                     ++depth_index, --back_index) {
+                    std::vector<std::vector<scalar_t>>& grad_scratches = all_grad_scratches[back_index];
+                    const std::vector<std::vector<scalar_t>>& scratches = all_scratches[back_index];
+
+                    std::vector<scalar_t>& grad_scratch = grad_scratches.back();
+                    const std::vector<scalar_t>& scratch = scratches.back();
+
+                    mv<scalar_t, inverse, /*add=*/false>(grad_scratch, grad_prev_a[depth_index], next_a);
+                    mv<scalar_t, !inverse, /*add=*/true>(grad_next_a, grad_prev_a[depth_index], scratch);
+
+                    for (s_size_type j = depth_index - 1, k = 0; j >= 1; --j, ++k) {
+                        const std::vector<scalar_t>& grad_scratch = grad_scratches[j];
+                        std::vector<scalar_t>& grad_old_scratch = grad_scratches[j - 1];
+                        const std::vector<scalar_t>& old_scratch = scratches[j - 1];
+                        const std::vector<scalar_t>& next_divided_narrow = next_divided[k];
+                        std::vector<scalar_t>& grad_next_divided_narrow = grad_next_divided[k];
+
+                        for (int64_t index = 0; index < grad_scratch.size(); ++index) {
+                            grad_prev_a[j][index] += grad_scratch[index];
+                        }
+
+                        mv<scalar_t, inverse, /*add=*/false>(grad_old_scratch, grad_scratch, next_divided_narrow);
+                        mv<scalar_t, !inverse, /*add=*/true>(grad_next_divided_narrow, grad_scratch, old_scratch);
+                    }
+                    for (int64_t index = 0; index < grad_next_divided[depth_index - 1].size(); ++index) {
+                        grad_next_divided[depth_index - 1][index] += grad_scratches[0][index];
+                        grad_prev_a[0][index] += grad_scratches[0][index];
+                    }
+                }
+
+                if (depth > 1) {
+                    mv<scalar_t, /*flip=*/true, /*add=*/true>(grad_next_a, grad_next_divided, reciprocals_a);
+                }
+            }
+
+            template <typename scalar_t>
+            void mult_fused_restricted_exp_backward_cpu(torch::Tensor grad_next,
+                                                        std::vector<torch::Tensor>& grad_prev,
+                                                        torch::Tensor next,
+                                                        const std::vector<torch::Tensor>& prev,
+                                                        bool inverse,
+                                                        torch::Tensor reciprocals) {
+                auto grad_next_a = grad_next.accessor<scalar_t, 2>();
+
+                std::vector<torch::TensorAccessor<scalar_t, 2>> grad_prev_a;
+                grad_prev_a.reserve(grad_prev.size());
+                for (auto elem : grad_prev) {
+                    grad_prev_a.push_back(elem.accessor<scalar_t, 2>());
+                }
+
+                auto next_a = next.accessor<scalar_t, 2>();
+
+                std::vector<torch::TensorAccessor<scalar_t, 2>> prev_a;
+                prev_a.reserve(prev.size());
+                for (auto elem : prev) {
+                    prev_a.push_back(elem.accessor<scalar_t, 2>());
+                }
+
+                auto reciprocals_a = reciprocals.accessor<scalar_t, 1>();
+
+                #pragma omp parallel for default(none) \
+                                         shared(grad_next_a, grad_prev_a, next_a, prev_a, inverse, reciprocals_a)
+                for (int64_t batch_index = 0; batch_index < next_a.size(batch_dim); ++batch_index) {
+                    std::vector<torch::TensorAccessor<scalar_t, 1>> grad_prev_a_at_batch;
+                    grad_prev_a_at_batch.reserve(grad_prev_a.size());
+                    for (auto elem: grad_prev_a) {
+                        grad_prev_a_at_batch.push_back(elem[batch_index]);
+                    }
+
+                    std::vector<torch::TensorAccessor<scalar_t, 1>> prev_a_at_batch;
+                    prev_a_at_batch.reserve(prev_a.size());
+                    for (auto elem: prev_a) {
+                        prev_a_at_batch.push_back(elem[batch_index]);
+                    }
+
+                    if (inverse) {
+                        mult_fused_restricted_exp_backward_cpu_inner<scalar_t,
+                                                                     /*inverse=*/true>(grad_next_a[batch_index],
+                                                                                       grad_prev_a_at_batch,
+                                                                                       next_a[batch_index],
+                                                                                       prev_a_at_batch,
+                                                                                       reciprocals_a);
+                    }
+                    else {
+                        mult_fused_restricted_exp_backward_cpu_inner<scalar_t,
+                                                                     /*inverse=*/false>(grad_next_a[batch_index],
+                                                                                        grad_prev_a_at_batch,
+                                                                                        next_a[batch_index],
+                                                                                        prev_a_at_batch,
+                                                                                        reciprocals_a);
+                    }
+                }
+            }
+        }  // namespace signatory::ta_ops::detail
+
+        void mult_fused_restricted_exp(torch::Tensor next, std::vector<torch::Tensor>& prev, bool inverse,
+                                       torch::Tensor reciprocals, int64_t batch_threads) {
+            if (next.is_cuda()) {
+                detail::mult_fused_restricted_exp_cuda(next, prev, inverse, reciprocals);
+            }
+            else{
+                AT_DISPATCH_FLOATING_TYPES(next.type(), "mult_fused_restricted_exp_cpu", ([&] {
+                    detail::mult_fused_restricted_exp_cpu<scalar_t>(next, prev, inverse, reciprocals, batch_threads);
+                }));
+            }
         }
 
         void mult_fused_restricted_exp_backward(torch::Tensor grad_next,
@@ -266,158 +811,71 @@ namespace signatory {
                                                 const std::vector<torch::Tensor>& prev,
                                                 bool inverse,
                                                 torch::Tensor reciprocals) {
-            // If you're reading this function and trying to understand it...
-            // ...then good luck.
-            // Seriously though, it's a backwards through quite a complicated operation, so there isn't much getting
-            // around the fact that it's going to be a bit involved.
-
-            int64_t batch_size = next.size(batch_dim);
-            int64_t input_channel_size = next.size(channel_dim);
-            s_size_type depth = prev.size();
-
-            // First of all we recompute the forward pass and record all the intermediate tensors that were used and
-            // discarded. We call these 'scratches'.
-            std::vector<std::vector<torch::Tensor>> all_scratches;
-            all_scratches.reserve(depth - 1);
-
-            torch::Tensor next_divided = next.unsqueeze(0) * reciprocals.unsqueeze(1).unsqueeze(2);
-
-            int64_t left_channel_dim;
-            int64_t right_channel_dim;
-            if (inverse) {
-                left_channel_dim = channel_dim - 1;
-                right_channel_dim = channel_dim;
+            if (grad_next.is_cuda()) {
+                detail::mult_fused_restricted_exp_backward_cuda(grad_next, grad_prev, next, prev, inverse, reciprocals);
             }
-            else {
-                left_channel_dim = channel_dim;
-                right_channel_dim = channel_dim - 1;
-            }
-
-            for (s_size_type depth_index = depth - 1; depth_index >= 1; --depth_index) {
-                all_scratches.emplace_back();
-                std::vector<torch::Tensor>& scratches = all_scratches.back();
-                scratches.reserve(depth_index);
-                torch::Tensor scratch = prev[0] + next_divided[depth_index - 1];
-                scratches.push_back(scratch);
-                for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
-                    auto old_scratch_size = scratch.size(channel_dim);
-                    torch::Tensor prev_view;
-                    if (inverse) {
-                        prev_view = prev[j].view({batch_size,
-                                                  input_channel_size,
-                                                  old_scratch_size});
-                    }
-                    else {
-                        prev_view = prev[j].view({batch_size,
-                                                  old_scratch_size,
-                                                  input_channel_size});
-                    }
-                    scratch = prev_view.addcmul(scratch.unsqueeze(left_channel_dim),
-                                                next_divided[k].unsqueeze(right_channel_dim));
-                    scratch = scratch.view({batch_size, old_scratch_size * input_channel_size});
-                    scratches.push_back(scratch);
-                }
-            }
-
-            // Now we actually do the gradient operations
-
-            torch::Tensor grad_next_divided = torch::zeros_like(next_divided);
-
-            // Allocate memory for gradient through the scratches
-
-            std::vector<std::vector<torch::Tensor>> all_grad_scratches;
-            all_grad_scratches.reserve(all_scratches.size());
-            for (const auto& scratches : all_scratches) {
-                all_grad_scratches.emplace_back();
-                all_grad_scratches.reserve(scratches.size());
-                std::vector<torch::Tensor>& grad_scratches = all_grad_scratches.back();
-                for (const auto& elem : scratches) {
-                    grad_scratches.push_back(torch::empty_like(elem));
-                }
-            }
-
-            // Now do the actual backward operation
-
-            grad_next.copy_(grad_prev[0]);
-            for (s_size_type depth_index = 1, back_index = all_scratches.size() - 1;
-                 depth_index < depth;
-                 ++depth_index, --back_index) {
-                const std::vector<torch::Tensor>& grad_scratches = all_grad_scratches[back_index];
-                const std::vector<torch::Tensor>& scratches = all_scratches[back_index];
-
-                torch::Tensor grad_scratch = grad_scratches.back();
-                torch::Tensor scratch = scratches.back();
-
-                torch::Tensor grad_prev_view;
-                if (inverse) {
-                    grad_prev_view = grad_prev[depth_index].view({batch_size,
-                                                                  input_channel_size,
-                                                                  scratch.size(channel_dim)});
-                    torch::Tensor out = grad_scratch.unsqueeze(channel_dim - 1);
-                    torch::bmm_out(/*out=*/out,
-                                   next.unsqueeze(channel_dim - 1),
-                                   grad_prev_view);
-                    grad_next.unsqueeze(channel_dim).baddbmm_(grad_prev_view, scratch.unsqueeze(channel_dim));
-                }
-                else {
-                    grad_prev_view = grad_prev[depth_index].view({batch_size,
-                                                                  scratch.size(channel_dim),
-                                                                  input_channel_size});
-                    torch::Tensor out = grad_scratch.unsqueeze(channel_dim);
-                    torch::bmm_out(/*out=*/out,
-                                   grad_prev_view,
-                                   next.unsqueeze(channel_dim));
-                    grad_next.unsqueeze(channel_dim - 1).baddbmm_(scratch.unsqueeze(channel_dim - 1), grad_prev_view);
-                }
-
-                for (s_size_type j = depth_index - 1, k = 0; j >= 1; --j, ++k) {
-                    torch::Tensor grad_scratch = grad_scratches[j];
-                    torch::Tensor grad_old_scratch = grad_scratches[j - 1];
-                    torch::Tensor old_scratch = scratches[j - 1];
-                    torch::Tensor next_divided_narrow = next_divided[k];
-                    torch::Tensor grad_next_divided_narrow = grad_next_divided[k];
-
-                    grad_prev[j] += grad_scratch;
-
-                    torch::Tensor grad_scratch_view;
-                    if (inverse) {
-                        grad_scratch_view = grad_scratch.view({batch_size,
-                                                               input_channel_size,
-                                                               old_scratch.size(channel_dim)});
-                        torch::Tensor out = grad_old_scratch.unsqueeze(channel_dim - 1);
-                        torch::bmm_out(/*out=*/out,
-                                       next_divided_narrow.unsqueeze(channel_dim - 1),
-                                       grad_scratch_view);
-                        grad_next_divided_narrow.unsqueeze(channel_dim).baddbmm_(grad_scratch_view,
-                                                                                 old_scratch.unsqueeze(channel_dim));
-                    }
-                    else {
-                        grad_scratch_view = grad_scratch.view({batch_size,
-                                                               old_scratch.size(channel_dim),
-                                                               input_channel_size});
-                        torch::Tensor out = grad_old_scratch.unsqueeze(channel_dim);
-                        torch::bmm_out(/*out=*/out,
-                                       grad_scratch_view,
-                                       next_divided_narrow.unsqueeze(channel_dim));
-                        grad_next_divided_narrow.unsqueeze(channel_dim - 1).baddbmm_(old_scratch.unsqueeze(channel_dim - 1),
-                                                                                     grad_scratch_view);
-                    }
-                }
-                torch::Tensor grad_next_divided_narrow = grad_next_divided[depth_index - 1];
-                grad_next_divided_narrow += grad_scratches[0];
-                grad_prev[0] += grad_scratches[0];
-            }
-
-            // Finally the do the backward from next_divided into next
-
-            // In principle when depth == 1 then the code below should be a no-op, but BLAS throws an error here
-            if (depth > 1) {
-                torch::Tensor grad_next_divided_view = grad_next_divided.view({depth - 1,
-                                                                               batch_size * input_channel_size});
-                torch::Tensor grad_next_view = grad_next.view({batch_size * input_channel_size});
-                grad_next_view.unsqueeze(0).addmm_(reciprocals.unsqueeze(0), grad_next_divided_view);
+            else{
+                AT_DISPATCH_FLOATING_TYPES(grad_next.type(), "mult_fused_restricted_exp_backward_cpu", ([&] {
+                    detail::mult_fused_restricted_exp_backward_cpu<scalar_t>(grad_next, grad_prev, next, prev, inverse,
+                                                                             reciprocals);
+                }));
             }
         }
+
+        /***********************************************
+         * Forward and backward computations for 'log' *
+         ***********************************************/
+
+        namespace detail {
+            // The coefficient of a term in the power series of the logarithm
+            torch::Scalar log_coefficient_at_depth(s_size_type depth_index, torch::Tensor reciprocals) {
+                return ((((depth_index % 2) == 0) ? -1 : 1) * reciprocals[depth_index]).item();
+            }
+
+            // Computes (sort of) multiplication in the tensor algebra.
+            // 'arg1' is assumed to be a member of the tensor algebra, with assumed scalar value 'scalar_term_value'.
+            // 'arg2' is assumed to be a member of the tensor algebra, with assumed scalar value zero.
+            // Then 'arg1' is modified to hold arg1 \otimes arg2 for some of its terms; its highest 'top_terms_to_skip'
+            // many terms are left unchanged. Thus the result ends up being a weird hybrid of what was passed in, and
+            // the result of an actual multiplication.
+            void mult_partial(std::vector<torch::Tensor>& arg1, const std::vector<torch::Tensor>& arg2,
+                              torch::Scalar scalar_term_value, s_size_type top_terms_to_skip) {
+                auto depth = arg1.size();
+                for (s_size_type depth_index = depth - top_terms_to_skip - 1; depth_index >= 0; --depth_index) {
+                    torch::Tensor tensor_at_depth = arg1[depth_index];
+
+                    // corresponding to the zero scalar assumed to be associated with arg2
+                    tensor_at_depth.zero_();
+
+                    mult_inner(tensor_at_depth, arg1, arg2, depth_index);
+
+                    tensor_at_depth.add_(arg2[depth_index], scalar_term_value);
+                }
+            }
+
+            // Backwards through mult_partial.
+            // 'arg1', 'arg2', 'scalar_value_term', 'top_terms_to_skip' should be as in the forward call to
+            // mult_partial.
+            // 'grad_arg1' is the input gradient, and will be modified in-place.
+            // 'grad_arg2' is the output gradient, and will have the result of this operation added on to it.
+            void mult_partial_backward(std::vector<torch::Tensor>& grad_arg1,
+                                       std::vector<torch::Tensor>& grad_arg2,
+                                       const std::vector<torch::Tensor>& arg1,
+                                       const std::vector<torch::Tensor>& arg2,
+                                       torch::Scalar scalar_value_term,
+                                       s_size_type top_terms_to_skip) {
+                s_size_type depth = arg1.size();
+                for (s_size_type depth_index = 0; depth_index < depth - top_terms_to_skip; ++depth_index) {
+                    torch::Tensor grad_tensor_at_depth = grad_arg1[depth_index];
+
+                    grad_arg2[depth_index].add_(grad_tensor_at_depth, scalar_value_term);
+
+                    mult_inner_backward(grad_tensor_at_depth, grad_arg1, grad_arg2, arg1, arg2, depth_index);
+
+                    grad_tensor_at_depth.zero_();
+                }
+            }
+        }  // namespace signatory::ta_ops::detail
 
         void log(std::vector<torch::Tensor>& output_vector, const std::vector<torch::Tensor>& input_vector,
                  torch::Tensor reciprocals) {
@@ -502,9 +960,15 @@ namespace signatory {
         }
     }  // namespace signatory::ta_ops
 
-    torch::Tensor signature_combine_forward(std::vector<torch::Tensor> sigtensors,  // copy not reference as we modify it
+    /*************************************************************
+     * Forward and backward computations for 'signature_combine' *
+     *************************************************************/
+
+    torch::Tensor signature_combine_forward(std::vector<torch::Tensor> sigtensors, // copy not reference as we modify it
                                             int64_t input_channels,
                                             s_size_type depth) {
+        // Perform a bunch of argument checking
+
         misc::checkargs_channels_depth(input_channels, depth);
         if (sigtensors.size() == 0) {
             throw std::invalid_argument("sigtensors must be of nonzero length.");
@@ -532,6 +996,8 @@ namespace signatory {
             elem = elem.detach();
         }
 
+        // Actually do the computation
+
         torch::Tensor out = sigtensors[0].clone();
         std::vector<torch::Tensor> out_vector;
         misc::slice_by_term(out, out_vector, input_channels, depth);
@@ -544,7 +1010,8 @@ namespace signatory {
     }
 
     std::vector<torch::Tensor> signature_combine_backward(torch::Tensor grad_out,
-                                                          std::vector<torch::Tensor> sigtensors,  // copy not reference as we modify it
+                                                          // copy not reference as we modify it
+                                                          std::vector<torch::Tensor> sigtensors,
                                                           int64_t input_channels,
                                                           s_size_type depth) {
         grad_out = grad_out.detach();
@@ -591,6 +1058,7 @@ namespace signatory {
         std::vector<torch::Tensor> grad_scratch_vector;
         misc::slice_by_term(grad_scratch, grad_scratch_vector, input_channels, depth);
 
+        // Actually do the computation
         for (s_size_type sigtensors_index = sigtensors.size() - 1; sigtensors_index >= 2; --sigtensors_index) {
             // Recompute the inputs of each multiplication
             std::vector<torch::Tensor> sigtensor_vector;
@@ -609,7 +1077,7 @@ namespace signatory {
                                                           sigtensor_vector);
         }
         if (sigtensors.size() > 1) {
-            // sigtensors_index == 1
+            // Correponds to sigtensors_index == 1
             // This iteration pulled out because we don't need to do the final division
             std::vector<torch::Tensor> sigtensor_vector;
             misc::slice_by_term(sigtensors[1], sigtensor_vector, input_channels, depth);

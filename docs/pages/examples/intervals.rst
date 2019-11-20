@@ -1,7 +1,7 @@
 .. _examples-intervals:
 
-Signatures on intervals
-#######################
+Computing signatures over multiple intervals of the same path efficiently
+#########################################################################
 
 The basic :func:`signatory.signature` function computes the signature of a whole stream of data. Sometimes we have a whole stream of data, and then want to compute the signature of just the data sitting in some subinterval.
 

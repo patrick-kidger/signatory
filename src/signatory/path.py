@@ -25,7 +25,7 @@ from . import impl
 
 # noinspection PyUnreachableCode
 if False:
-    from typing import List, Union
+    from typing import Any, List, Union
 
 
 class _BackwardShortcut(autograd.Function):
@@ -117,9 +117,15 @@ class Path(object):
         depth (int): As :func:`signatory.signature`.
 
         basepoint (bool or torch.Tensor, optional): As :func:`signatory.signature`.
+
+        remember_path (bool, optional): Defaults to True. Whether to record the :attr:`path` argument that this was
+            called with. If True, then it will be accessible as the :code:`.path` attribute. This argument may be set to
+            False if it is known that the underlying path is no longer of interest and should not kept in memory just
+            because it was passed as an argument here.
     """
-    def __init__(self, path, depth, basepoint=False):
-        # type: (torch.Tensor, int, Union[bool, torch.Tensor]) -> None
+    def __init__(self, path, depth, basepoint=False, remember_path=True, **kwargs):
+        # type: (torch.Tensor, int, Union[bool, torch.Tensor], bool, **Any) -> None
+        self._remember_path = remember_path
         self._depth = depth
 
         self._signature = []
@@ -137,16 +143,20 @@ class Path(object):
         self._signature_channels = smodule.signature_channels(self._channels, self._depth)
         self._logsignature_channels = lmodule.logsignature_channels(self._channels, self._depth)
 
-        use_basepoint, basepoint_value = smodule.interpret_basepoint(basepoint, path.size(0), path.size(2), path.dtype,
-                                                                     path.device)
-        if use_basepoint:
-            self._length += 1
-            self._lengths.append(1)
-            self._path.append(basepoint_value.unsqueeze(-2))  # unsqueeze a stream dimension
+        if remember_path:
+            use_basepoint, basepoint_value = smodule.interpret_basepoint(basepoint, path.size(0), path.size(2),
+                                                                         path.dtype, path.device)
+            if use_basepoint:
+                self._length += 1
+                self._lengths.append(1)
+                self._path.append(basepoint_value.unsqueeze(-2))  # unsqueeze a stream dimension
 
-        self._update(path, basepoint, None, None)
+        self._end = basepoint
+        self._update(path, None, None)
 
         self._signature_to_logsignature_instances = {}
+
+        super(Path, self).__init__(**kwargs)
 
     def signature(self, start=None, end=None):
         # type: (Union[int, None], Union[int, None]) -> torch.Tensor
@@ -298,19 +308,20 @@ class Path(object):
                              "used.")
         if path.size(-1) != self._channels:
             raise ValueError("Cannot append a path with different number of channels to what has already been used.")
-        basepoint = self._path[-1][:, -1, :]
         initial = self._signature[-1][:, -1, :]
         inverse_initial = self._inverse_signature[-1][:, -1, :]
-        self._update(path, basepoint, initial, inverse_initial)
+        self._update(path, initial, inverse_initial)
 
-    def _update(self, path, basepoint, initial, inverse_initial):
-        signature = smodule.signature(path, self._depth, stream=True, basepoint=basepoint, initial=initial)
-        inverse_signature = smodule.signature(path, self._depth, stream=True, basepoint=basepoint, inverse=True,
+    def _update(self, path, initial, inverse_initial):
+        signature = smodule.signature(path, self._depth, stream=True, basepoint=self._end, initial=initial)
+        inverse_signature = smodule.signature(path, self._depth, stream=True, basepoint=self._end, inverse=True,
                                               initial=inverse_initial)
         self._signature.append(signature)
         self._inverse_signature.append(inverse_signature)
 
-        self._path.append(path)
+        if self.remember_path:
+            self._path.append(path)
+        self._end = path[:, -1, :].clone()  # clone to use new memory so the old can be freed
 
         self._length += path.size(-2)
         self._signature_length += signature.size(-2)
@@ -318,10 +329,20 @@ class Path(object):
         self._signature_lengths.append(self._signature_length)
 
     @property
+    def remember_path(self):
+        # type: () -> bool
+        """Whether this Path remembers the :attr:`path` argument it was called with."""
+        return self._remember_path
+
+    @property
     def path(self):
         # type: () -> List[torch.Tensor]
         """The path(s) that this Path was created with."""
-        return self._path
+        if self.remember_path:
+            return self._path
+        else:
+            raise RuntimeError('This Path object has not retained a reference to the path it was called with. The Path '
+                               'object must have been initialised with `remember_path=True`.')
 
     @property
     def depth(self):

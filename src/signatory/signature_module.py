@@ -211,18 +211,14 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
             have shape :math:`(N, C)`.
 
         inverse (bool, optional): Defaults to False. If True then it is in fact the inverse signature that is computed.
-            That is, we flip the input path along its stream dimension before computing the signature.
-            If :attr:`stream` is True then each sub-path is the same as before, and are each individually flipped along
-            their stream dimensions, and kept in the same order with respect to each other.
-            (But without the extra computational overhead of actually doing all of these flips.)
-            From a machine learning perspective it does not particularly matter whether the signature or the inverse
-            signature is computed - both represent essentially the same information as each other.
+            (Signatures form a group under the operation of the tensor product; the inverse is defined with respect to
+            this operation.) From a machine learning perspective it does not particularly matter whether the signature
+            or the inverse signature is computed - both represent essentially the same information as each other.
 
         initial (None or :class:`torch.Tensor`, optional): Defaults to None. If it is a :class:`torch.Tensor` then it
             must be of size :math:`(N, C + C^2 + ... + C^\text{depth})`, corresponding to the signature of another path.
             Then this signature is pre-tensor-multiplied on to the signature of :attr:`path`. For a more thorough
             explanation, see :ref:`this example<examples-online>`.
-            (The appropriate modifications are made if :attr:`inverse=True` or if :attr:`basepoint`.)
 
     Returns:
         A :class:`torch.Tensor`. Given an input :class:`torch.Tensor` of shape :math:`(N, L, C)`, and input arguments
