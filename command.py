@@ -25,7 +25,6 @@ import re
 import shutil
 import subprocess
 import sys
-import time
 import webbrowser
 #### DO NOT IMPORT NON-(STANDARD LIBRARY) MODULES HERE
 # Instead, lazily import them inside the command.
@@ -42,9 +41,9 @@ def main():
                                    "-1.")
 
     parser = argparse.ArgumentParser(description="Runs various commands for building and testing Signatory.")
-    parser.add_argument('-v', '--version', action='version', version=metadata.version)
     subparsers = parser.add_subparsers(dest='command', help='Which command to run')
-    
+
+    version_parser = subparsers.add_parser('version', description="Prints the version")
     test_parser = subparsers.add_parser('test', parents=[deviceparser], description="Run tests")
     benchmark_parser = subparsers.add_parser('benchmark', parents=[deviceparser], description="Run speed benchmarks")
     docs_parser = subparsers.add_parser('docs', description="Build documentation")
@@ -53,6 +52,7 @@ def main():
     should_not_import_parser = subparsers.add_parser('should_not_import', description="Tests that Signatory _cannot_ "
                                                                                       "be imported.")
 
+    version_parser.set_defaults(cmd=version)
     test_parser.set_defaults(cmd=test)
     benchmark_parser.set_defaults(cmd=benchmark)
     docs_parser.set_defaults(cmd=docs)
@@ -67,13 +67,10 @@ def main():
     benchmark_parser.add_argument('-e', '--noesig', action='store_false', dest='test_esig',
                                   help="Skip esig tests as esig is typically very slow.")
     benchmark_parser.add_argument('-g', '--nogpu', action='store_false', dest='test_signatory_gpu',
-                                  help="Skip Signatory GPU tests, (perhaps if you don't have a GPU installed).")
-    benchmark_parser.add_argument('-a', '--ratio', action='store_true',
-                                  help="Enable computing and plotting the improvement ratio of Signatory over "
-                                       "iisignature or esig.")
+                                  help="Skip Signatory GPU tests.")
     benchmark_parser.add_argument('-m', '--measure', choices=('time', 'memory'), default='time',
                                   help="Whether to measure speed or memory usage. Defaults to time.")
-    benchmark_parser.add_argument('-f', '--fns', choices=('sigf', 'sigb', 'logsigf', 'logsigb', 'all'), default='all',
+    benchmark_parser.add_argument('-f', '--fns', choices=('all', 'sigf', 'sigb', 'logsigf', 'logsigb'), default='all',
                                   help="Which functions to run: signature forwards, signature backwards, logsignature "
                                        "forwards, logsignature backwards, or all of them. Defaults to all.")
     benchmark_parser.add_argument('-t', '--type', choices=('typical', 'depths', 'channels', 'small'), default='typical',
@@ -82,11 +79,15 @@ def main():
                                        "'channels' are more thorough benchmarks (and will taking correspondingly "
                                        "longer to run!) testing multiple depths or multiple channels respectively. "
                                        "Defaults to typical.")
-    benchmark_parser.add_argument('-o', '--output', choices=('table', 'graph', 'graphsave', 'none'), default='table',
+    benchmark_parser.add_argument('-o', '--output', choices=('table', 'graph', 'graphtable', 'none'), default='table',
                                   help="How to format the output. 'table' formats as a table, 'graph' formats as a "
-                                       "graph. 'graphsave' formats as a graph but saves it rather than displaying it. "
-                                       "'none' prints no output at all (perhaps if you're retrieving the results"
-                                       " programmatically by importing command.py instead). Defaults to table.")
+                                       "graph. 'graphtable' does both. 'none' prints no output at all (perhaps if "
+                                       "you're retrieving the results programmatically by importing command.py "
+                                       "instead). Defaults to table.")
+    benchmark_parser.add_argument('-s', '--save', action='store_true', help='Save the results to disk rather than '
+                                                                            'displaying them. (By default tables are '
+                                                                            'printed to stdout and graphs are opened '
+                                                                            'in a new window.)')
                                   
     docs_parser.add_argument('-o', '--open', action='store_true',
                              help="Open the documentation in a web browser as soon as it is built.")
@@ -120,6 +121,10 @@ class _NullContext(object):
         pass
 
 
+def version(args):
+    print(metadata.version)
+
+
 def test(args):
     try:
         import iisignature  # fail fast here if necessary
@@ -149,51 +154,67 @@ def benchmark(args):
     except ImportError:
         raise ImportError("The esig package is required for running tests. It can be installed via 'pip "
                           "install esig'")
-                          
+
     import benchmark.benchmark as bench
     import torch
-    with torch.cuda.device(args.device) if args.device != -1 else _NullContext():
-        print('Using ' + _get_device())
-        if args.type == 'typical':
-            runner = bench.BenchmarkRunner.typical(ratio=args.ratio,
-                                                   test_esig=args.test_esig,
-                                                   test_signatory_gpu=args.test_signatory_gpu,
-                                                   measure=args.measure,
-                                                   fns=args.fns)
-        elif args.type == 'depths':
-            runner = bench.BenchmarkRunner.depths(ratio=args.ratio,
-                                                  test_esig=args.test_esig,
-                                                  test_signatory_gpu=args.test_signatory_gpu,
-                                                  measure=args.measure,
-                                                  fns=args.fns)
-        elif args.type == 'channels':
-            runner = bench.BenchmarkRunner.channels(ratio=args.ratio,
-                                                    test_esig=args.test_esig,
-                                                    test_signatory_gpu=args.test_signatory_gpu,
-                                                    measure=args.measure,
-                                                    fns=args.fns)
-        elif args.type == 'small':
-            runner = bench.BenchmarkRunner.small(ratio=args.ratio,
-                                                 test_esig=args.test_esig,
-                                                 test_signatory_gpu=args.test_signatory_gpu,
-                                                 measure=args.measure,
-                                                 fns=args.fns)
-        else:
-            raise RuntimeError
+
+    if args.measure == 'time':
+        measure = bench.Measurables.time
+    elif args.measure == 'memory':
+        measure = bench.Measurables.memory
+    else:
+        raise RuntimeError
+
+    if args.fns == 'all':
+        fns = bench.Functions.all_fns
+    elif args.fns == 'sigf':
+        fns = bench.Functions.signature_forward_fns
+    elif args.fns == 'sigb':
+        fns = bench.Functions.signature_backward_fns
+    elif args.fns == 'logsigf':
+        fns = bench.Functions.logsignature_forward_fns
+    elif args.fns == 'logsigb':
+        fns = bench.Functions.logsignature_backward_fns
+    else:
+        raise RuntimeError
+
+    if args.type == 'typical':
+        type_ = bench.Types.typical
+    elif args.type == 'depths':
+        type_ = bench.Types.depths
+    elif args.type == 'channels':
+        type_ = bench.Types.channels
+    elif args.type == 'small':
+        type_ = bench.Types.small
+    else:
+        raise RuntimeError
+
+    try:
+        runner = bench.BenchmarkRunner(type_=type_,
+                                       test_esig=args.test_esig,
+                                       test_signatory_gpu=args.test_signatory_gpu,
+                                       measure=measure,
+                                       fns=fns)
         if args.output in ('graph', 'graphsave'):
             runner.check_graph()
-        runner.run()
-        if args.output == 'graph':
-            runner.graph()
-        elif args.output == 'graphsave':
-            runner.graph(save=True)
-        elif args.output == 'table':
-            runner.table()
-        elif args.output == 'none':
-            pass
+    except bench.InvalidBenchmark as e:
+        print(str(e))
+    else:
+        with torch.cuda.device(args.device) if args.device != -1 else _NullContext():
+            print('Using ' + _get_device())
+            runner.run()
+
+        if args.save:
+            if args.output in ('table', 'graphtable'):
+                runner.table(save=True)
+            if args.output in ('graph', 'graphtable'):
+                runner.graph(save=True)
         else:
-            raise RuntimeError
-    return runner
+            if args.output in ('table', 'graphtable'):
+                runner.table()
+            if args.output in ('graph', 'graphtable'):
+                runner.graph()
+        return runner
 
     
 def docs(args=()):
