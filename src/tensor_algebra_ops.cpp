@@ -247,7 +247,7 @@ namespace signatory {
             void mult_fused_restricted_exp_cpu_inner(torch::TensorAccessor<scalar_t, 1> next_a,
                                                      std::vector<torch::TensorAccessor<scalar_t, 1>>& prev_a,
                                                      torch::TensorAccessor<scalar_t, 1> reciprocals_a) {
-                int64_t input_channel_size = next_a.size(0);
+                int64_t input_channel_size = next_a.size(0);  // 0 is the channel dimension
                 s_size_type depth = prev_a.size();
 
                 std::vector<std::vector<scalar_t>> next_divided;
@@ -261,7 +261,7 @@ namespace signatory {
                     }
                 }
 
-                if (depth > 1) {
+                if (depth > 1) {  // check is just because we have "depth - 2" used below.
                     std::vector<scalar_t> new_scratch;
                     std::vector<scalar_t> old_scratch;
                     // Figure out how large each vector is going to get by the end of the computation.
@@ -319,7 +319,8 @@ namespace signatory {
                                 else {
                                     prev_a_index = new_scratch_index * input_channel_size + next_index;
                                 }
-                                prev_a[depth_index][prev_a_index] += new_scratch[new_scratch_index] * next_a[next_index];
+                                prev_a[depth_index][prev_a_index] += new_scratch[new_scratch_index] *
+                                                                     next_a[next_index];
                             }
                         }
                     }
@@ -344,11 +345,12 @@ namespace signatory {
                 }
                 auto reciprocals_a = reciprocals.accessor<scalar_t, 1>();
 
+                int64_t batch_size = next.size(batch_dim);
                 #pragma omp parallel for default(none) \
                                          if(batch_threads > 1) \
                                          num_threads(batch_threads) \
-                                         shared(next_a, prev_a, inverse, reciprocals_a)
-                for (int64_t batch_index = 0; batch_index < next_a.size(batch_dim); ++batch_index) {
+                                         shared(batch_size, next_a, prev_a, inverse, reciprocals_a)
+                for (int64_t batch_index = 0; batch_index < batch_size; ++batch_index) {
                     std::vector<torch::TensorAccessor<scalar_t, 1>> prev_a_at_batch;
                     prev_a_at_batch.reserve(prev_a.size());
                     for (auto elem: prev_a) {
@@ -529,7 +531,7 @@ namespace signatory {
             // Alright, buckle your seatbelts. We're going to the CPU implementation now.
 
             template <typename scalar_t>
-            int64_t mvsize(std::vector<scalar_t> obj) {
+            int64_t mvsize(const std::vector<scalar_t>& obj) {
                 return obj.size();
             }
 
@@ -538,10 +540,35 @@ namespace signatory {
                 return obj.size(0);
             }
 
+            template <typename scalar_t>
+            scalar_t mvindex(const std::vector<scalar_t>& matrix, int64_t index, int64_t out_index,
+                             int64_t vector_index) {
+                return matrix[index];
+            }
+
+            template <typename scalar_t>
+            scalar_t mvindex(const std::vector<std::vector<scalar_t>>& matrix, int64_t index, int64_t out_index,
+                             int64_t vector_index) {
+                return matrix[vector_index][out_index];
+            }
+
+            template <typename scalar_t>
+            scalar_t mvindex(torch::TensorAccessor<scalar_t, 1> matrix, int64_t index, int64_t out_index,
+                             int64_t vector_index) {
+                return matrix[index];
+            }
+
+            template <typename scalar_t>
+            scalar_t mvindex(torch::TensorAccessor<scalar_t, 2> matrix, int64_t index, int64_t out_index,
+                             int64_t vector_index) {
+                return matrix[vector_index][out_index];
+            }
+
             // Performs either matrix-vector multiplication or transpose(vector)-matrix multiplication.
             //
-            // 'out', 'matrix', 'vector' should each either be std::vector<scalar_t> or
-            // torch::TensorAccessor<scalar_t, 1>
+            // 'out', and vector' should each either be std::vector<scalar_t> or torch::TensorAccessor<scalar_t, 1>
+            // 'matrix' should be either a std::vector<scalar_t>, torch::TensorAccessor<scalar_t, 1>,
+            // std::vector<std::vector<scalar_t>> or torch::TensorAccessor<scalar_t, 2>.
             //
             // It must be such that the size of 'out', multiplied by the size of 'vector', is equal to the size of
             // 'matrix'.
@@ -552,38 +579,46 @@ namespace signatory {
             // It adds the result on to what is already in 'out' if add==true, and stores it in 'out' if add==false.
             template <typename scalar_t, bool flip, bool add, typename T, typename T2, typename T3>
             void mv(T& out, const T2& matrix, const T3& vector) {
-                int64_t out_size = mvsize(out);
-                int64_t vector_size = mvsize(vector);
+                int64_t out_size = mvsize<scalar_t>(out);
+                int64_t vector_size = mvsize<scalar_t>(vector);
 
                 if (flip) {
-                    for (int64_t out_index = 0; out_index < out.size(); ++out_index) {
+                    int64_t index = 0;
+                    for (/*index initialised above*/; index < out_size;/*index increment below*/) {
                         if (add) {
-                            out[out_index] += vector[0] * matrix[out_index];
+                            out[index] += vector[0] * mvindex<scalar_t>(matrix, index, /*out_index=*/index,
+                                                                        /*vector_index=*/0);
                         }
                         else {
-                            out[out_index] = vector[0] * matrix[out_index];
+                            out[index] = vector[0] * mvindex<scalar_t>(matrix, index, /*out_index=*/index,
+                                                                       /*vector_index=*/0);
                         }
+                        ++index;
                     }
-                    int64_t index = out.size();
-                    for (int64_t vector_index = 1; vector_index < vector.size(0); ++vector_index) {
-                        for (int64_t out_index = 0; out_index < out.size(); ++out_index) {
-                            index += 1;
-                            out[out_index] += vector[vector_index] * matrix[index];
+                    for (int64_t vector_index = 1; vector_index < vector_size; ++vector_index) {
+                        for (int64_t out_index = 0; out_index < out_size; ++out_index) {
+                            out[out_index] += vector[vector_index] * mvindex<scalar_t>(matrix, index, out_index,
+                                                                                       vector_index);
+                            ++index;
                         }
                     }
                 }
                 else {
                     int64_t index = 0;
-                    for (int64_t out_index = 0; out_index < out.size(); ++out_index) {
+                    for (int64_t out_index = 0; out_index < out_size; ++out_index) {
                         if (add) {
-                            out[out_index] += vector[0] * matrix[index];
+                            out[out_index] += vector[0] * mvindex<scalar_t>(matrix, index, out_index,
+                                                                            /*vector_index=*/0);
                         }
                         else {
-                            out[out_index] = vector[0] * matrix[index];
+                            out[out_index] = vector[0] * mvindex<scalar_t>(matrix, index, out_index,
+                                                                           /*vector_index=*/0);
                         }
-                        for (int64_t vector_index = 1; vector_index < vector.size(0); ++vector_index) {
-                            index += 1;
-                            out[out_index] += vector[vector_index] * matrix[index];
+                        ++index;
+                        for (int64_t vector_index = 1; vector_index < vector_size; ++vector_index) {
+                            out[out_index] += vector[vector_index] * mvindex<scalar_t>(matrix, index, out_index,
+                                                                                       vector_index);
+                            ++index;
                         }
                     }
                 }
@@ -596,7 +631,7 @@ namespace signatory {
                                                          torch::TensorAccessor<scalar_t, 1> next_a,
                                                          const std::vector<torch::TensorAccessor<scalar_t, 1>>& prev_a,
                                                          torch::TensorAccessor<scalar_t, 1> reciprocals_a) {
-                int64_t input_channel_size = next_a.size(channel_dim);
+                int64_t input_channel_size = next_a.size(0);  // 0 is the channel dimension
                 s_size_type depth = prev_a.size();
 
                 std::vector<std::vector<std::vector<scalar_t>>> all_scratches;
@@ -672,9 +707,14 @@ namespace signatory {
 
                 std::vector<std::vector<scalar_t>> grad_next_divided;
                 grad_next_divided.reserve(next_divided.size());
-                for (s_size_type next_divided_index = 0; next_divided_index < next_divided.size(); ++next_divided_index)
+                for (s_size_type next_divided_index = 0;
+                     next_divided_index < static_cast<s_size_type>(next_divided.size());
+                     ++next_divided_index)
                 {
-                    grad_next_divided.push_back(std::vector<scalar_t> (next_divided[next_divided_index].size(), 0));
+                    // Deliberately initialising to zero here, rather than empty. It would just be rather a faff to
+                    // write code that pulls out the first iteration we use this, and set rather than add in that
+                    // iteration.
+                    grad_next_divided.push_back(std::vector<scalar_t> (input_channel_size, 0));
                 }
 
                 // Allocate memory for the gradient through the scratches
@@ -705,8 +745,8 @@ namespace signatory {
                     std::vector<scalar_t>& grad_scratch = grad_scratches.back();
                     const std::vector<scalar_t>& scratch = scratches.back();
 
-                    mv<scalar_t, inverse, /*add=*/false>(grad_scratch, grad_prev_a[depth_index], next_a);
-                    mv<scalar_t, !inverse, /*add=*/true>(grad_next_a, grad_prev_a[depth_index], scratch);
+                    mv<scalar_t, /*flip=*/inverse, /*add=*/false>(grad_scratch, grad_prev_a[depth_index], next_a);
+                    mv<scalar_t, /*flip=*/!inverse, /*add=*/true>(grad_next_a, grad_prev_a[depth_index], scratch);
 
                     for (s_size_type j = depth_index - 1, k = 0; j >= 1; --j, ++k) {
                         const std::vector<scalar_t>& grad_scratch = grad_scratches[j];
@@ -715,14 +755,18 @@ namespace signatory {
                         const std::vector<scalar_t>& next_divided_narrow = next_divided[k];
                         std::vector<scalar_t>& grad_next_divided_narrow = grad_next_divided[k];
 
-                        for (int64_t index = 0; index < grad_scratch.size(); ++index) {
+                        for (s_size_type index = 0; index < static_cast<s_size_type>(grad_scratch.size()); ++index) {
                             grad_prev_a[j][index] += grad_scratch[index];
                         }
 
-                        mv<scalar_t, inverse, /*add=*/false>(grad_old_scratch, grad_scratch, next_divided_narrow);
-                        mv<scalar_t, !inverse, /*add=*/true>(grad_next_divided_narrow, grad_scratch, old_scratch);
+                        mv<scalar_t, /*flip=*/inverse, /*add=*/false>(grad_old_scratch, grad_scratch,
+                                                                      next_divided_narrow);
+                        mv<scalar_t, /*flip=*/!inverse, /*add=*/true>(grad_next_divided_narrow, grad_scratch,
+                                                                      old_scratch);
                     }
-                    for (int64_t index = 0; index < grad_next_divided[depth_index - 1].size(); ++index) {
+                    for (s_size_type index = 0;
+                         index < static_cast<s_size_type>(grad_next_divided[depth_index - 1].size());
+                         ++index) {
                         grad_next_divided[depth_index - 1][index] += grad_scratches[0][index];
                         grad_prev_a[0][index] += grad_scratches[0][index];
                     }
@@ -758,18 +802,20 @@ namespace signatory {
 
                 auto reciprocals_a = reciprocals.accessor<scalar_t, 1>();
 
+                int64_t batch_size = next.size(batch_dim);
                 #pragma omp parallel for default(none) \
-                                         shared(grad_next_a, grad_prev_a, next_a, prev_a, inverse, reciprocals_a)
-                for (int64_t batch_index = 0; batch_index < next_a.size(batch_dim); ++batch_index) {
+                                         shared(batch_size, grad_next_a, grad_prev_a, next_a, prev_a, inverse, \
+                                                reciprocals_a)
+                for (int64_t batch_index = 0; batch_index < batch_size; ++batch_index) {
                     std::vector<torch::TensorAccessor<scalar_t, 1>> grad_prev_a_at_batch;
                     grad_prev_a_at_batch.reserve(grad_prev_a.size());
-                    for (auto elem: grad_prev_a) {
+                    for (auto elem : grad_prev_a) {
                         grad_prev_a_at_batch.push_back(elem[batch_index]);
                     }
 
                     std::vector<torch::TensorAccessor<scalar_t, 1>> prev_a_at_batch;
                     prev_a_at_batch.reserve(prev_a.size());
-                    for (auto elem: prev_a) {
+                    for (auto elem : prev_a) {
                         prev_a_at_batch.push_back(elem[batch_index]);
                     }
 
@@ -1001,7 +1047,9 @@ namespace signatory {
         torch::Tensor out = sigtensors[0].clone();
         std::vector<torch::Tensor> out_vector;
         misc::slice_by_term(out, out_vector, input_channels, depth);
-        for (u_size_type sigtensor_index = 1; sigtensor_index < sigtensors.size(); ++sigtensor_index) {
+        for (s_size_type sigtensor_index = 1;
+             sigtensor_index < static_cast<s_size_type>(sigtensors.size());
+             ++sigtensor_index) {
             std::vector<torch::Tensor> sigtensor_vector;
             misc::slice_by_term(sigtensors[sigtensor_index], sigtensor_vector, input_channels, depth);
             ta_ops::mult(out_vector, sigtensor_vector, /*inverse=*/false);
@@ -1041,7 +1089,9 @@ namespace signatory {
         scratch_vector_vector.reserve(reserve_amount);
         torch::Tensor scratch = sigtensors[0];  // no clone necessary here, we're going to do it in the loop below
         // -1 to the size because we don't need to store the final output
-        for (u_size_type sigtensor_index = 1; sigtensor_index < sigtensors.size() - 1; ++sigtensor_index) {
+        for (s_size_type sigtensor_index = 1;
+             sigtensor_index < static_cast<s_size_type>(sigtensors.size()) - 1;
+             ++sigtensor_index) {
             scratch = scratch.clone();
             std::vector<torch::Tensor> scratch_vector;
             misc::slice_by_term(scratch, scratch_vector, input_channels, depth);
