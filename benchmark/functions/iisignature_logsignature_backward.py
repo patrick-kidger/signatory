@@ -20,11 +20,8 @@ def setup(obj):
     obj.path = torch.rand(obj.size, dtype=torch.float).numpy()
     shape = obj.size[-3], iisignature.logsiglength(obj.size[-1], obj.depth)
     obj.grad = torch.rand(shape).numpy()
-
-
-def mem_include(obj):
-    obj.prep = iisignature.prepare(obj.path.shape[-1], obj.depth)
+    obj.prepare = iisignature.prepare(obj.path.shape[-1], obj.depth)
 
 
 def run(obj):
-    return iisignature.logsigbackprop(obj.grad, obj.path, obj.prep)
+    return iisignature.logsigbackprop(obj.grad, obj.path, obj.prepare)

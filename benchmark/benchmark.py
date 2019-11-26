@@ -16,6 +16,7 @@
 
 import argparse
 import collections as co
+import datetime
 import importlib
 import io
 import math
@@ -112,9 +113,8 @@ class Types(helpers.Container):
         depths = (2, 3, 4, 5, 6, 7, 8, 9)
 
     class small(object):
-        """Tests on very small data. This doesn't given meaningful results - the millisecond overhead of
-        PyTorch/NumPy/etc. ends up giving a greater noise than there is signal - but it serves to test the benchmark
-        framework itself.
+        """Tests on very small data. This doesn't given meaningful results - the overhead of PyTorch/NumPy/etc. ends up
+        giving a greater noise than there is signal - but it serves to test the benchmark framework itself.
         """
         sizes = ((1, 2, 2),)
         depths = (2, 3, 4, 5)
@@ -145,16 +145,10 @@ class BenchmarkRunner(object):
         self.fns = fns
 
         self.title_string = list(fns.keys())[0] + ': ' + measure
-        if len(self.sizes) > 1:
-            tag = '_channels'
-        elif len(self.depths) > 1:
-            tag = '_depths'
-        else:
-            tag = '_channels-and-depths'
-        dirname = self.title_string.lower().replace(' ', '_').replace(':', '') + tag
+        dirname = self.title_string.lower().replace(' ', '_').replace(':', '') + '_' + type_.__name__
         if not os.path.isdir(dirname):
             os.mkdir(dirname)
-        self.save_string = os.path.join(dirname, str(time.time()))
+        self.save_string = os.path.join(dirname, str(datetime.datetime.utcnow()))
 
         self._results = None
 
@@ -225,43 +219,44 @@ class BenchmarkRunner(object):
         obj = argparse.Namespace(size=size, depth=depth)
         library_module = importlib.import_module('.functions.' + library_module_name, __package__)
         library_module.setup(obj)
-        library_module.mem_include(obj)
         try:
             try:
-                library_module.run(obj)  # warm up
+                return min(timeit.Timer(setup=lambda: library_module.run(obj),  # warm up
+                                        stmt=lambda: library_module.run(obj)).repeat(repeat=50, number=1))
             except Exception:
                 return math.inf
-            else:
-                return min(timeit.Timer(stmt=lambda: library_module.run(obj)).repeat(repeat=50, number=1))
         except KeyboardInterrupt:
             return math.inf
 
     @staticmethod
     def _memory(library_module_name, size, depth):
-        min_result = math.inf
-        for _ in range(5):
-            p = subprocess.run('python -m {}.memory {} {} {}'
-                               ''.format(__package__,
-                                         library_module_name,
-                                         str(size).replace(' ', '').replace('(', '').replace(')', ''),
-                                         depth),
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        try:
+            min_result = math.inf
+            for _ in range(5):
+                p = subprocess.run('python -m {}.memory {} {} {}'
+                                   ''.format(__package__,
+                                             library_module_name,
+                                             str(size).replace(' ', '').replace('(', '').replace(')', ''),
+                                             depth),
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
 
-            stderr = p.stderr.decode()
-            if stderr != '':
-                print('Error:')
-                print('------')
-                print(stderr)
-                print('')
-                raise RuntimeError("Error in " + library_module_name)
+                stderr = p.stderr.decode()
+                if stderr != '':
+                    print('Error:')
+                    print('------')
+                    print(stderr)
+                    print('')
+                    raise RuntimeError("Error in " + library_module_name)
 
-            stdout = p.stdout.decode().strip()
-            for line in stdout.split('\n'):
-                if 'Legitimate' not in line:
-                    stdout = line
-                    break
-            min_result = min(min_result, float(stdout))
-        return min_result
+                stdout = p.stdout.decode().strip()
+                for line in stdout.split('\n'):
+                    if 'Legitimate' not in line:
+                        stdout = line
+                        break
+                min_result = min(min_result, float(stdout))
+            return min_result
+        except KeyboardInterrupt:
+            return math.inf
 
     @staticmethod
     def _table_format_index(fn_name, size, depth):

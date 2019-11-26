@@ -18,11 +18,8 @@ import torch
 
 def setup(obj):
     obj.path = torch.rand(obj.size, dtype=torch.float).numpy()
-
-
-def mem_include(obj):
-    obj.prep = iisignature.prepare(obj.path.shape[-1], obj.depth)
+    obj.prepare = iisignature.prepare(obj.path.shape[-1], obj.depth)
 
 
 def run(obj):
-    return iisignature.logsig(obj.path, obj.prep)
+    return iisignature.logsig(obj.path, obj.prepare)

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
-import esig.tosig
+import esig
 import torch
 
 
@@ -20,15 +20,12 @@ def setup(obj):
     obj.path = torch.rand(obj.size, dtype=torch.float).numpy()
 
 
-def mem_include(obj):
-    pass
-
-
 def run(obj):
-    if not len(esig.tosig.stream2logsig(obj.path[0], obj.depth)):
+    first_result = esig.tosig.stream2logsig(obj.path[0], obj.depth)
+    if not len(first_result):
         raise Exception
 
-    result = []
-    for batch_elem in obj.path:
+    result = [first_result]
+    for batch_elem in obj.path[1:]:
         result.append(esig.tosig.stream2logsig(batch_elem, obj.depth))
     return result

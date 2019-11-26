@@ -18,10 +18,6 @@ def setup(obj):
     pass
 
 
-def mem_include(obj):
-    pass
-
-
 def run(obj):
     # esig doesn't support this operation
     raise Exception

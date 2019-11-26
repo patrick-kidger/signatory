@@ -20,10 +20,6 @@ def setup(obj):
     obj.path = torch.rand(obj.size, dtype=torch.float, device='cuda')
 
 
-def mem_include(obj):
-    pass
-
-
 def run(obj):
     result = signatory.signature(obj.path, obj.depth)
     torch.cuda.synchronize()

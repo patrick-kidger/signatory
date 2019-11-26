@@ -22,9 +22,5 @@ def setup(obj):
     obj.grad = torch.rand(shape).numpy()
 
 
-def mem_include(obj):
-    pass
-
-
 def run(obj):
     return iisignature.sigbackprop(obj.grad, obj.path, obj.depth)

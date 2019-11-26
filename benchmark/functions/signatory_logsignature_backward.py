@@ -23,10 +23,6 @@ def setup(obj):
     obj.logsignature = signatory.LogSignature(obj.depth)(obj.path)
 
 
-def mem_include(obj):
-    pass
-
-
 def run(obj):
     obj.logsignature.backward(obj.grad, retain_graph=True)
     return obj.path.grad

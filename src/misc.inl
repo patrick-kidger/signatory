@@ -27,9 +27,7 @@ namespace signatory {
 
         torch::Tensor make_reciprocals(s_size_type depth, torch::TensorOptions opts) {
             if (depth > 1) {
-                return torch::ones({depth - 1}, opts) /
-                       torch::linspace(2, static_cast<torch::Scalar>(static_cast<int64_t>(depth)), depth - 1, opts);
-                                          // Cast to torch::Scalar is ambiguous
+                return torch::linspace(2, depth, depth - 1, opts).reciprocal();
             }
             else {
                 return torch::ones({0}, opts);

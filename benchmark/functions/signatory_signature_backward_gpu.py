@@ -23,10 +23,6 @@ def setup(obj):
     obj.signature = signatory.signature(obj.path, obj.depth)
 
 
-def mem_include(obj):
-    pass
-
-
 def run(obj):
     obj.signature.backward(obj.grad, retain_graph=True)
     torch.cuda.synchronize()

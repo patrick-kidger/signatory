@@ -52,29 +52,11 @@ def run_wrapper():
     time.sleep(0.5)
 
 
-# A minimal PyTorch autograd run. Signatory integrates with PyTorch's autograd framework whilst the other libraries
-# don't. So to actually measure the memory usage of Signatory (rather than just PyTorch), we put this here so that it's
-# here for all libraries.
-class AutogradExample(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x):
-        return x.clone()
-
-    @staticmethod
-    def backward(ctx, grad):
-        return grad.clone()
-
-
-x = torch.rand(1, requires_grad=True)
-x_clone = AutogradExample.apply(x)
-
-
 # Now measure the baseline memory usage
 gc.collect()
 baseline = min(memory_profiler.memory_usage(proc=-1, interval=.2, timeout=1))
 
 # Now measure the actual memory used!
-library_module.mem_include(obj)
 try:
     run_wrapper()  # warm up. Not totally clear if that really matters here or not, but it can't hurt.
     gc.collect()

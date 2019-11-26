@@ -177,6 +177,30 @@ namespace signatory {
          */
 
         namespace detail {
+            // Adapted from https://stackoverflow.com/a/21028912/12254339
+            // Substitutes value initialisation for default initialisation, which for basic types means that they're not
+            // initialised, which is a performance improvement.
+            template <typename T, typename A=std::allocator<T>>
+            class default_init_allocator : public A {
+                using a_t = std::allocator_traits<A>;
+            public:
+                template <typename U>
+                struct rebind {
+                    using other = default_init_allocator<U, typename a_t::template rebind_alloc<U>>;
+                };
+
+                using A::A;
+
+                template <typename U>
+                void construct(U* ptr) noexcept(std::is_nothrow_default_constructible<U>::value) {
+                    ::new(static_cast<void*>(ptr)) U;
+                }
+                template <typename U, typename...Args>
+                void construct(U* ptr, Args&&... args) {
+                    a_t::construct(static_cast<A&>(*this), ptr, std::forward<Args>(args)...);
+                }
+            };
+
             void mult_fused_restricted_exp_cuda(torch::Tensor next, std::vector<torch::Tensor>& prev, bool inverse,
                                                 torch::Tensor reciprocals) {
                 // We haven't tried writing custom GPU code. But if we did it would go here. Instead this is
@@ -244,90 +268,78 @@ namespace signatory {
             // here, we'd need to be computing signatures of just a few short paths, to high depths. Still, worth
             // thinking about.
             template <typename scalar_t, bool inverse>
-            void mult_fused_restricted_exp_cpu_inner(torch::TensorAccessor<scalar_t, 1> next_a,
-                                                     std::vector<torch::TensorAccessor<scalar_t, 1>>& prev_a,
-                                                     torch::TensorAccessor<scalar_t, 1> reciprocals_a) {
-                int64_t input_channel_size = next_a.size(0);  // 0 is the channel dimension
+            void mult_fused_restricted_exp_cpu_inner(torch::TensorAccessor<scalar_t, 2> next_a,
+                                                     std::vector<torch::TensorAccessor<scalar_t, 2>>& prev_a,
+                                                     torch::TensorAccessor<scalar_t, 1> reciprocals_a,
+                                                     int64_t batch_index,
+                                                     std::vector<std::vector<scalar_t, default_init_allocator<scalar_t>>>& next_divided,
+                                                     std::vector<scalar_t, default_init_allocator<scalar_t>>& new_scratch,
+                                                     std::vector<scalar_t, default_init_allocator<scalar_t>>& old_scratch) {
+                int64_t input_channel_size = next_a.size(1);  // 1 is the channel dimension
                 s_size_type depth = prev_a.size();
 
-                std::vector<std::vector<scalar_t>> next_divided;
-                next_divided.resize(reciprocals_a.size(0));
                 for (int64_t reciprocal_index = 0; reciprocal_index < reciprocals_a.size(0); ++reciprocal_index) {
-                    // TODO: use empty allocator
-                    next_divided[reciprocal_index].resize(input_channel_size);
                     for (int64_t channel_index = 0; channel_index < input_channel_size; ++channel_index) {
                         next_divided[reciprocal_index][channel_index] = reciprocals_a[reciprocal_index] *
-                                                                        next_a[channel_index];
+                                                                        next_a[batch_index][channel_index];
                     }
                 }
 
-                if (depth > 1) {  // check is just because we have "depth - 2" used below.
-                    std::vector<scalar_t> new_scratch;
-                    std::vector<scalar_t> old_scratch;
-                    // Figure out how large each vector is going to get by the end of the computation.
-                    if ((depth % 2) == 0) {
-                        old_scratch.reserve(pow(input_channel_size, depth - 2));
-                        new_scratch.reserve(old_scratch.size() * input_channel_size);
-                    }
-                    else {
-                        new_scratch.reserve(pow(input_channel_size, depth - 2));
-                        old_scratch.reserve(new_scratch.size() * input_channel_size);
+                for (s_size_type depth_index = depth - 1; depth_index >= 1; --depth_index) {
+                    int64_t scratch_size = input_channel_size;
+
+                    for (int64_t scratch_index = 0; scratch_index < input_channel_size; ++scratch_index) {
+                        new_scratch[scratch_index] = prev_a[0][batch_index][scratch_index] +
+                                                     next_divided[depth_index - 1][scratch_index];
                     }
 
-                    for (s_size_type depth_index = depth - 1; depth_index >= 1; --depth_index) {
-                        // TODO: use empty allocator
-                        new_scratch.resize(input_channel_size);
-                        for (int64_t scratch_index = 0; scratch_index < input_channel_size; ++scratch_index) {
-                            new_scratch[scratch_index] = prev_a[0][scratch_index] +
-                                                         next_divided[depth_index - 1][scratch_index];
-                        }
-
-                        for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
-                            old_scratch.swap(new_scratch);
-                            // TODO: use empty allocator
-                            new_scratch.resize(old_scratch.size() * input_channel_size);
-                            for (int64_t old_scratch_index = 0;
-                                 old_scratch_index < static_cast<int64_t>(old_scratch.size());
-                                 ++old_scratch_index) {
-                                for (int64_t next_divided_index = 0;
-                                     next_divided_index < input_channel_size;
-                                     ++next_divided_index)
-                                {
-                                    int64_t new_scratch_index;
-                                    if (inverse) {
-                                        new_scratch_index = next_divided_index * old_scratch.size() + old_scratch_index;
-                                    }
-                                    else {
-                                        new_scratch_index = old_scratch_index * input_channel_size + next_divided_index;
-                                    }
-                                    new_scratch[new_scratch_index] = prev_a[j][new_scratch_index] +
-                                                                     old_scratch[old_scratch_index] *
-                                                                     next_divided[k][next_divided_index];
-                                }
-                            }
-                        }
-
-                        for (int64_t new_scratch_index = 0;
-                             new_scratch_index < static_cast<int64_t>(new_scratch.size());
-                             ++new_scratch_index) {
-                            for (int64_t next_index = 0; next_index < input_channel_size; ++next_index)
-                            {
-                                int64_t prev_a_index;
+                    for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
+                        old_scratch.swap(new_scratch);
+                        for (int64_t old_scratch_index = 0; old_scratch_index < scratch_size; ++old_scratch_index) {
+                            for (int64_t next_divided_index = 0;
+                                 next_divided_index < input_channel_size;
+                                 ++next_divided_index) {
+                                int64_t new_scratch_index;
                                 if (inverse) {
-                                    prev_a_index = next_index * new_scratch.size() + new_scratch_index;
+                                    new_scratch_index = next_divided_index * scratch_size + old_scratch_index;
                                 }
                                 else {
-                                    prev_a_index = new_scratch_index * input_channel_size + next_index;
+                                    new_scratch_index = old_scratch_index * input_channel_size + next_divided_index;
                                 }
-                                prev_a[depth_index][prev_a_index] += new_scratch[new_scratch_index] *
-                                                                     next_a[next_index];
+                                new_scratch[new_scratch_index] = prev_a[j][batch_index][new_scratch_index] +
+                                                                 old_scratch[old_scratch_index] *
+                                                                 next_divided[k][next_divided_index];
                             }
+                        }
+
+                        scratch_size *= input_channel_size;
+                    }
+
+                    for (int64_t new_scratch_index = 0; new_scratch_index < scratch_size; ++new_scratch_index) {
+                        for (int64_t next_index = 0; next_index < input_channel_size; ++next_index) {
+                            int64_t prev_a_index;
+                            if (inverse) {
+                                prev_a_index = next_index * scratch_size + new_scratch_index;
+                            }
+                            else {
+                                prev_a_index = new_scratch_index * input_channel_size + next_index;
+                            }
+                            prev_a[depth_index][batch_index][prev_a_index] += new_scratch[new_scratch_index] *
+                                                                 next_a[batch_index][next_index];
                         }
                     }
                 }
 
                 for (int64_t channel_index = 0; channel_index < input_channel_size; ++channel_index) {
-                    prev_a[0][channel_index] += next_a[channel_index];
+                    prev_a[0][batch_index][channel_index] += next_a[batch_index][channel_index];
+                }
+
+                // This corresponds to whether the triangle number of index 'depth' is odd.
+                // In this case we have performed an odd number of swaps above, so we perform one more here to leave the
+                // memory size unchanged.
+                auto depth_mod = depth % 4;
+                if (depth_mod == 0 || depth_mod == 3) {
+                    old_scratch.swap(new_scratch);
                 }
             }
 
@@ -346,28 +358,57 @@ namespace signatory {
                 auto reciprocals_a = reciprocals.accessor<scalar_t, 1>();
 
                 int64_t batch_size = next.size(batch_dim);
-                #pragma omp parallel for default(none) \
-                                         if(batch_threads > 1) \
-                                         num_threads(batch_threads) \
-                                         shared(batch_size, next_a, prev_a, inverse, reciprocals_a)
-                for (int64_t batch_index = 0; batch_index < batch_size; ++batch_index) {
-                    std::vector<torch::TensorAccessor<scalar_t, 1>> prev_a_at_batch;
-                    prev_a_at_batch.reserve(prev_a.size());
-                    for (auto elem: prev_a) {
-                        prev_a_at_batch.push_back(elem[batch_index]);
+                int64_t input_channel_size = next.size(channel_dim);
+                s_size_type depth = prev.size();
+
+                #pragma omp parallel default(none) \
+                                     if(batch_threads > 1) \
+                                     num_threads(batch_threads) \
+                                     shared(batch_size, next_a, prev_a, inverse, reciprocals_a, input_channel_size, \
+                                            depth)
+                {
+                    // Allocate scratch space outside of the hot loop
+                    std::vector<std::vector<scalar_t, default_init_allocator<scalar_t>>> next_divided
+                            (reciprocals_a.size(0),
+                             std::vector<scalar_t, default_init_allocator<scalar_t>> (input_channel_size));
+                    std::vector<scalar_t, default_init_allocator<scalar_t>> old_scratch;
+                    std::vector<scalar_t, default_init_allocator<scalar_t>> new_scratch;
+                    // Figure out how large each vector is going to get by the end of the computation.
+                    if (depth > 1) {
+                        if ((depth % 2) == 0) {
+                            old_scratch.resize(pow(input_channel_size, depth - 2));
+                            new_scratch.resize(old_scratch.size() * input_channel_size);
+                        }
+                        else {
+                            new_scratch.resize(pow(input_channel_size, depth - 2));
+                            old_scratch.resize(new_scratch.size() * input_channel_size);
+                        }
                     }
-                    // Actually do the computation
-                    if (inverse) {
-                        mult_fused_restricted_exp_cpu_inner<scalar_t, /*inverse=*/true>(next_a[batch_index],
-                                                                                        prev_a_at_batch,
-                                                                                        reciprocals_a);
-                    }
-                    else {
-                        mult_fused_restricted_exp_cpu_inner<scalar_t, /*inverse=*/false>(next_a[batch_index],
-                                                                                         prev_a_at_batch,
-                                                                                         reciprocals_a);
+
+                    #pragma omp for schedule(static)
+                    for (int64_t batch_index = 0; batch_index < batch_size; ++batch_index) {
+                        // Actually do the computation
+                        if (inverse) {
+                            mult_fused_restricted_exp_cpu_inner<scalar_t, /*inverse=*/true>(next_a,
+                                                                                            prev_a,
+                                                                                            reciprocals_a,
+                                                                                            batch_index,
+                                                                                            next_divided,
+                                                                                            new_scratch,
+                                                                                            old_scratch);
+                        }
+                        else {
+                            mult_fused_restricted_exp_cpu_inner<scalar_t, /*inverse=*/false>(next_a,
+                                                                                             prev_a,
+                                                                                             reciprocals_a,
+                                                                                             batch_index,
+                                                                                             next_divided,
+                                                                                             new_scratch,
+                                                                                             old_scratch);
+                        }
                     }
                 }
+
             }
 
             // If you're reading this function and trying to understand it...
@@ -530,8 +571,8 @@ namespace signatory {
 
             // Alright, buckle your seatbelts. We're going to the CPU implementation now.
 
-            template <typename scalar_t>
-            int64_t mvsize(const std::vector<scalar_t>& obj) {
+            template <typename scalar_t, typename accessor>
+            int64_t mvsize(const std::vector<scalar_t, accessor>& obj) {
                 return obj.size();
             }
 
@@ -540,15 +581,15 @@ namespace signatory {
                 return obj.size(0);
             }
 
-            template <typename scalar_t>
-            scalar_t mvindex(const std::vector<scalar_t>& matrix, int64_t index, int64_t out_index,
+            template <typename scalar_t, typename accessor>
+            scalar_t mvindex(const std::vector<scalar_t, accessor>& matrix, int64_t index, int64_t out_index,
                              int64_t vector_index) {
                 return matrix[index];
             }
 
-            template <typename scalar_t>
-            scalar_t mvindex(const std::vector<std::vector<scalar_t>>& matrix, int64_t index, int64_t out_index,
-                             int64_t vector_index) {
+            template <typename scalar_t, typename accessor, typename accessor2>
+            scalar_t mvindex(const std::vector<std::vector<scalar_t, accessor>, accessor2>& matrix, int64_t index,
+                             int64_t out_index, int64_t vector_index) {
                 return matrix[vector_index][out_index];
             }
 
@@ -564,24 +605,24 @@ namespace signatory {
                 return matrix[vector_index][out_index];
             }
 
-            // Performs either matrix-vector multiplication or transpose(vector)-matrix multiplication.
-            //
-            // 'out', and vector' should each either be std::vector<scalar_t> or torch::TensorAccessor<scalar_t, 1>
-            // 'matrix' should be either a std::vector<scalar_t>, torch::TensorAccessor<scalar_t, 1>,
-            // std::vector<std::vector<scalar_t>> or torch::TensorAccessor<scalar_t, 2>.
-            //
-            // It must be such that the size of 'out', multiplied by the size of 'vector', is equal to the size of
-            // 'matrix'.
-            //
-            // It performs matrix-vector multiplication if flip==false, and transpose(vector)-matrix multiplication if
-            // flip==true.
-            //
-            // It adds the result on to what is already in 'out' if add==true, and stores it in 'out' if add==false.
+            /* Performs either matrix-vector multiplication or transpose(vector)-matrix multiplication.
+             *
+             * 'out', and vector' should each either be std::vector<scalar_t> or torch::TensorAccessor<scalar_t, 1>
+             * 'matrix' should be either a std::vector<scalar_t>, torch::TensorAccessor<scalar_t, 1>,
+             * std::vector<std::vector<scalar_t>> or torch::TensorAccessor<scalar_t, 2>.
+             *
+             * It must be such that the size of 'out', multiplied by the size of 'vector', is equal to the size of
+             * 'matrix'.
+             *
+             * It performs matrix-vector multiplication if flip==false, and transpose(vector)-matrix multiplication if
+             * flip==true.
+             *
+             * It adds the result on to what is already in 'out' if add==true, and stores it in 'out' if add==false.
+             */
             template <typename scalar_t, bool flip, bool add, typename T, typename T2, typename T3>
-            void mv(T& out, const T2& matrix, const T3& vector) {
+            void mv(T out, T2 matrix, T3 vector) {
                 int64_t out_size = mvsize<scalar_t>(out);
                 int64_t vector_size = mvsize<scalar_t>(vector);
-
                 if (flip) {
                     int64_t index = 0;
                     for (/*index initialised above*/; index < out_size;/*index increment below*/) {
@@ -626,31 +667,31 @@ namespace signatory {
 
             template <typename scalar_t, bool inverse>
             void
-            mult_fused_restricted_exp_backward_cpu_inner(torch::TensorAccessor<scalar_t, 1> grad_next_a,
-                                                         std::vector<torch::TensorAccessor<scalar_t, 1>>& grad_prev_a,
-                                                         torch::TensorAccessor<scalar_t, 1> next_a,
-                                                         const std::vector<torch::TensorAccessor<scalar_t, 1>>& prev_a,
-                                                         torch::TensorAccessor<scalar_t, 1> reciprocals_a) {
-                int64_t input_channel_size = next_a.size(0);  // 0 is the channel dimension
+            mult_fused_restricted_exp_backward_cpu_inner(torch::TensorAccessor<scalar_t, 2> grad_next_a,
+                                                         std::vector<torch::TensorAccessor<scalar_t, 2>>& grad_prev_a,
+                                                         torch::TensorAccessor<scalar_t, 2> next_a,
+                                                         const std::vector<torch::TensorAccessor<scalar_t, 2>>& prev_a,
+                                                         torch::TensorAccessor<scalar_t, 1> reciprocals_a,
+                                                         int64_t batch_index) {
+                int64_t input_channel_size = next_a.size(1);  // 1 is the channel dimension
                 s_size_type depth = prev_a.size();
 
-                std::vector<std::vector<std::vector<scalar_t>>> all_scratches;
+                std::vector<std::vector<std::vector<scalar_t, default_init_allocator<scalar_t>>>> all_scratches;
                 all_scratches.reserve(depth - 1);
 
-                std::vector<std::vector<scalar_t>> next_divided;
+                std::vector<std::vector<scalar_t, default_init_allocator<scalar_t>>> next_divided;
                 next_divided.resize(reciprocals_a.size(0));
                 for (int64_t reciprocal_index = 0; reciprocal_index < reciprocals_a.size(0); ++reciprocal_index) {
-                    // TODO: use empty allocator
                     next_divided[reciprocal_index].resize(input_channel_size);
                     for (int64_t channel_index = 0; channel_index < input_channel_size; ++channel_index) {
                         next_divided[reciprocal_index][channel_index] = reciprocals_a[reciprocal_index] *
-                                                                        next_a[channel_index];
+                                                                        next_a[batch_index][channel_index];
                     }
                 }
 
                 if (depth > 1) {
-                    std::vector<scalar_t> new_scratch;
-                    std::vector<scalar_t> old_scratch;
+                    std::vector<scalar_t, default_init_allocator<scalar_t>> new_scratch;
+                    std::vector<scalar_t, default_init_allocator<scalar_t>> old_scratch;
                     if ((depth % 2) == 0) {
                         old_scratch.reserve(pow(input_channel_size, depth - 2));
                         new_scratch.reserve(old_scratch.size() * input_channel_size);
@@ -662,13 +703,13 @@ namespace signatory {
 
                     for (s_size_type depth_index = depth - 1; depth_index >= 1; --depth_index) {
                         all_scratches.emplace_back();
-                        std::vector<std::vector<scalar_t>>& scratches = all_scratches.back();
+                        std::vector<std::vector<scalar_t, default_init_allocator<scalar_t>>>&
+                                scratches = all_scratches.back();
                         scratches.reserve(depth_index);
 
-                        // TODO: use empty allocator
                         new_scratch.resize(input_channel_size);
                         for (int64_t scratch_index = 0; scratch_index < input_channel_size; ++scratch_index) {
-                            new_scratch[scratch_index] = prev_a[0][scratch_index] +
+                            new_scratch[scratch_index] = prev_a[0][batch_index][scratch_index] +
                                                          next_divided[depth_index - 1][scratch_index];
                         }
 
@@ -676,7 +717,6 @@ namespace signatory {
 
                         for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
                             old_scratch.swap(new_scratch);
-                            // TODO: use empty allocator
                             new_scratch.resize(old_scratch.size() * input_channel_size);
                             for (int64_t old_scratch_index = 0;
                                  old_scratch_index < static_cast<int64_t>(old_scratch.size());
@@ -692,7 +732,7 @@ namespace signatory {
                                     else {
                                         new_scratch_index = old_scratch_index * input_channel_size + next_divided_index;
                                     }
-                                    new_scratch[new_scratch_index] = prev_a[j][new_scratch_index] +
+                                    new_scratch[new_scratch_index] = prev_a[j][batch_index][new_scratch_index] +
                                                                      old_scratch[old_scratch_index] *
                                                                      next_divided[k][next_divided_index];
                                 }
@@ -719,44 +759,54 @@ namespace signatory {
 
                 // Allocate memory for the gradient through the scratches
 
-                std::vector<std::vector<std::vector<scalar_t>>> all_grad_scratches;
+                std::vector<std::vector<std::vector<scalar_t, default_init_allocator<scalar_t>>>> all_grad_scratches;
                 all_grad_scratches.reserve(all_scratches.size());
                 for (const auto& scratches : all_scratches) {
                     all_grad_scratches.emplace_back();
-                    std::vector<std::vector<scalar_t>>& grad_scratches = all_grad_scratches.back();
+                    std::vector<std::vector<scalar_t, default_init_allocator<scalar_t>>>& grad_scratches =
+                            all_grad_scratches.back();
                     grad_scratches.reserve(scratches.size());
                     for (const auto& elem : scratches) {
-                        // TODO: use empty allocator
-                        grad_scratches.push_back(std::vector<scalar_t> (elem.size()));
+                        grad_scratches.push_back(std::vector<scalar_t, default_init_allocator<scalar_t>> (elem.size()));
                     }
                 }
 
                 // Do the backward computation
 
-                for (int64_t index = 0; index < grad_prev_a[0].size(0); ++index) {
-                    grad_next_a[index] = grad_prev_a[0][index];
+                for (int64_t index = 0; index < grad_prev_a[0][batch_index].size(0); ++index) {
+                    grad_next_a[index][batch_index] = grad_prev_a[0][batch_index][index];
                 }
                 for (s_size_type depth_index = 1, back_index = all_scratches.size() - 1;
                      depth_index < depth;
                      ++depth_index, --back_index) {
-                    std::vector<std::vector<scalar_t>>& grad_scratches = all_grad_scratches[back_index];
-                    const std::vector<std::vector<scalar_t>>& scratches = all_scratches[back_index];
+                    std::vector<std::vector<scalar_t, default_init_allocator<scalar_t>>>& grad_scratches =
+                            all_grad_scratches[back_index];
+                    const std::vector<std::vector<scalar_t, default_init_allocator<scalar_t>>>& scratches =
+                            all_scratches[back_index];
 
-                    std::vector<scalar_t>& grad_scratch = grad_scratches.back();
-                    const std::vector<scalar_t>& scratch = scratches.back();
+                    std::vector<scalar_t, default_init_allocator<scalar_t>>& grad_scratch = grad_scratches.back();
+                    const std::vector<scalar_t, default_init_allocator<scalar_t>>& scratch = scratches.back();
 
-                    mv<scalar_t, /*flip=*/inverse, /*add=*/false>(grad_scratch, grad_prev_a[depth_index], next_a);
-                    mv<scalar_t, /*flip=*/!inverse, /*add=*/true>(grad_next_a, grad_prev_a[depth_index], scratch);
+                    mv<scalar_t, /*flip=*/inverse, /*add=*/false>(grad_scratch,
+                                                                  grad_prev_a[depth_index][batch_index],
+                                                                  next_a[batch_index]);
+                    mv<scalar_t, /*flip=*/!inverse, /*add=*/true>(grad_next_a[batch_index],
+                                                                  grad_prev_a[depth_index][batch_index],
+                                                                  scratch);
 
                     for (s_size_type j = depth_index - 1, k = 0; j >= 1; --j, ++k) {
-                        const std::vector<scalar_t>& grad_scratch = grad_scratches[j];
-                        std::vector<scalar_t>& grad_old_scratch = grad_scratches[j - 1];
-                        const std::vector<scalar_t>& old_scratch = scratches[j - 1];
-                        const std::vector<scalar_t>& next_divided_narrow = next_divided[k];
+                        const std::vector<scalar_t, default_init_allocator<scalar_t>>& grad_scratch =
+                                grad_scratches[j];
+                        std::vector<scalar_t, default_init_allocator<scalar_t>>& grad_old_scratch =
+                                grad_scratches[j - 1];
+                        const std::vector<scalar_t, default_init_allocator<scalar_t>>& old_scratch =
+                                scratches[j - 1];
+                        const std::vector<scalar_t, default_init_allocator<scalar_t>>& next_divided_narrow =
+                                next_divided[k];
                         std::vector<scalar_t>& grad_next_divided_narrow = grad_next_divided[k];
 
                         for (s_size_type index = 0; index < static_cast<s_size_type>(grad_scratch.size()); ++index) {
-                            grad_prev_a[j][index] += grad_scratch[index];
+                            grad_prev_a[j][batch_index][index] += grad_scratch[index];
                         }
 
                         mv<scalar_t, /*flip=*/inverse, /*add=*/false>(grad_old_scratch, grad_scratch,
@@ -768,12 +818,13 @@ namespace signatory {
                          index < static_cast<s_size_type>(grad_next_divided[depth_index - 1].size());
                          ++index) {
                         grad_next_divided[depth_index - 1][index] += grad_scratches[0][index];
-                        grad_prev_a[0][index] += grad_scratches[0][index];
+                        grad_prev_a[0][batch_index][index] += grad_scratches[0][index];
                     }
                 }
 
                 if (depth > 1) {
-                    mv<scalar_t, /*flip=*/true, /*add=*/true>(grad_next_a, grad_next_divided, reciprocals_a);
+                    mv<scalar_t, /*flip=*/true, /*add=*/true>(grad_next_a[batch_index], grad_next_divided,
+                                                              reciprocals_a);
                 }
             }
 
@@ -807,33 +858,23 @@ namespace signatory {
                                          shared(batch_size, grad_next_a, grad_prev_a, next_a, prev_a, inverse, \
                                                 reciprocals_a)
                 for (int64_t batch_index = 0; batch_index < batch_size; ++batch_index) {
-                    std::vector<torch::TensorAccessor<scalar_t, 1>> grad_prev_a_at_batch;
-                    grad_prev_a_at_batch.reserve(grad_prev_a.size());
-                    for (auto elem : grad_prev_a) {
-                        grad_prev_a_at_batch.push_back(elem[batch_index]);
-                    }
-
-                    std::vector<torch::TensorAccessor<scalar_t, 1>> prev_a_at_batch;
-                    prev_a_at_batch.reserve(prev_a.size());
-                    for (auto elem : prev_a) {
-                        prev_a_at_batch.push_back(elem[batch_index]);
-                    }
-
                     if (inverse) {
                         mult_fused_restricted_exp_backward_cpu_inner<scalar_t,
-                                                                     /*inverse=*/true>(grad_next_a[batch_index],
-                                                                                       grad_prev_a_at_batch,
-                                                                                       next_a[batch_index],
-                                                                                       prev_a_at_batch,
-                                                                                       reciprocals_a);
+                                                                     /*inverse=*/true>(grad_next_a,
+                                                                                       grad_prev_a,
+                                                                                       next_a,
+                                                                                       prev_a,
+                                                                                       reciprocals_a,
+                                                                                       batch_index);
                     }
                     else {
                         mult_fused_restricted_exp_backward_cpu_inner<scalar_t,
-                                                                     /*inverse=*/false>(grad_next_a[batch_index],
-                                                                                        grad_prev_a_at_batch,
-                                                                                        next_a[batch_index],
-                                                                                        prev_a_at_batch,
-                                                                                        reciprocals_a);
+                                                                     /*inverse=*/false>(grad_next_a,
+                                                                                        grad_prev_a,
+                                                                                        next_a,
+                                                                                        prev_a,
+                                                                                        reciprocals_a,
+                                                                                        batch_index);
                     }
                 }
             }

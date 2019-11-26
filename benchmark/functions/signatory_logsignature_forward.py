@@ -18,9 +18,6 @@ import torch
 
 def setup(obj):
     obj.path = torch.rand(obj.size, dtype=torch.float)
-
-
-def mem_include(obj):
     obj.logsignature_instance = signatory.LogSignature(obj.depth)
     obj.logsignature_instance.prepare(obj.size[-1])
 

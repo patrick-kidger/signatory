@@ -17,11 +17,7 @@ import torch
 
 
 def setup(obj):
-    obj.path = torch.rand(obj.size, dtype=torch.float).numpy()
-
-
-def mem_include(obj):
-    pass
+    obj.path = torch.rand(obj.size, dtype=torch.float)
 
 
 def run(obj):

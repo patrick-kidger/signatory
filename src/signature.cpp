@@ -270,7 +270,7 @@ namespace signatory {
         int64_t batch_threads = 1;   // ...and along the batch dimension...
         // ...default is no parallelism
         if (!path.is_cuda()) {
-            // If we're on the CPU then we can try parallelising
+            // If we're on the CPU then we can try parallelising with OpenMP
             if (batch_size * output_stream_size * output_channel_size < 1392640) {
                 // Don't use parallelism if the problem is small.
                 // The magic number 1392640 was chosen as being roughly the point at which the small/large threshold is
