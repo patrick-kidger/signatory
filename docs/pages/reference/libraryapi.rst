@@ -42,7 +42,6 @@ For quick reference these are a list of all provided functions, grouped by which
 .. autosummary::
     :nosignatures:
 
-    signatory.max_parallelism
     signatory.Augment
     signatory.all_words
     signatory.lyndon_words

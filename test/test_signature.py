@@ -174,8 +174,7 @@ def _test_batch_trick(class_, device, path_grad, batch_size, input_stream, input
     if device == 'cuda':
         threshold = 512
     else:
-        from signatory import impl
-        threshold = impl.hardware_concurrency()
+        threshold = torch.get_num_threads()
         if threshold < 2:
             return  # can't test the batch trick in this case
     if round(float(threshold) / batch_size) < 2:
@@ -185,12 +184,12 @@ def _test_batch_trick(class_, device, path_grad, batch_size, input_stream, input
     basepoint = h.get_basepoint(batch_size, input_channels, device, basepoint)
     initial = h.get_initial(batch_size, input_channels, device, depth, initial)
 
-    current_parallelism = signatory.max_parallelism()
+    current_parallelism = torch.get_num_threads()
     try:
-        signatory.max_parallelism(1)  # disable batch trick
+        torch.set_num_threads(1)  # disable batch trick
         signature = signatory_signature(class_, path, depth, stream, basepoint, inverse, initial)
     finally:
-        signatory.max_parallelism(current_parallelism)  # enable batch trick
+        torch.set_num_threads(current_parallelism)  # enable batch trick
 
     batch_trick_signature = signatory.signature.__globals__['_signature_batch_trick'](path,
                                                                                       depth,

@@ -17,7 +17,7 @@ import torch
 
 
 def setup(obj):
-    obj.path = torch.rand(obj.size, dtype=torch.float)
+    obj.path = torch.rand(obj.size, dtype=torch.float).numpy()
 
 
 def run(obj):

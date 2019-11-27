@@ -17,7 +17,7 @@
 #include <torch/extension.h>
 #include <algorithm>  // std::min
 #include <cstdint>    // int64_t
-#include <cmath>      // std::lround
+#include <cmath>      // std::sqrt
 #include <omp.h>
 #include <tuple>      // std::tie, std::tuple
 #include <vector>     // std::vector
@@ -29,6 +29,16 @@
 namespace signatory {
     namespace signature {
         namespace detail {
+            struct omp_nested {
+                omp_nested() : omp_was_nested(omp_get_nested()) {
+                   omp_set_nested(true);
+                }
+                ~omp_nested() {
+                    omp_set_nested(omp_was_nested);
+                }
+            private:
+                int omp_was_nested;
+            };
             struct bool_wrapper { bool value; };
 
             // Takes the path and basepoint and returns the path increments
@@ -265,35 +275,34 @@ namespace signatory {
                                    reciprocals);
         }
 
-        // Decide how much OpenMP-based parallelism to use
+        // Decide how much OpenMP-based parallelism to use. Default is no parallelism.
         int64_t stream_threads = 1;  // We can try to parallelise along the stream dimension...
-        int64_t batch_threads = 1;   // ...and along the batch dimension...
-        // ...default is no parallelism
+        int64_t batch_threads = 1;   // ...and along the batch dimension.
         if (!path.is_cuda()) {
             // If we're on the CPU then we can try parallelising with OpenMP
-            if (batch_size * output_stream_size * output_channel_size < 1392640) {
+            if (batch_size * output_stream_size * output_channel_size < 81899) {
                 // Don't use parallelism if the problem is small.
-                // The magic number 1392640 was chosen as being roughly the point at which the small/large threshold is
-                // crossed. (1392640 = batch size 32 * stream size 128 * signature_channels(channels 4, depth 4))
+                // The magic number 81899 was chosen as being roughly the point at which the small/large threshold is
+                // crossed. (81899 = batch size 1 * stream size 4096 * signature_channels(channels 4, depth 2) - 1)
                 stream_threads = 1;
                 batch_threads = 1;
             }
             else {
-                // We want to parallelise across the batch dimension first, as that's most efficient. So here we figure
-                // out how many threads we can afford to use across the stream dimension.
-                stream_threads = (omp_get_max_threads() + batch_size - 1) / batch_size;
-
-                // Don't want to cut the stream dimension _too_ small, or we'll lose the benefits of the fused
-                // mult-restricted-exp operation
-                stream_threads = std::min(stream_threads, (input_stream_size + 2) / 3);
-
+                // We want to parallelise across the batch dimension first, as that's most efficient.
                 batch_threads = std::min(batch_size, static_cast<int64_t>(omp_get_max_threads()));
+
+                if (stream) {
+                    // Can't parallelise along the stream dimension in this inherently-serial case.
+                    stream_threads = 1;
+                }
+                else {
+                    stream_threads = (omp_get_max_threads() + batch_threads - 1) / batch_threads;
+                    stream_threads = std::min(stream_threads, static_cast<int64_t>(std::sqrt(input_stream_size)));
+                    // Don't want to cut the stream dimension _too_ small, or we'll lose the benefits of the fused
+                    // mult-restricted-exp operation
+                    stream_threads = std::min(stream_threads, (input_stream_size + 2) / 3);
+                }
             }
-            if (stream) {
-                // Can't parallelise along the stream dimension in this inherently-serial case.
-                stream_threads = 1;
-            }
-            stream_threads = std::min(stream_threads, get_max_parallelism());
         }
 
         // Now actually do the computation!
@@ -308,6 +317,8 @@ namespace signatory {
             // stream_threads == 1 is special-cased above primarily for the stream==true case, which this branch
             // doesn't handle. Furthermore even in the stream==false case, this branch would needlessly allocate extra
             // memory.
+
+            signature::detail::omp_nested {};  // Enable nested OpenMP, so we can parallelise over both stream and batch
 
             std::vector<std::vector<torch::Tensor>> omp_results(stream_threads);
             // There's no guarantee that we actually get the maximum number of threads, so we have to check

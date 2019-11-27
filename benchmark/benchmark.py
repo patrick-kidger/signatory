@@ -22,9 +22,10 @@ import io
 import math
 import matplotlib.pyplot as plt
 import os
+import signatory
 import subprocess
-import time
 import timeit
+import torch
 
 from . import helpers
 
@@ -268,7 +269,7 @@ class BenchmarkRunner(object):
         elif len(self.depths) > 1:
             return depth
 
-    def graph(self, log=True, save=False):
+    def graph(self, save=False, norm=True):
         """Plots the result as a graph."""
 
         self.check_graph()
@@ -285,7 +286,10 @@ class BenchmarkRunner(object):
         for (fn_name, size, depth), row_value in self.results:
             for x_axis, y_axis, (column_heading, column_value) in zip(x_axes, y_axes, row_value.items()):
                 x_axis.append(self._graph_format_index(size, depth))
-                y_axis.append(column_value)
+                val = column_value
+                if norm:
+                    val /= signatory.signature_channels(size[-1], depth)
+                y_axis.append(val)
 
         for x_axis, y_axis, label in zip(x_axes, y_axes, labels):
             if label in RatioColumns:
@@ -294,17 +298,18 @@ class BenchmarkRunner(object):
         ax.legend(mode='expand', ncol=len(example_row_value), bbox_to_anchor=(0, 1.1, 1, 0), borderaxespad=0.)
         ax.set_title(self.title_string, y=1.1)
         if self.measure is Measurables.time:
-            ax.set_ylabel("Time in seconds")
+            ylabel = "Time in seconds"
         elif self.measure is Measurables.memory:
-            ax.set_ylabel("Memory usage in MB")
+            ylabel = "Memory usage in MB"
+        if norm:
+            ylabel = 'Normalised ' + ylabel
+        ax.set_ylabel(ylabel)
         if len(self.sizes) > 1:
             ax.set_xlabel("Number of channels")
         elif len(self.depths) > 1:
             ax.set_xlabel("Depth")
         else:
             raise RuntimeError
-        if log:
-            ax.set_yscale('log')
         start, end = ax.get_xlim()
         ax.xaxis.set_ticks(range(int(math.ceil(start)), int(math.floor(end)) + 1))
         plt.tight_layout()

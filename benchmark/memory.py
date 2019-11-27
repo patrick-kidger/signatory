@@ -27,12 +27,11 @@ import importlib
 import memory_profiler
 import numpy as np
 import time
-import signatory
 import sys
 import torch
 
-# First of make sure Signatory's optional use-extra-memory-to-go-faster thing isn't on
-signatory.max_parallelism(1)
+
+torch.set_num_threads(1)
 
 # Perform setup
 library_module_name, size, depth = sys.argv[1:]

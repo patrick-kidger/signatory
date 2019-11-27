@@ -569,7 +569,7 @@ namespace signatory {
                 }
             }
 
-            // Alright, buckle your seatbelts. We're going to the CPU implementation now.
+            // Alright, buckle your seatbelts. We're going to do the CPU implementation now.
 
             template <typename scalar_t, typename accessor>
             int64_t mvsize(const std::vector<scalar_t, accessor>& obj) {
@@ -599,17 +599,10 @@ namespace signatory {
                 return matrix[index];
             }
 
-            template <typename scalar_t>
-            scalar_t mvindex(torch::TensorAccessor<scalar_t, 2> matrix, int64_t index, int64_t out_index,
-                             int64_t vector_index) {
-                return matrix[vector_index][out_index];
-            }
-
             /* Performs either matrix-vector multiplication or transpose(vector)-matrix multiplication.
              *
              * 'out', and vector' should each either be std::vector<scalar_t> or torch::TensorAccessor<scalar_t, 1>
-             * 'matrix' should be either a std::vector<scalar_t>, torch::TensorAccessor<scalar_t, 1>,
-             * std::vector<std::vector<scalar_t>> or torch::TensorAccessor<scalar_t, 2>.
+             * 'matrix' should be either a std::vector<scalar_t> or torch::TensorAccessor<scalar_t, 1>
              *
              * It must be such that the size of 'out', multiplied by the size of 'vector', is equal to the size of
              * 'matrix'.
@@ -618,9 +611,13 @@ namespace signatory {
              * flip==true.
              *
              * It adds the result on to what is already in 'out' if add==true, and stores it in 'out' if add==false.
+             *
+             *
+             * It would be nice to instead delegate this to a BLAS implementation, but I don't know how to access
+             * whatever implementation of BLAS that an arbitrary version of PyTorch might ship with.
              */
             template <typename scalar_t, bool flip, bool add, typename T, typename T2, typename T3>
-            void mv(T out, T2 matrix, T3 vector) {
+            void mv(T& out, const T2& matrix, const T3& vector) {
                 int64_t out_size = mvsize<scalar_t>(out);
                 int64_t vector_size = mvsize<scalar_t>(vector);
                 if (flip) {
@@ -773,8 +770,8 @@ namespace signatory {
 
                 // Do the backward computation
 
-                for (int64_t index = 0; index < grad_prev_a[0][batch_index].size(0); ++index) {
-                    grad_next_a[index][batch_index] = grad_prev_a[0][batch_index][index];
+                for (int64_t index = 0; index < grad_prev_a[0].size(1); ++index) {
+                    grad_next_a[batch_index][index] = grad_prev_a[0][batch_index][index];
                 }
                 for (s_size_type depth_index = 1, back_index = all_scratches.size() - 1;
                      depth_index < depth;
@@ -790,7 +787,8 @@ namespace signatory {
                     mv<scalar_t, /*flip=*/inverse, /*add=*/false>(grad_scratch,
                                                                   grad_prev_a[depth_index][batch_index],
                                                                   next_a[batch_index]);
-                    mv<scalar_t, /*flip=*/!inverse, /*add=*/true>(grad_next_a[batch_index],
+                    auto grad_next_a_at_batch = grad_next_a[batch_index];
+                    mv<scalar_t, /*flip=*/!inverse, /*add=*/true>(grad_next_a_at_batch,
                                                                   grad_prev_a[depth_index][batch_index],
                                                                   scratch);
 
@@ -823,7 +821,8 @@ namespace signatory {
                 }
 
                 if (depth > 1) {
-                    mv<scalar_t, /*flip=*/true, /*add=*/true>(grad_next_a[batch_index], grad_next_divided,
+                    auto grad_next_a_at_batch = grad_next_a[batch_index];
+                    mv<scalar_t, /*flip=*/true, /*add=*/true>(grad_next_a_at_batch, grad_next_divided,
                                                               reciprocals_a);
                 }
             }

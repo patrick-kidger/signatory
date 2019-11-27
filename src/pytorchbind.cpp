@@ -16,7 +16,6 @@
 
 
 #include <torch/extension.h>  // to get the pybind11 stuff
-#include <thread>             // std::thread::hardware_concurrency
 
 #include "logsignature.hpp"  // signatory::LogSignatureMode,
                              // signatory::signature_to_logsignature_forward,
@@ -24,8 +23,6 @@
                              // signatory::make_lyndon_info
 
 #include "misc.hpp"          // signatory::signature_channels
-                             // signatory::set_max_parallelism
-                             // signatory::get_max_parallelism
 
 #include "signature.hpp"     // signatory::signature_checkargs
                              // signatory::signature_forward,
@@ -49,8 +46,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
           &signatory::signature_to_logsignature_backward);
     m.def("make_lyndon_info",
           &signatory::make_lyndon_info);
-    m.def("hardware_concurrency",
-          &std::thread::hardware_concurrency);
     py::enum_<signatory::LogSignatureMode>(m, "LogSignatureMode")
             .value("Expand", signatory::LogSignatureMode::Expand)
             .value("Brackets", signatory::LogSignatureMode::Brackets)
@@ -63,10 +58,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
           &signatory::signature_backward);
     m.def("signature_channels",
           &signatory::signature_channels);
-    m.def("set_max_parallelism",
-          &signatory::set_max_parallelism);
-    m.def("get_max_parallelism",
-          &signatory::get_max_parallelism);
     m.def("lyndon_words",
           &signatory::lyndon_words,
           py::return_value_policy::move);

@@ -346,12 +346,8 @@ namespace signatory {
 
         if (stream) {
             // The if statement is because this sometimes hangs on the GPU... for some reason.
-            //
-            // This is deliberately using num_threads when some of the other parallelisations in this file don't.
-            // It's because this one actually uses reasonable amounts of extra memory, whereas the others don't.
             #pragma omp parallel for default(none) \
                                      if(!grad_logsignature.is_cuda()) \
-                                     num_threads(get_max_parallelism()) \
                                      shared(grad_logsignature_by_term, \
                                             grad_signature_by_term, \
                                             signature_by_term, \

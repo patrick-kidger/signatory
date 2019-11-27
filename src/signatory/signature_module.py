@@ -15,13 +15,13 @@
 """Provides operations relating to the signature transform."""
 
 
+import math
 import torch
 from torch import nn
 from torch import autograd
 from torch.autograd import function as autograd_function
 import warnings
 
-from . import utility
 from . import impl
 
 # noinspection PyUnreachableCode
@@ -101,13 +101,9 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
         return
 
     if path.is_cuda:
-        # TODO: find a better way to choose this value when on the GPU.
-        #       Note that there are two implications of changing this value.
-        #       First of all, there will be greater potential parallelisation, so the main computation will go faster.
-        #       However we don't yet parallelise the bit where we combine the results of our parallel computations,
-        #       so setting this value too large will cause a slowdown as we serially perform this many tensor
-        #       multplications.
-        threshold = 512
+        # A somewhat arbitrary limit for the maximum amount we're willing to try and use a GPU to parallelise.
+        # Increasing this value increases the amount of memory we use, but potentially increases speed.
+        threshold = 2048
     else:
         if not path.requires_grad:
             # If we're on the CPU then parallelisation will automatically occur more efficiently than this trick allows.
@@ -115,17 +111,13 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
             # backward pass (whilst the batch trick does), so we don't use it if we're going to perform a backward
             # operation.
             return
-        threshold = impl.hardware_concurrency()
-        if threshold == 0:
-            # Indicates that we can't get the amount of hardware concurrency, which is a bit weird.
-            # In this case let's not try to be clever.
-            return
+        threshold = torch.get_num_threads()
 
     batch_size, stream_size, channel_size = path.shape
 
     # Number of chunks to split the stream in to
     mult = int(round(float(threshold) / batch_size))
-    mult = min(mult, int(stream_size / 3), utility.max_parallelism())
+    mult = min(mult, int(stream_size / 3), int(round(math.sqrt(stream_size))))
 
     # If the problem isn't large enough to be worth parallelising
     if mult < 2:
