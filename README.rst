@@ -1,6 +1,8 @@
 
 .. image:: https://raw.githubusercontent.com/patrick-kidger/signatory/master/docs/_static/signatory.png
     :align: center
+    
+.. rst-class:: center
 
 Differentiable computations of the signature and logsignature transforms, on both CPU and GPU.
 
