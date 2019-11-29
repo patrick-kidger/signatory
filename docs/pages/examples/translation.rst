@@ -22,11 +22,11 @@ In code, this can be accomplished very easily by using the :attr:`basepoint` arg
 
 Sampling (reparameterisation) invariance
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-The signature is sampling invariant. This has a precise mathematical description in terms of *reparameterisation*, but the intuition is that it doesn't matter how many times you measure the underlying path; the signature transform may be applied regardless of how long the stream of data is, or how finely it is sampled. Increasing the number of samples does not require changing anything in the mathematics or in the code. It will simply increase how well the signature of the stream of the data approximate the signatures of the underlying path.
+The signature is sampling invariant. This has a precise mathematical description in terms of *reparameterisation*, but the intuition is that it doesn't matter how many times you measure the underlying path; the signature transform may be applied regardless of how long the stream of data is, or how finely it is sampled. Increasing the number of samples does not require changing anything in the mathematics or in the code. It will simply increase how well the signature of the stream of the data approximates the signature of the underlying path.
 
-.. tip:
+.. tip::
 
-    This makes the signature transform an attractive tool when dealing with irregularly-sampled data.
+    This makes the signature transform an attractive tool when dealing with missing or irregularly-sampled data.
 
 Let's given an explicit example.
 
