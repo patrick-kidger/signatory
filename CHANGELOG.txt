@@ -1,7 +1,11 @@
 1.1.5
 -----
+Added a logo! (Very exciting!)
+Slightly improved the speed of forward signature computations on the CPU.
+Moderately improved the speed of backward signature computations on the CPU.
 Added the 'remember_path' option to Path.
 Deprecated the max_parallelism function. It was a bad idea.
+Added the 'parallel' option to the benchmarks.
 
 1.1.4
 -----

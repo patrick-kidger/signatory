@@ -35,6 +35,7 @@ except ImportError as e:
 
 
 from .augment import Augment
+from .deprecated import max_parallelism
 from .logsignature_module import (signature_to_logsignature,
                                   SignatureToLogSignature,
                                   SignatureToLogsignature,

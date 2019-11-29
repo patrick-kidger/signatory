@@ -31,10 +31,10 @@ import sys
 import torch
 
 
-torch.set_num_threads(1)
-
 # Perform setup
-library_module_name, size, depth = sys.argv[1:]
+library_module_name, size, depth, parallel = sys.argv[1:]
+if not bool(parallel):
+    torch.set_num_threads(1)
 obj = argparse.Namespace(size=tuple(int(i) for i in size.split(',')), depth=int(depth))
 library_module = importlib.import_module('.functions.' + library_module_name, __package__)
 library_module.setup(obj)

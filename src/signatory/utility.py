@@ -16,7 +16,6 @@
 
 
 import itertools as it
-import warnings
 
 from . import impl
 
@@ -100,28 +99,3 @@ def all_words(channels, depth):
     # Just returning the generator would be much nicer, programmatically speaking, but then this is inconsistent with
     # the lyndon_words function. This isn't expected to use a lot of memory so this is acceptable.
     return list(generator())
-
-
-max_parallel_value = [8]
-
-
-def max_parallelism(value=None):
-    # type: (Optional[int]) -> int
-    """Deprecated and now does nothing. Use torch.set_num_threads and torch.get_num_threads instead.
-
-    Old docstring:
-
-    Gets or sets the maximum amount of parallelism used in Signatory's computations. Higher values will typically
-    result in quicker computations but will use more memory.
-
-    Calling without arguments will return the current value.
-    Passing a value of 1 will disable parallelism.
-    Passing :code:`-1`, :code:`math.inf`, :code:`np.inf` or :code:`float('inf')` will enable unlimited parallelism.
-    """
-    warnings.warn("max_parallelism is deprecated and now does nothing. Use torch.set_num_threads and "
-                  "torch.get_num_threads to control the amount of parallelism.", DeprecationWarning)
-    if value == -1:
-        value = float('inf')
-    if value is not None:
-        max_parallel_value[0] = value
-    return max_parallel_value[0]

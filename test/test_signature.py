@@ -28,7 +28,7 @@ from helpers import reimplementation as r
 from helpers import validation as v
 
 tests = ['signature', 'Signature']
-depends = ['signature_channels', 'signature_combine', 'max_parallelism']
+depends = ['signature_channels', 'signature_combine']
 signatory = v.validate_tests(tests, depends)
 
 

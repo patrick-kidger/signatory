@@ -1,7 +1,7 @@
 
-*********
-Signatory
-*********
+.. image:: https://raw.githubusercontent.com/patrick-kidger/signatory/master/docs/_static/signatory.png
+    :align: center
+
 Differentiable computations of the signature and logsignature transforms, on both CPU and GPU.
 
 
@@ -27,7 +27,7 @@ Install via:
 
     pip install signatory==<SIGNATORY_VERSION>.<TORCH_VERSION>
 
-where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.1.4) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
+where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.1.5) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
 
 
     For example, if you are using PyTorch 1.3.0 and want Signatory 1.1.4, then you should run:

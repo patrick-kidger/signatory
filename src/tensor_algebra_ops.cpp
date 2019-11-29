@@ -272,43 +272,46 @@ namespace signatory {
                                                      std::vector<torch::TensorAccessor<scalar_t, 2>>& prev_a,
                                                      torch::TensorAccessor<scalar_t, 1> reciprocals_a,
                                                      int64_t batch_index,
-                                                     std::vector<std::vector<scalar_t, default_init_allocator<scalar_t>>>& next_divided,
+                                                     std::vector<scalar_t, default_init_allocator<scalar_t>>& next_divided,
                                                      std::vector<scalar_t, default_init_allocator<scalar_t>>& new_scratch,
                                                      std::vector<scalar_t, default_init_allocator<scalar_t>>& old_scratch) {
                 int64_t input_channel_size = next_a.size(1);  // 1 is the channel dimension
                 s_size_type depth = prev_a.size();
 
+                int64_t next_divided_index = 0;
                 for (int64_t reciprocal_index = 0; reciprocal_index < reciprocals_a.size(0); ++reciprocal_index) {
                     for (int64_t channel_index = 0; channel_index < input_channel_size; ++channel_index) {
-                        next_divided[reciprocal_index][channel_index] = reciprocals_a[reciprocal_index] *
-                                                                        next_a[batch_index][channel_index];
+                        next_divided[next_divided_index] = reciprocals_a[reciprocal_index] *
+                                                           next_a[batch_index][channel_index];
+                        ++next_divided_index;
                     }
                 }
 
                 for (s_size_type depth_index = depth - 1; depth_index >= 1; --depth_index) {
                     int64_t scratch_size = input_channel_size;
 
+                    int64_t next_divided_index_part = (depth_index - 1) * input_channel_size;
+
                     for (int64_t scratch_index = 0; scratch_index < input_channel_size; ++scratch_index) {
                         new_scratch[scratch_index] = prev_a[0][batch_index][scratch_index] +
-                                                     next_divided[depth_index - 1][scratch_index];
+                                                     next_divided[next_divided_index_part + scratch_index];
                     }
 
                     for (s_size_type j = 1, k = depth_index - 2; j < depth_index; ++j, --k) {
                         old_scratch.swap(new_scratch);
+                        int64_t next_divided_index_part2 = k * input_channel_size;
                         for (int64_t old_scratch_index = 0; old_scratch_index < scratch_size; ++old_scratch_index) {
-                            for (int64_t next_divided_index = 0;
-                                 next_divided_index < input_channel_size;
-                                 ++next_divided_index) {
+                            for (int64_t channel_index = 0; channel_index < input_channel_size; ++channel_index) {
                                 int64_t new_scratch_index;
                                 if (inverse) {
-                                    new_scratch_index = next_divided_index * scratch_size + old_scratch_index;
+                                    new_scratch_index = channel_index * scratch_size + old_scratch_index;
                                 }
                                 else {
-                                    new_scratch_index = old_scratch_index * input_channel_size + next_divided_index;
+                                    new_scratch_index = old_scratch_index * input_channel_size + channel_index;
                                 }
                                 new_scratch[new_scratch_index] = prev_a[j][batch_index][new_scratch_index] +
                                                                  old_scratch[old_scratch_index] *
-                                                                 next_divided[k][next_divided_index];
+                                                                 next_divided[next_divided_index_part2 + channel_index];
                             }
                         }
 
@@ -368,9 +371,8 @@ namespace signatory {
                                             depth)
                 {
                     // Allocate scratch space outside of the hot loop
-                    std::vector<std::vector<scalar_t, default_init_allocator<scalar_t>>> next_divided
-                            (reciprocals_a.size(0),
-                             std::vector<scalar_t, default_init_allocator<scalar_t>> (input_channel_size));
+                    std::vector<scalar_t, default_init_allocator<scalar_t>> next_divided (reciprocals_a.size(0) *
+                                                                                          input_channel_size);
                     std::vector<scalar_t, default_init_allocator<scalar_t>> old_scratch;
                     std::vector<scalar_t, default_init_allocator<scalar_t>> new_scratch;
                     // Figure out how large each vector is going to get by the end of the computation.
@@ -387,7 +389,11 @@ namespace signatory {
 
                     #pragma omp for schedule(static)
                     for (int64_t batch_index = 0; batch_index < batch_size; ++batch_index) {
-                        // Actually do the computation
+                        // Actually do the computation.
+                        // Note that we pass in the 2-dimensional TensorAccessors and batch_index and let
+                        // mult_fused_restricted_exp_cpu_inner reduce them to 1-dimensional TensorAccessors. This gives
+                        // a small speedup over creating the 1-dimensional TensorAccessors out here and passing just
+                        // those in.
                         if (inverse) {
                             mult_fused_restricted_exp_cpu_inner<scalar_t, /*inverse=*/true>(next_a,
                                                                                             prev_a,
@@ -676,10 +682,10 @@ namespace signatory {
                 std::vector<std::vector<std::vector<scalar_t, default_init_allocator<scalar_t>>>> all_scratches;
                 all_scratches.reserve(depth - 1);
 
-                std::vector<std::vector<scalar_t, default_init_allocator<scalar_t>>> next_divided;
-                next_divided.resize(reciprocals_a.size(0));
+                std::vector<std::vector<scalar_t, default_init_allocator<scalar_t>>>
+                        next_divided (reciprocals_a.size(0),
+                                      std::vector<scalar_t, default_init_allocator<scalar_t>> (input_channel_size));
                 for (int64_t reciprocal_index = 0; reciprocal_index < reciprocals_a.size(0); ++reciprocal_index) {
-                    next_divided[reciprocal_index].resize(input_channel_size);
                     for (int64_t channel_index = 0; channel_index < input_channel_size; ++channel_index) {
                         next_divided[reciprocal_index][channel_index] = reciprocals_a[reciprocal_index] *
                                                                         next_a[batch_index][channel_index];
@@ -718,20 +724,17 @@ namespace signatory {
                             for (int64_t old_scratch_index = 0;
                                  old_scratch_index < static_cast<int64_t>(old_scratch.size());
                                  ++old_scratch_index) {
-                                for (int64_t next_divided_index = 0;
-                                     next_divided_index < input_channel_size;
-                                     ++next_divided_index)
-                                {
+                                for (int64_t channel_index = 0; channel_index < input_channel_size; ++channel_index) {
                                     int64_t new_scratch_index;
                                     if (inverse) {
-                                        new_scratch_index = next_divided_index * old_scratch.size() + old_scratch_index;
+                                        new_scratch_index = channel_index * old_scratch.size() + old_scratch_index;
                                     }
                                     else {
-                                        new_scratch_index = old_scratch_index * input_channel_size + next_divided_index;
+                                        new_scratch_index = old_scratch_index * input_channel_size + channel_index;
                                     }
                                     new_scratch[new_scratch_index] = prev_a[j][batch_index][new_scratch_index] +
                                                                      old_scratch[old_scratch_index] *
-                                                                     next_divided[k][next_divided_index];
+                                                                     next_divided[k][channel_index];
                                 }
                             }
 

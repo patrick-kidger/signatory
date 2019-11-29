@@ -120,13 +120,19 @@ class Types(helpers.Container):
         sizes = ((1, 2, 2),)
         depths = (2, 3, 4, 5)
 
+
+class Parallel(helpers.Container):
+    on = 'on'
+    off = 'off'
+    auto = 'auto'
+
 # Done with specifying constants and options
 
 
 class BenchmarkRunner(object):
     """Runs all functions across all libraries and records their times or memory usage for multiple sizes and depths."""
 
-    def __init__(self, type_, test_esig, test_signatory_gpu, measure, fns):
+    def __init__(self, type_, test_esig, test_signatory_gpu, measure, fns, parallel):
         assert type_ in Types
         assert measure in Measurables
         assert fns in Functions
@@ -144,14 +150,19 @@ class BenchmarkRunner(object):
         self.test_signatory_gpu = test_signatory_gpu
         self.measure = measure
         self.fns = fns
+        self.parallel = parallel
+        if parallel is Parallel.off:
+            self.torch_num_threads = torch.get_num_threads()
+            torch.set_num_threads(1)
 
         self.title_string = list(fns.keys())[0] + ': ' + measure
-        dirname = self.title_string.lower().replace(' ', '_').replace(':', '') + '_' + type_.__name__
-        if not os.path.isdir(dirname):
-            os.mkdir(dirname)
-        self.save_string = os.path.join(dirname, str(datetime.datetime.utcnow()))
+        self.dirname = self.title_string.lower().replace(' ', '_').replace(':', '') + '_' + type_.__name__
 
         self._results = None
+
+    def __del__(self):
+        if self.parallel is Parallel.off:
+            torch.set_num_threads(self.torch_num_threads)
 
     @property
     def results(self):
@@ -229,16 +240,16 @@ class BenchmarkRunner(object):
         except KeyboardInterrupt:
             return math.inf
 
-    @staticmethod
-    def _memory(library_module_name, size, depth):
+    def _memory(self, library_module_name, size, depth):
         try:
             min_result = math.inf
             for _ in range(5):
-                p = subprocess.run('python -m {}.memory {} {} {}'
+                p = subprocess.run('python -m {}.memory {} {} {} {}'
                                    ''.format(__package__,
                                              library_module_name,
                                              str(size).replace(' ', '').replace('(', '').replace(')', ''),
-                                             depth),
+                                             depth,
+                                             self.parallel is Parallel.on),
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
 
                 stderr = p.stderr.decode()
@@ -314,7 +325,14 @@ class BenchmarkRunner(object):
         ax.xaxis.set_ticks(range(int(math.ceil(start)), int(math.floor(end)) + 1))
         plt.tight_layout()
         if save:
-            plt.savefig(self.save_string + '.png')
+            dirname = self.dirname
+            if self.parallel is Parallel.off:
+                dirname += '_noparallel'
+            else:
+                dirname += '_parallel'
+            if not os.path.isdir(dirname):
+                os.mkdir(dirname)
+            plt.savefig(os.path.join(dirname, str(datetime.datetime.utcnow())) + '.png')
         else:
             plt.show()
 
@@ -362,7 +380,14 @@ class BenchmarkRunner(object):
             out_str += '\n'
 
         if save:
-            with io.open(self.save_string + '.txt', 'w', encoding='utf-8') as f:
+            dirname = self.dirname
+            if self.parallel is Parallel.on:
+                dirname += '_parallel'
+            else:
+                dirname += '_noparallel'
+            if not os.path.isdir(dirname):
+                os.mkdir(dirname)
+            with io.open(os.path.join(dirname, str(datetime.datetime.utcnow())) + '.txt', 'w', encoding='utf-8') as f:
                 f.write(out_str)
         else:
             print(out_str)
