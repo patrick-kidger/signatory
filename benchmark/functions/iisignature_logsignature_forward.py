@@ -23,3 +23,7 @@ def setup(obj):
 
 def run(obj):
     return iisignature.logsig(obj.path, obj.prepare)
+
+
+def teardown(obj):
+    pass

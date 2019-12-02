@@ -26,3 +26,7 @@ def setup(obj):
 def run(obj):
     obj.logsignature.backward(obj.grad, retain_graph=True)
     return obj.path.grad
+
+
+def teardown(obj):
+    pass

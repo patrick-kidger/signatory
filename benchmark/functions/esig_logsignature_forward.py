@@ -29,3 +29,7 @@ def run(obj):
     for batch_elem in obj.path[1:]:
         result.append(esig.tosig.stream2logsig(batch_elem, obj.depth))
     return result
+
+
+def teardown(obj):
+    pass

@@ -89,10 +89,6 @@ def main():
                                                                             'displaying them. (By default tables are '
                                                                             'printed to stdout and graphs are opened '
                                                                             'in a new window.)')
-    benchmark_parser.add_argument('-p', '--parallel', choices=('on', 'off', 'auto'), default='auto',
-                                  help="Whether to use parallelisation in the benchmarks or not. Defaults to 'auto', "
-                                       "meaning that parallelisation is used in the speed benchmarks but not the "
-                                       "memory benchmarks.")
                                   
     docs_parser.add_argument('-o', '--open', action='store_true',
                              help="Open the documentation in a web browser as soon as it is built.")
@@ -194,22 +190,12 @@ def benchmark(args):
     else:
         raise RuntimeError
 
-    if args.parallel == 'on':
-        parallel = bench.Parallel.on
-    elif args.parallel == 'off':
-        parallel = bench.Parallel.off
-    elif args.parallel == 'auto':
-        parallel = bench.Parallel.auto
-    else:
-        raise RuntimeError
-
     try:
         runner = bench.BenchmarkRunner(type_=type_,
                                        test_esig=args.test_esig,
                                        test_signatory_gpu=args.test_signatory_gpu,
                                        measure=measure,
-                                       fns=fns,
-                                       parallel=parallel)
+                                       fns=fns)
         if args.output in ('graph', 'graphsave'):
             runner.check_graph()
     except bench.InvalidBenchmark as e:
@@ -219,16 +205,11 @@ def benchmark(args):
             print('Using ' + _get_device())
             runner.run()
 
-        if args.save:
-            if args.output in ('table', 'graphtable'):
-                runner.table(save=True)
-            if args.output in ('graph', 'graphtable'):
-                runner.graph(save=True)
-        else:
-            if args.output in ('table', 'graphtable'):
-                runner.table()
-            if args.output in ('graph', 'graphtable'):
-                runner.graph()
+        if args.output in ('table', 'graphtable'):
+            runner.table(save=args.save)
+        if args.output in ('graph', 'graphtable'):
+            runner.graph(save=args.save)
+
         return runner
 
     
@@ -325,6 +306,7 @@ def readme(args=()):
                 "    depth = 4\n"
                 "    path = torch.rand(batch, stream, channels)\n"
                 "    signature = signatory.signature(path, depth)\n"
+                "    # signature is a PyTorch tensor\n"
                 "\n"
                 "For further examples, see the `documentation <https://signatory.readthedocs.io/en/latest/pages/examples/examples.html>`__.")
 

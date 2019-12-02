@@ -25,3 +25,7 @@ def setup(obj):
 
 def run(obj):
     return iisignature.logsigbackprop(obj.grad, obj.path, obj.prepare)
+
+
+def teardown(obj):
+    pass

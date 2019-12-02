@@ -22,3 +22,7 @@ def setup(obj):
 
 def run(obj):
     return signatory.signature(obj.path, obj.depth)
+
+
+def teardown(obj):
+    pass

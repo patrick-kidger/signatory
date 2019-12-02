@@ -12,19 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
-import iisignature
+import signatory
 import torch
 
 
 def setup(obj):
-    obj.path = torch.rand(obj.size, dtype=torch.float).numpy()
-    shape = obj.size[-3], iisignature.siglength(obj.size[-1], obj.depth)
-    obj.grad = torch.rand(shape).numpy()
+    obj.torch_num_threads = torch.get_num_threads()
+    torch.set_num_threads(1)
+    obj.path = torch.rand(obj.size, dtype=torch.float)
+    obj.logsignature_instance = signatory.LogSignature(obj.depth)
+    obj.logsignature_instance.prepare(obj.size[-1])
 
 
 def run(obj):
-    return iisignature.sigbackprop(obj.grad, obj.path, obj.depth)
+    return obj.logsignature_instance(obj.path)
 
 
 def teardown(obj):
-    pass
+    torch.set_num_threads(obj.torch_num_threads)

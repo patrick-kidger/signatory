@@ -26,3 +26,7 @@ def run(obj):
     result = obj.logsignature_instance(obj.path)
     torch.cuda.synchronize()
     return result
+
+
+def teardown(obj):
+    pass

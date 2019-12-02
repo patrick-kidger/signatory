@@ -21,3 +21,7 @@ def setup(obj):
 def run(obj):
     # esig doesn't support this operation
     raise Exception
+
+
+def teardown(obj):
+    pass

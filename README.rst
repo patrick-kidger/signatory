@@ -7,14 +7,16 @@ Differentiable computations of the signature and logsignature transforms, on bot
 
 
 
-What are signatures?
-####################
-If you're reading this then it's probably because you already know what the signature transform is, and are looking to use it in your project. But in case you've stumbled across this and are curious what this 'signature' thing is...
+What is the signature transform?
+################################
+The *signature transform* is roughly analogous to the Fourier transform, in that it operates on a stream of data (often a time series). Whilst the Fourier transform extracts information about frequency, the signature transform extracts information about *order* and *area*. Furthermore (and unlike the Fourier transform), order and area represent all possible nonlinear effects: the signature transform is a *universal nonlinearity*, meaning that every continuous function of the input stream may be approximated arbitrary well by a *linear* function of its signature. If you're doing machine learning then you probably understand why this is such a desirable property!
 
-The *signature transform* is a transformation that takes in a stream of data (often a time series), and returns a collection of statistics about that stream of data, called the *signature*. This collection of statistics determines the path essentially uniquely. Importantly, the signature is rich enough that every continuous function of the input stream may be approximated arbitrarily well by a linear function of its signature; the signature transform is what we call a *universal nonlinearity*. If you're doing machine learning then you probably understand why this is such a desirable property!
+Besides this, the signature transform has many other nice properties -- robustness to missing or irregularly sampled data; optional translation invariance; optional sampling invariance. Furthermore it can be used to encode certain physical quantities, and may be used for data compression.
 
 
 Check out `this <https://arxiv.org/abs/1603.03788>`__ for a primer on the use of the signature transform in machine learning, just as a feature transformation, and `this <https://arxiv.org/abs/1905.08494>`__ for a more in-depth look at integrating the signature transform into neural networks.
+
+
 
 
 Installation
@@ -64,6 +66,7 @@ Usage is straightforward. As a simple example,
     depth = 4
     path = torch.rand(batch, stream, channels)
     signature = signatory.signature(path, depth)
+    # signature is a PyTorch tensor
 
 For further examples, see the `documentation <https://signatory.readthedocs.io/en/latest/pages/examples/examples.html>`__.
 
