@@ -26,11 +26,20 @@
 
 
 namespace signatory {
-    // signed-ness is important because we'll sometimes iterate downwards
-    // it is very deliberately not called 'size_type' because otherwise when using it in e.g. the constructor for
+    // So we pretty much have to use int64_t ubiquitously as our scalar type for indexing, iterating, etc, because
+    // that's what PyTorch does, and sometimes we have to convert between e.g. torch::Tensor and std::vector, which
+    // use int64_t and std::vector::size_type as their size types respectively. So this is an alias to be used where
+    // normally you'd use the iterator's size_type, to make it clear that there's been a conscious choice to think about
+    // the type.
+    //
+    // Signed-ness is important because we'll sometimes iterate downwards.
+    // It is very deliberately not called 'size_type' because otherwise when using it in e.g. the constructor for
     // something inheriting from std::vector, then 'size_type' will there refer to std::vector::size_type instead.
-    using s_size_type = std::make_signed<std::vector<torch::Tensor>::size_type>::type;
-    using u_size_type = std::make_unsigned<s_size_type>::type;
+    //
+    // This might potentially mean that there are technically a few bugs for very large computations, due to
+    // signed<->unsigned conversions, but it seems like it would be super hard to avoid those anyway, due to the
+    // torch::Tensor<->std::vector conversions we have to do anyway.
+    using s_size_type = int64_t; // was previously std::make_signed<std::vector<torch::Tensor>::size_type>::type
 
     // For clarity about which dimension we're slicing over.
     // Done negatively so that it works even when the stream dimension isn't present
@@ -43,14 +52,6 @@ namespace signatory {
 
     // See signatory.signature_channels for documentation
     int64_t signature_channels(int64_t input_channel_size, int64_t depth);
-
-    // See signatory.max_parallelism for documentation
-    // But basically, this is the amount of extra parallelisation we allow ourselves for those operations which, as a
-    // result of parallelising, use extra memory.
-    // As a result this should be used to bound the parallelisation whenever this is the case. (And should _not_ be used
-    // to bound all parallelisation!)
-    void set_max_parallelism(int64_t value);
-    int64_t get_max_parallelism();
 
     namespace misc {
         inline torch::TensorOptions make_opts(torch::Tensor tensor);

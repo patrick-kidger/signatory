@@ -9,10 +9,6 @@ The following miscellaneous operations are provided as a convenience.
 
 ----
 
-.. autofunction:: signatory.max_parallelism
-
-----
-
 .. autoclass:: signatory.Augment
 
     .. automethod:: signatory.Augment.forward

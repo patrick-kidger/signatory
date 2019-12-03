@@ -80,7 +80,7 @@ namespace signatory {
         // If sigspec.inverse == false then 'prev' is modified to hold prev \otimes \exp(next)
         // If sigspec.inverse == true then 'prev' is modified to hold \exp(next) \otimes prev
         void mult_fused_restricted_exp(torch::Tensor next, std::vector<torch::Tensor>& prev, bool inverse,
-                                       torch::Tensor reciprocals);
+                                       torch::Tensor reciprocals, int64_t batch_threads=1);
 
         // Backwards through the fused multiply-exponentiate.
         // 'grad_next' will have the gradient from this operation copied in to it.
@@ -93,15 +93,6 @@ namespace signatory {
                                                 const std::vector<torch::Tensor>& prev,
                                                 bool inverse,
                                                 torch::Tensor reciprocals);
-
-        // Performs the same computation as mult_fused_restricted_exp, but handles the very special case of being on the
-        // cpu, with a particular scalar type, and does not have a batch dimension.
-        // Be careful with this function! Unless you're aiming for ludicrous speed and know what you're doing then you
-        // probably want one of the other functions defined here.
-        template <typename scalar_t, bool inverse>
-        void mult_fused_restricted_exp_single_cpu(torch::TensorAccessor<scalar_t, 1> next_a,
-                                                  std::vector<torch::TensorAccessor<scalar_t, 1>>& prev_a,
-                                                  torch::TensorAccessor<scalar_t, 1> reciprocals_a);
 
         // Computes the logarithm in the tensor algebra
         // 'output_vector' and 'input_vector' are both members of the tensor algebra, with assumed scalar values 1.
@@ -130,7 +121,5 @@ namespace signatory {
                                                           int64_t input_channels,
                                                           s_size_type depth);
 }  // namespace signatory
-
-#include "tensor_algebra_ops.inl"
 
 #endif //SIGNATORY_TENSOR_ALGEBRA_OPS_HPP

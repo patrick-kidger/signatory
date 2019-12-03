@@ -1,7 +1,7 @@
 .. _examples-online:
 
-Online computation of signatures
-################################
+Computing the signature of an incoming stream of data
+#####################################################
 
 Suppose we have the signature of a stream of data :math:`x_1, \ldots, x_{1000}`. Subsequently some more data arrives, say :math:`x_{1001}, \ldots, x_{1007}`. It is possible to calculate the signature of the whole stream of data :math:`x_1, \ldots, x_{1007}` with just this information. It is not necessary to compute the signature of the whole path from the beginning!
 

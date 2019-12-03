@@ -20,8 +20,8 @@ This occurs when the version of PyTorch you have installed is different to the v
 
 .. _miscellaneous-faq-other:
 
-All other issues
-^^^^^^^^^^^^^^^^
+Everything else
+^^^^^^^^^^^^^^^
 
 * What's the difference between Signatory and `iisignature <https://github.com/bottler/iisignature>`__?
 

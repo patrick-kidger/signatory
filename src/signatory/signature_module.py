@@ -15,13 +15,13 @@
 """Provides operations relating to the signature transform."""
 
 
+import math
 import torch
 from torch import nn
 from torch import autograd
 from torch.autograd import function as autograd_function
 import warnings
 
-from . import utility
 from . import impl
 
 # noinspection PyUnreachableCode
@@ -101,13 +101,9 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
         return
 
     if path.is_cuda:
-        # TODO: find a better way to choose this value when on the GPU.
-        #       Note that there are two implications of changing this value.
-        #       First of all, there will be greater potential parallelisation, so the main computation will go faster.
-        #       However we don't yet parallelise the bit where we combine the results of our parallel computations,
-        #       so setting this value too large will cause a slowdown as we serially perform this many tensor
-        #       multplications.
-        threshold = 512
+        # A somewhat arbitrary limit for the maximum amount we're willing to try and use a GPU to parallelise.
+        # Increasing this value increases the amount of memory we use, but potentially increases speed.
+        threshold = 2048
     else:
         if not path.requires_grad:
             # If we're on the CPU then parallelisation will automatically occur more efficiently than this trick allows.
@@ -115,17 +111,13 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
             # backward pass (whilst the batch trick does), so we don't use it if we're going to perform a backward
             # operation.
             return
-        threshold = impl.hardware_concurrency()
-        if threshold == 0:
-            # Indicates that we can't get the amount of hardware concurrency, which is a bit weird.
-            # In this case let's not try to be clever.
-            return
+        threshold = torch.get_num_threads()
 
     batch_size, stream_size, channel_size = path.shape
 
     # Number of chunks to split the stream in to
     mult = int(round(float(threshold) / batch_size))
-    mult = min(mult, int(stream_size / 3), utility.max_parallelism())
+    mult = min(mult, int(stream_size / 3), int(round(math.sqrt(stream_size))))
 
     # If the problem isn't large enough to be worth parallelising
     if mult < 2:
@@ -211,18 +203,14 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
             have shape :math:`(N, C)`.
 
         inverse (bool, optional): Defaults to False. If True then it is in fact the inverse signature that is computed.
-            That is, we flip the input path along its stream dimension before computing the signature.
-            If :attr:`stream` is True then each sub-path is the same as before, and are each individually flipped along
-            their stream dimensions, and kept in the same order with respect to each other.
-            (But without the extra computational overhead of actually doing all of these flips.)
-            From a machine learning perspective it does not particularly matter whether the signature or the inverse
-            signature is computed - both represent essentially the same information as each other.
+            (Signatures form a group under the operation of the tensor product; the inverse is defined with respect to
+            this operation.) From a machine learning perspective it does not particularly matter whether the signature
+            or the inverse signature is computed - both represent essentially the same information as each other.
 
         initial (None or :class:`torch.Tensor`, optional): Defaults to None. If it is a :class:`torch.Tensor` then it
             must be of size :math:`(N, C + C^2 + ... + C^\text{depth})`, corresponding to the signature of another path.
             Then this signature is pre-tensor-multiplied on to the signature of :attr:`path`. For a more thorough
             explanation, see :ref:`this example<examples-online>`.
-            (The appropriate modifications are made if :attr:`inverse=True` or if :attr:`basepoint`.)
 
     Returns:
         A :class:`torch.Tensor`. Given an input :class:`torch.Tensor` of shape :math:`(N, L, C)`, and input arguments

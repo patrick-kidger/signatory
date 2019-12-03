@@ -70,7 +70,7 @@ namespace signatory {
                 ++word.back();
                 (*this)[word.size() - 1].emplace_back(word, false, input_channel_size);
                 int64_t pos = 0;
-                while (word.size() < static_cast<u_size_type>(depth)) {
+                while (static_cast<s_size_type>(word.size()) < depth) {
                     word.push_back(word[pos]);
                     ++pos;
                 }
@@ -287,7 +287,7 @@ namespace signatory {
             s_size_type compressed_offset = 0;
             for (auto& depth_class : (*this)) {
                 for (s_size_type compressed_index = 0;
-                     static_cast<u_size_type>(compressed_index) < depth_class.size();
+                     compressed_index < static_cast<s_size_type>(depth_class.size());
                      ++compressed_index) {
                     auto& lyndon_word = depth_class[compressed_index];
                     lyndon_word.tensor_algebra_index += tensor_algebra_offset;

@@ -99,19 +99,3 @@ def all_words(channels, depth):
     # Just returning the generator would be much nicer, programmatically speaking, but then this is inconsistent with
     # the lyndon_words function. This isn't expected to use a lot of memory so this is acceptable.
     return list(generator())
-
-
-def max_parallelism(value=None):
-    # type: (Optional[int]) -> int
-    """Gets or sets the maximum amount of parallelism used in Signatory's computations. Higher values will typically
-    result in quicker computations but will use more memory.
-
-    Calling without arguments will return the current value.
-    Passing a value of 1 will disable parallelism.
-    Passing :code:`-1`, :code:`math.inf`, :code:`np.inf` or :code:`float('inf')` will enable unlimited parallelism.
-    """
-    if value is not None:
-        if value == float('inf'):
-            value = -1
-        impl.set_max_parallelism(value)
-    return impl.get_max_parallelism()

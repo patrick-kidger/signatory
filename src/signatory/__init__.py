@@ -35,6 +35,7 @@ except ImportError as e:
 
 
 from .augment import Augment
+from .deprecated import max_parallelism
 from .logsignature_module import (signature_to_logsignature,
                                   SignatureToLogSignature,
                                   SignatureToLogsignature,
@@ -52,10 +53,9 @@ from .signature_module import (signature,
 from . import unstable  # make it available as an attribute here, but don't import any unstable objects themselves
 from .utility import (lyndon_words,
                       lyndon_brackets,
-                      all_words,
-                      max_parallelism)
+                      all_words)
 
 
-__version__ = "1.1.4"
+__version__ = "1.1.5"
 
 del torch
