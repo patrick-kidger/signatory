@@ -364,7 +364,8 @@ namespace signatory {
                 int64_t input_channel_size = next.size(channel_dim);
                 s_size_type depth = prev.size();
 
-                #pragma omp parallel default(none) \
+                // commented out because of what I think is an MSVC bug
+                #pragma omp parallel /*default(none)*/ \
                                      if(batch_threads > 1) \
                                      num_threads(batch_threads) \
                                      shared(batch_size, next_a, prev_a, inverse, reciprocals_a, input_channel_size, \
