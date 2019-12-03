@@ -888,7 +888,7 @@ namespace signatory {
                 detail::mult_fused_restricted_exp_cuda(next, prev, inverse, reciprocals);
             }
             else{
-                AT_DISPATCH_FLOATING_TYPES(next.type(), "mult_fused_restricted_exp_cpu", ([&] {
+                AT_DISPATCH_FLOATING_TYPES(next.scalar_type(), "mult_fused_restricted_exp_cpu", ([&] {
                     detail::mult_fused_restricted_exp_cpu<scalar_t>(next, prev, inverse, reciprocals, batch_threads);
                 }));
             }
@@ -904,7 +904,7 @@ namespace signatory {
                 detail::mult_fused_restricted_exp_backward_cuda(grad_next, grad_prev, next, prev, inverse, reciprocals);
             }
             else{
-                AT_DISPATCH_FLOATING_TYPES(grad_next.type(), "mult_fused_restricted_exp_backward_cpu", ([&] {
+                AT_DISPATCH_FLOATING_TYPES(grad_next.scalar_type(), "mult_fused_restricted_exp_backward_cpu", ([&] {
                     detail::mult_fused_restricted_exp_backward_cpu<scalar_t>(grad_next, grad_prev, next, prev, inverse,
                                                                              reciprocals);
                 }));
