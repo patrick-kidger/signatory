@@ -372,10 +372,9 @@ namespace signatory {
                                             depth)
                 {
                     // Allocate scratch space outside of the hot loop
-                    std::vector<scalar_t, default_init_allocator<scalar_t>> next_divided (reciprocals_a.size(0) *
-                                                                                          input_channel_size);
-                    std::vector<scalar_t, default_init_allocator<scalar_t>> old_scratch;
-                    std::vector<scalar_t, default_init_allocator<scalar_t>> new_scratch;
+                    vec_default_init next_divided (reciprocals_a.size(0) * input_channel_size);
+                    vec_default_init old_scratch;
+                    vec_default_init new_scratch;
                     // Figure out how large each vector is going to get by the end of the computation.
                     if (depth > 1) {
                         if ((depth % 2) == 0) {
