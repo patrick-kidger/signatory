@@ -32,7 +32,7 @@ class Augment(nn.Module):
 
     Thus this :class:`torch.nn.Module` is essentially unrelated to signatures, but is provided as it is often useful in
     the same context. As described in
-    `Deep Signature Transforms -- Bonnier et al. 2019 <https://arxiv.org/abs/1905.08494>`__,
+    `Deep Signature Transforms -- Bonnier et al. 2019 <https://papers.nips.cc/paper/8574-deep-signature-transforms>`__,
     it is often advantageous to augment a path before taking the signature.
 
     The input path is expected to be a three-dimensional tensor, with dimensions :math:`(N, L, C)`, where :math:`N` is

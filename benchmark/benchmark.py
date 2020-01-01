@@ -183,14 +183,15 @@ class BenchmarkRunner(object):
     def run(self):
         """Runs the benchmarks."""
 
+        running = True
         results = helpers.namedarray(len(self.fns), len(self.sizes), len(self.depths))
         for fn_name, fn_dict in self.fns.items():
             for size in self.sizes:
                 for depth in self.depths:
-                    results[fn_name, size, depth] = self._run_test(fn_name, fn_dict, size, depth)
+                    running, results[fn_name, size, depth] = self._run_test(fn_name, fn_dict, size, depth, running)
         self._results = results
 
-    def _run_test(self, fn_name, fn_dict, size, depth):
+    def _run_test(self, fn_name, fn_dict, size, depth, running):
         """Runs a particular function across multiple different libraries and records their speed or memory usage."""
 
         column_results = co.OrderedDict()
@@ -203,12 +204,17 @@ class BenchmarkRunner(object):
 
             print(self._table_format_index(fn_name, size, depth), library_name)
 
-            if self.measure is Measurables.time:
-                result = self._time(library_module_name, size, depth)
-            elif self.measure is Measurables.memory:
-                result = self._memory(library_module_name, size, depth)
-            else:
-                raise RuntimeError
+            result = math.inf
+            if running:
+                try:
+                    if self.measure is Measurables.time:
+                        result = self._time(library_module_name, size, depth)
+                    elif self.measure is Measurables.memory:
+                        result = self._memory(library_module_name, size, depth)
+                    else:
+                        raise RuntimeError
+                except KeyboardInterrupt:
+                    running = False
             column_results[library_name] = result
 
         other_best = column_results[Columns.iisignature_str]
@@ -228,7 +234,7 @@ class BenchmarkRunner(object):
             except ZeroDivisionError:
                 column_results[Columns.speedup_gpu_str] = math.inf
 
-        return column_results
+        return running, column_results
 
     @staticmethod
     def _time(library_module_name, size, depth):
@@ -238,7 +244,7 @@ class BenchmarkRunner(object):
         try:
             return min(timeit.Timer(setup=lambda: library_module.run(obj),  # warm up
                                     stmt=lambda: library_module.run(obj)).repeat(repeat=50, number=1))
-        except (Exception, KeyboardInterrupt):
+        except Exception:
             return math.inf
         finally:
             library_module.teardown(obj)
@@ -267,7 +273,12 @@ class BenchmarkRunner(object):
                     if 'Legitimate' not in line:
                         stdout = line
                         break
-                min_result = min(min_result, float(stdout))
+                stdout = float(stdout)
+                if stdout == 0:
+                    # Sometimes things bug out and give a zero memory reading.
+                    # I'm not sure why things seem to be flaky
+                    continue
+                min_result = min(min_result, stdout)
             return min_result
         except KeyboardInterrupt:
             return math.inf
