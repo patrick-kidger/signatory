@@ -126,7 +126,7 @@ global_subs = dict(
 # Names of operating systems as GitHub Actions specifies them
 windows = "windows-2016",
 linux = "ubuntu-16.04",
-mac = "macOS-10.15",
+mac = "macOS-latest",
 
 # Run on repository_dispatch and precisely one other event
 on = \
