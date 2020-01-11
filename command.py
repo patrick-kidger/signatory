@@ -163,6 +163,8 @@ def benchmark(args):
         measure = bench.Measurables.time
     elif args.measure == 'memory':
         measure = bench.Measurables.memory
+        print("Note: memory benchmarking seems to be pretty flakey. Evidence of this is that the values we measure for "
+              "iisignature are much lower than that reported in the iisignature paper itself (arxiv:1802.08252).")
     else:
         raise RuntimeError
 

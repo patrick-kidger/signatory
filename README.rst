@@ -79,9 +79,10 @@ If you found this library useful in your research, please consider citing
 
 .. code-block:: bibtex
 
-    @misc{signatory,
+    @article{signatory,
         title={{Signatory: differentiable computations of the signature and logsignature transforms, on both CPU and GPU}},
-        author={Kidger, Patrick},
-        note={\texttt{https://github.com/patrick-kidger/signatory}},
-        year={2019}
+        author={Kidger, Patrick and Lyons, Terry},
+        journal={arXiv:2001.00706},
+        url={https://github.com/patrick-kidger/signatory},
+        year={2020}
     }

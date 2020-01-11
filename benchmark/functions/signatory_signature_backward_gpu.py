@@ -27,7 +27,3 @@ def run(obj):
     obj.signature.backward(obj.grad, retain_graph=True)
     torch.cuda.synchronize()
     return obj.path.grad
-
-
-def teardown(obj):
-    pass

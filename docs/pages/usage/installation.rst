@@ -66,7 +66,7 @@ If you choose the second option then tests, benchmarking code, and code to build
 - | Tests can be run, see ``python command.py test --help``.
   | This requires installing `iisignature <https://github.com/bottler/iisignature>`__ and `pytest <https://pytest.org>`__.
 - | Speed and memory  benchmarks can be performed, see ``python command.py benchmark --help``.
-  | This requires installing `iisignature <https://github.com/bottler/iisignature>`__, `esig <https://pypi.org/project/esig/>`__, and `memory profiler <https://pypi.org/project/memory-profiler/su>`__.
+  | This requires installing `matplotlib, iisignature <https://github.com/bottler/iisignature>`__, `esig <https://pypi.org/project/esig/>`__, and `memory profiler <https://pypi.org/project/memory-profiler/su>`__.
 - | Documentation can be built via ``python command.py docs``.
   | This requires installing `Sphinx <https://pypi.org/project/Sphinx/>`__, `sphinx_rtd_theme <https://pypi.org/project/sphinx-rtd-theme/>`__ and `py2annotate <https://github.com/patrick-kidger/py2annotate>`__.
 

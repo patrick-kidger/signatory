@@ -17,14 +17,14 @@ import torch
 
 
 def setup(obj):
-    obj.torch_num_threads = torch.get_num_threads()
     torch.set_num_threads(1)
-    obj.path = torch.rand(obj.size, dtype=torch.float)
+
+    obj.path = torch.rand(obj.size, dtype=torch.float, requires_grad=True)
+    shape = obj.size[-3], signatory.logsignature_channels(obj.size[-1], obj.depth)
+    obj.grad = torch.rand(shape)
+    obj.logsignature = signatory.LogSignature(obj.depth)(obj.path)
 
 
 def run(obj):
-    return signatory.signature(obj.path, obj.depth)
-
-
-def teardown(obj):
-    torch.set_num_threads(obj.torch_num_threads)
+    obj.logsignature.backward(obj.grad, retain_graph=True)
+    return obj.path.grad

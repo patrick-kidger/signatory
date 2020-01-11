@@ -24,7 +24,3 @@ def setup(obj):
 
 def run(obj):
     return obj.logsignature_instance(obj.path)
-
-
-def teardown(obj):
-    pass

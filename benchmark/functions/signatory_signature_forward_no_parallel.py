@@ -17,16 +17,10 @@ import torch
 
 
 def setup(obj):
-    obj.torch_num_threads = torch.get_num_threads()
     torch.set_num_threads(1)
+
     obj.path = torch.rand(obj.size, dtype=torch.float)
-    obj.logsignature_instance = signatory.LogSignature(obj.depth)
-    obj.logsignature_instance.prepare(obj.size[-1])
 
 
 def run(obj):
-    return obj.logsignature_instance(obj.path)
-
-
-def teardown(obj):
-    torch.set_num_threads(obj.torch_num_threads)
+    return signatory.signature(obj.path, obj.depth)

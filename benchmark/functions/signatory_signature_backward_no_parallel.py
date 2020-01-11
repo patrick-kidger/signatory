@@ -17,8 +17,8 @@ import torch
 
 
 def setup(obj):
-    obj.torch_num_threads = torch.get_num_threads()
     torch.set_num_threads(1)
+
     obj.path = torch.rand(obj.size, dtype=torch.float, requires_grad=True)
     shape = obj.size[-3], signatory.signature_channels(obj.size[-1], obj.depth)
     obj.grad = torch.rand(shape)
@@ -28,7 +28,3 @@ def setup(obj):
 def run(obj):
     obj.signature.backward(obj.grad, retain_graph=True)
     return obj.path.grad
-
-
-def teardown(obj):
-    torch.set_num_threads(obj.torch_num_threads)
