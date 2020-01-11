@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
-import esig
+import esig.tosig
 import torch
 
 
@@ -29,7 +29,3 @@ def run(obj):
     for batch_elem in obj.path[1:]:
         result.append(esig.tosig.stream2logsig(batch_elem, obj.depth))
     return result
-
-
-def teardown(obj):
-    pass

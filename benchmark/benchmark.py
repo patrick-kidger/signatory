@@ -14,17 +14,15 @@
 # =========================================================================
 """Provides speed and memory benchmarks against esig and iisignature."""
 
-import argparse
 import collections as co
 import datetime
-import importlib
 import io
 import itertools as it
 import math
 import matplotlib.pyplot as plt
 import os
 import subprocess
-import timeit
+import torch
 
 from . import helpers
 
@@ -64,25 +62,25 @@ colours = {Columns.signatory_cpu_str: 'b',
 # Now we specify all the different functions we could benchmark
 _signature_forward_fns = co.OrderedDict([(Columns.esig_str, 'esig_signature_forward'),
                                          (Columns.iisignature_str, 'iisignature_signature_forward'),
-                                         (Columns.signatory_cpu_no_parallel_str, 'signatory_signature_no_parallel_forward'),
+                                         (Columns.signatory_cpu_no_parallel_str, 'signatory_signature_forward_no_parallel'),
                                          (Columns.signatory_cpu_str, 'signatory_signature_forward'),
                                          (Columns.signatory_gpu_str, 'signatory_signature_forward_gpu')])
 
 _signature_backward_fns = co.OrderedDict([(Columns.esig_str, 'esig_signature_backward'),
                                           (Columns.iisignature_str, 'iisignature_signature_backward'),
-                                          (Columns.signatory_cpu_no_parallel_str, 'signatory_signature_no_parallel_backward'),
+                                          (Columns.signatory_cpu_no_parallel_str, 'signatory_signature_backward_no_parallel'),
                                           (Columns.signatory_cpu_str, 'signatory_signature_backward'),
                                           (Columns.signatory_gpu_str, 'signatory_signature_backward_gpu')])
 
 _logsignature_forward_fns = co.OrderedDict([(Columns.esig_str, 'esig_logsignature_forward'),
                                             (Columns.iisignature_str, 'iisignature_logsignature_forward'),
-                                            (Columns.signatory_cpu_no_parallel_str, 'signatory_logsignature_no_parallel_forward'),
+                                            (Columns.signatory_cpu_no_parallel_str, 'signatory_logsignature_forward_no_parallel'),
                                             (Columns.signatory_cpu_str, 'signatory_logsignature_forward'),
                                             (Columns.signatory_gpu_str, 'signatory_logsignature_forward_gpu')])
 
 _logsignature_backward_fns = co.OrderedDict([(Columns.esig_str, 'esig_logsignature_backward'),
                                              (Columns.iisignature_str, 'iisignature_logsignature_backward'),
-                                             (Columns.signatory_cpu_no_parallel_str, 'signatory_logsignature_no_parallel_backward'),
+                                             (Columns.signatory_cpu_no_parallel_str, 'signatory_logsignature_backward_no_parallel'),
                                              (Columns.signatory_cpu_str, 'signatory_logsignature_backward'),
                                              (Columns.signatory_gpu_str, 'signatory_logsignature_backward_gpu')])
 
@@ -183,14 +181,15 @@ class BenchmarkRunner(object):
     def run(self):
         """Runs the benchmarks."""
 
+        running = True
         results = helpers.namedarray(len(self.fns), len(self.sizes), len(self.depths))
         for fn_name, fn_dict in self.fns.items():
             for size in self.sizes:
                 for depth in self.depths:
-                    results[fn_name, size, depth] = self._run_test(fn_name, fn_dict, size, depth)
+                    running, results[fn_name, size, depth] = self._run_test(fn_name, fn_dict, size, depth, running)
         self._results = results
 
-    def _run_test(self, fn_name, fn_dict, size, depth):
+    def _run_test(self, fn_name, fn_dict, size, depth, running):
         """Runs a particular function across multiple different libraries and records their speed or memory usage."""
 
         column_results = co.OrderedDict()
@@ -201,14 +200,18 @@ class BenchmarkRunner(object):
             if (not self.test_signatory_gpu) and (library_name is Columns.signatory_gpu_str):
                 continue
 
-            print(self._table_format_index(fn_name, size, depth), library_name)
-
-            if self.measure is Measurables.time:
-                result = self._time(library_module_name, size, depth)
-            elif self.measure is Measurables.memory:
-                result = self._memory(library_module_name, size, depth)
-            else:
-                raise RuntimeError
+            result = math.inf
+            if running:
+                print(self._table_format_index(fn_name, size, depth), library_name)
+                try:
+                    if self.measure is Measurables.time:
+                        result = self._time(library_module_name, size, depth)
+                    elif self.measure is Measurables.memory:
+                        result = self._memory(library_module_name, size, depth)
+                    else:
+                        raise RuntimeError
+                except KeyboardInterrupt:
+                    running = False
             column_results[library_name] = result
 
         other_best = column_results[Columns.iisignature_str]
@@ -228,49 +231,58 @@ class BenchmarkRunner(object):
             except ZeroDivisionError:
                 column_results[Columns.speedup_gpu_str] = math.inf
 
-        return column_results
+        return running, column_results
+
+    @classmethod
+    def _time(cls, library_module_name, size, depth):
+        return cls._run_file(library_module_name, 'time_', size, depth)
+
+    @classmethod
+    def _memory(cls, library_module_name, size, depth):
+        result = 0
+        for _ in range(5):
+            stdout = cls._run_file(library_module_name, 'memory', size, depth)
+            if stdout == 0:
+                # Sometimes things bug out and give a zero memory reading.
+                # I'm not sure why things seem to be flaky
+                continue
+            # Take the maximum, as we sample based on some frequency, and can easily miss a peak when doing this over
+            # just one run.
+            # (Yeah this isn't ideal.)
+            result = max(result, stdout)
+        if result == 0:
+            result = math.inf
+        return result
 
     @staticmethod
-    def _time(library_module_name, size, depth):
-        obj = argparse.Namespace(size=size, depth=depth)
-        library_module = importlib.import_module('.functions.' + library_module_name, __package__)
-        library_module.setup(obj)
-        try:
-            return min(timeit.Timer(setup=lambda: library_module.run(obj),  # warm up
-                                    stmt=lambda: library_module.run(obj)).repeat(repeat=50, number=1))
-        except (Exception, KeyboardInterrupt):
-            return math.inf
-        finally:
-            library_module.teardown(obj)
+    def _run_file(library_module_name, filename, size, depth):
+        if torch.cuda.is_available():
+            device = int(torch.cuda.current_device())
+        else:
+            device = -1
+        p = subprocess.run('python -m {}.{} {} {} {} {}'
+                           ''.format(__package__,
+                                     filename,
+                                     library_module_name,
+                                     str(size).replace(' ', '').replace('(', '').replace(')', ''),
+                                     depth,
+                                     device),
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
 
-    def _memory(self, library_module_name, size, depth):
-        try:
-            min_result = math.inf
-            for _ in range(5):
-                p = subprocess.run('python -m {}.memory {} {} {}'
-                                   ''.format(__package__,
-                                             library_module_name,
-                                             str(size).replace(' ', '').replace('(', '').replace(')', ''),
-                                             depth),
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        stderr = p.stderr.decode()
+        if stderr != '':
+            print('Error:')
+            print('------')
+            print(stderr)
+            print('')
+            raise RuntimeError("Error in " + library_module_name)
 
-                stderr = p.stderr.decode()
-                if stderr != '':
-                    print('Error:')
-                    print('------')
-                    print(stderr)
-                    print('')
-                    raise RuntimeError("Error in " + library_module_name)
-
-                stdout = p.stdout.decode().strip()
-                for line in stdout.split('\n'):
-                    if 'Legitimate' not in line:
-                        stdout = line
-                        break
-                min_result = min(min_result, float(stdout))
-            return min_result
-        except KeyboardInterrupt:
-            return math.inf
+        stdout = p.stdout.decode().strip()
+        for line in stdout.split('\n'):
+            if 'Legitimate' not in line:
+                stdout = line
+                break
+        return float(stdout)
 
     @staticmethod
     def _table_format_index(fn_name, size, depth):

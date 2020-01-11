@@ -24,7 +24,3 @@ def run(obj):
     result = signatory.signature(obj.path, obj.depth)
     torch.cuda.synchronize()
     return result
-
-
-def teardown(obj):
-    pass

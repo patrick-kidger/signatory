@@ -1,6 +1,8 @@
 
-.. image:: https://raw.githubusercontent.com/patrick-kidger/signatory/master/docs/_static/signatory.png
-    :align: center
+|Signatory|
+###########
+
+.. |Signatory| image:: https://raw.githubusercontent.com/patrick-kidger/signatory/master/docs/_static/signatory.png
 
 Differentiable computations of the signature and logsignature transforms, on both CPU and GPU.
 
@@ -14,7 +16,7 @@ The *signature transform* is roughly analogous to the Fourier transform, in that
 Besides this, the signature transform has many other nice properties -- robustness to missing or irregularly sampled data; optional translation invariance; optional sampling invariance. Furthermore it can be used to encode certain physical quantities, and may be used for data compression.
 
 
-Check out `this <https://arxiv.org/abs/1603.03788>`__ for a primer on the use of the signature transform in machine learning, just as a feature transformation, and `this <https://arxiv.org/abs/1905.08494>`__ for a more in-depth look at integrating the signature transform into neural networks.
+Check out `this <https://arxiv.org/abs/1603.03788>`__ for a primer on the use of the signature transform in machine learning, just as a feature transformation, and `this <https://papers.nips.cc/paper/8574-deep-signature-transforms>`__ for a more in-depth look at integrating the signature transform into neural networks.
 
 
 
@@ -29,7 +31,7 @@ Install via:
 
     pip install signatory==<SIGNATORY_VERSION>.<TORCH_VERSION>
 
-where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.1.5) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
+where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.1.6) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
 
 
     For example, if you are using PyTorch 1.3.0 and want Signatory 1.1.4, then you should run:
@@ -77,9 +79,10 @@ If you found this library useful in your research, please consider citing
 
 .. code-block:: bibtex
 
-    @misc{signatory,
+    @article{signatory,
         title={{Signatory: differentiable computations of the signature and logsignature transforms, on both CPU and GPU}},
-        author={Kidger, Patrick},
-        note={\texttt{https://github.com/patrick-kidger/signatory}},
-        year={2019}
+        author={Kidger, Patrick and Lyons, Terry},
+        journal={arXiv:2001.00706},
+        url={https://github.com/patrick-kidger/signatory},
+        year={2020}
     }

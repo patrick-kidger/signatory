@@ -9,7 +9,7 @@ In principle a simple augment-signature-linear model is enough to achieve univer
     :language: python
     :start-after: # start-literal-include
 
-Whilst in principle this exhibits universal approximation, adding some learnt transformation before the signature transform tends to improve things. See `Deep Signature Transforms -- Bonnier et al. 2019 <https://arxiv.org/abs/1905.08494>`__. Thus we might improve our model:
+Whilst in principle this exhibits universal approximation, adding some learnt transformation before the signature transform tends to improve things. See `Deep Signature Transforms -- Bonnier et al. 2019 <https://papers.nips.cc/paper/8574-deep-signature-transforms>`__. Thus we might improve our model:
 
 .. literalinclude:: /../examples/example2.py
     :language: python

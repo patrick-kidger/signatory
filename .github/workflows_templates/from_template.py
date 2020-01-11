@@ -126,7 +126,7 @@ global_subs = dict(
 # Names of operating systems as GitHub Actions specifies them
 windows = "windows-2016",
 linux = "ubuntu-16.04",
-mac = "macOS-10.14",
+mac = "macOS-latest",
 
 # Run on repository_dispatch and precisely one other event
 on = \
@@ -146,7 +146,8 @@ py37 = '3.7.0',
 # Versions of PyTorch
 pytorch12 = '1.2.0',
 pytorch13 = '1.3.0',
-pytorch_all = '[<<pytorch12>>, <<pytorch13>>]',
+pytorch131 = '1.3.1',
+pytorch_all = '[<<pytorch12>>, <<pytorch13>>, <<pytorch131>>]',
 
 # A strategy for every operating system and version of Python
 # Note that every possible combination must be specified in action_os and action_pv to have repository_dispatch work
@@ -171,7 +172,7 @@ strategy:
   matrix:
     os: [<<linux>>]
     python-version: [<<py37>>]
-    pytorch-version: [<<pytorch12>>]
+    pytorch-version: [<<pytorch131>>]
 """,
 
 # A single Linux strategy except with all PyTorch versions

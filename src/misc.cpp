@@ -15,12 +15,9 @@
 
 
 #include <torch/extension.h>
-#include <Python.h>     // PyCapsule
 #include <cstdint>      // int64_t
 #include <stdexcept>    // std::invalid_argument
 #include <limits>       // std::numeric_limits
-#include <tuple>        // std::tuple
-#include <vector>       // std::vector
 
 #include "misc.hpp"
 
