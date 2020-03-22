@@ -35,7 +35,8 @@ namespace signatory {
     // See signatory.signature_to_logsignature for documentation
     std::tuple<torch::Tensor, py::object>
     signature_to_logsignature_forward(torch::Tensor signature, int64_t input_channel_size, s_size_type depth,
-                                      bool stream, LogSignatureMode mode, py::object lyndon_info_capsule);
+                                      bool stream, LogSignatureMode mode, py::object lyndon_info_capsule,
+                                      bool scalar_term);
 
     // See signatory.signature_to_logsignature for documentation
     torch::Tensor signature_to_logsignature_backward(torch::Tensor grad_logsignature,
@@ -44,7 +45,8 @@ namespace signatory {
                                                      s_size_type depth,
                                                      bool stream,
                                                      LogSignatureMode mode,
-                                                     py::object lyndon_info_capsule);
+                                                     py::object lyndon_info_capsule,
+                                                     bool scalar_term);
 }  // namespace signatory
 
 #endif //SIGNATORY_LOGSIGNATURE_HPP

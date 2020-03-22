@@ -77,9 +77,7 @@ namespace signatory {
                         index_accessor[lyndon_word.compressed_index] = lyndon_word.tensor_algebra_index;
                     }
                 }
-                if (input.is_cuda()) {
-                    indices = indices.cuda();
-                }
+                indices = indices.to(input.device());
 
                 return torch::index_select(input, /*dim=*/channel_dim, /*index=*/indices);
             }
@@ -109,9 +107,7 @@ namespace signatory {
                         index_accessor[lyndon_word.compressed_index] = lyndon_word.tensor_algebra_index;
                     }
                 }
-                if (grad_compressed.is_cuda()) {
-                    indices = indices.cuda();
-                }
+                indices = indices.to(grad_compressed.device());
 
                 indices = indices.expand_as(grad_compressed);
 
@@ -119,8 +115,7 @@ namespace signatory {
             }
 
             void logsignature_checkargs(torch::Tensor signature, int64_t input_channel_size, s_size_type depth,
-                                        bool stream)
-            {
+                                        bool stream, bool scalar_term) {
                 misc::checkargs_channels_depth(input_channel_size, depth);
                 if (stream) {
                     if (signature.ndimension() != 3) {
@@ -141,7 +136,8 @@ namespace signatory {
                 if (signature.size(batch_dim) == 0 || signature.size(channel_dim) == 0) {
                     throw std::invalid_argument("Argument 'signature' cannot have dimensions of size zero.");
                 }
-                if (signature.size(channel_dim) != signature_channels(input_channel_size, depth)) {
+                if (signature.size(channel_dim)
+                    != signature_channels(input_channel_size, depth, scalar_term)) {
                     throw std::invalid_argument("Argument 'signature' has the wrong number of channels for the "
                                                 "specified channels and depth.");
                 }
@@ -154,6 +150,9 @@ namespace signatory {
 
     py::object make_lyndon_info(int64_t channels, s_size_type depth, LogSignatureMode mode) {
         misc::checkargs_channels_depth(channels, depth);
+
+        py::gil_scoped_release release;
+
         std::unique_ptr<lyndon::LyndonWords> lyndon_words;
         std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>> transforms;
         std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>> transforms_backward;
@@ -175,8 +174,15 @@ namespace signatory {
 
     std::tuple<torch::Tensor, py::object>
     signature_to_logsignature_forward(torch::Tensor signature, int64_t input_channel_size, s_size_type depth,
-                                      bool stream, LogSignatureMode mode, py::object lyndon_info_capsule) {
-        logsignature::detail::logsignature_checkargs(signature, input_channel_size, depth, stream);
+                                      bool stream, LogSignatureMode mode, py::object lyndon_info_capsule,
+                                      bool scalar_term) {
+        logsignature::detail::logsignature_checkargs(signature, input_channel_size, depth, stream, scalar_term);
+
+        py::gil_scoped_release release;
+
+        if (scalar_term) {
+            signature = signature.narrow(/*dim=*/channel_dim, /*start=*/1, /*length=*/signature.size(channel_dim) - 1);
+        }
 
         // Don't need to track gradients when we have a custom backward
         signature = signature.detach();
@@ -233,10 +239,8 @@ namespace signatory {
             // There may well be ways of speeding this up beyond what's done here, but the brackets mode is definitely
             // the least favoured child out of the mode options we provide. (It's inherently a strange choice in machine
             // learning anyway, when the words mode is available.)
-            bool cuda = logsignature.is_cuda();
-            if (cuda) {
-                logsignature = logsignature.cpu();
-            }
+            auto device = logsignature.device();
+            logsignature = logsignature.cpu();
             // Then apply the transforms. We rely on the triangularity property of the Lyndon basis for this to work.
             #pragma omp parallel for default(none) \
                                      shared(lyndon_info, logsignature) schedule(dynamic,1)
@@ -257,9 +261,7 @@ namespace signatory {
                     target.sub_(source, coefficient);
                 }
             }
-            if (cuda) {
-                logsignature = logsignature.cuda();
-            }
+            logsignature = logsignature.to(device);
         }
 
         return std::tuple<torch::Tensor, py::object> {logsignature, lyndon_info_capsule};
@@ -271,7 +273,14 @@ namespace signatory {
                                                      s_size_type depth,
                                                      bool stream,
                                                      LogSignatureMode mode,
-                                                     py::object lyndon_info_capsule) {
+                                                     py::object lyndon_info_capsule,
+                                                     bool scalar_term) {
+
+        py::gil_scoped_release release;
+
+        if (scalar_term) {
+            signature = signature.narrow(/*dim=*/channel_dim, /*start=*/1, /*length=*/signature.size(channel_dim) - 1);
+        }
 
         grad_logsignature = grad_logsignature.detach();
         signature = signature.detach();
@@ -307,10 +316,8 @@ namespace signatory {
              * transformations (which necessarily operate in-place) don't leak out. By doing it this way the memory that
              * we operate on is internal memory that we've claimed, not memory that we've been given in an input.
              */
-            bool cuda = grad_logsignature.is_cuda();
-            if (cuda) {
-                grad_logsignature = grad_logsignature.cpu();
-            }
+            auto device = grad_logsignature.device();
+            grad_logsignature = grad_logsignature.cpu();
             // This is essentially solving a sparse linear system... and it's horrendously slow on a GPU.
             #pragma omp parallel for default(none) \
                                      shared(lyndon_info, grad_logsignature) schedule(dynamic,1)
@@ -332,12 +339,30 @@ namespace signatory {
                     grad_source.sub_(grad_target, coefficient);
                 }
             }
-            if (cuda) {
-                grad_logsignature = grad_logsignature.to(opts);
-            }
+            grad_logsignature = grad_logsignature.to(device);
         }
 
-        torch::Tensor grad_signature = torch::zeros_like(grad_logsignature);
+        torch::Tensor grad_signature;
+        torch::Tensor grad_signature_with_scalar;
+        if (scalar_term) {
+            if (stream) {
+                grad_signature_with_scalar = torch::zeros({grad_logsignature.size(stream_dim),
+                                                           grad_logsignature.size(batch_dim),
+                                                           grad_logsignature.size(channel_dim) + 1},
+                                                          opts);
+            }
+            else {
+                grad_signature_with_scalar = torch::zeros({grad_logsignature.size(batch_dim),
+                                                           grad_logsignature.size(channel_dim) + 1},
+                                                          opts);
+            }
+            grad_signature = grad_signature_with_scalar.narrow(/*dim=*/channel_dim, /*start=*/1,
+                                                               /*length=*/grad_logsignature.size(channel_dim));
+        }
+        else {
+            grad_signature = torch::zeros_like(grad_logsignature);
+            grad_signature_with_scalar = grad_signature;
+        }
 
         std::vector<torch::Tensor> grad_logsignature_by_term;
         std::vector<torch::Tensor> grad_signature_by_term;
@@ -376,6 +401,6 @@ namespace signatory {
             ta_ops::log_backward(grad_logsignature_by_term, grad_signature_by_term, signature_by_term, reciprocals);
         }
 
-        return grad_signature;
+        return grad_signature_with_scalar;
     }
 }  // namespace signatory

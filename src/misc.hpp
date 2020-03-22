@@ -51,7 +51,7 @@ namespace signatory {
     constexpr auto channel_dim = -1;
 
     // See signatory.signature_channels for documentation
-    int64_t signature_channels(int64_t input_channel_size, int64_t depth);
+    int64_t signature_channels(int64_t input_channel_size, int64_t depth, bool scalar_term);
 
     namespace misc {
         inline torch::TensorOptions make_opts(torch::Tensor tensor);

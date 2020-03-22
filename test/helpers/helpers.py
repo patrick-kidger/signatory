@@ -64,12 +64,11 @@ def get_basepoint(batch_size, input_channels, device, basepoint):
         return basepoint
 
 
-def get_initial(batch_size, input_channels, device, depth, initial):
-    """Gets a value for the 'initial' argument of signatory.signature, and also returns the path it used to generate
-    that value."""
+def get_initial(batch_size, input_channels, device, depth, initial, scalar_term):
+    """Gets a value for the 'initial' argument of signatory.signature."""
     if initial in (without_grad, with_grad):
         initial_path = torch.rand(batch_size, 2, input_channels, device=device, dtype=torch.double)
-        initial_signature = signatory.signature(initial_path, depth)
+        initial_signature = signatory.signature(initial_path, depth, scalar_term=scalar_term)
         if initial == with_grad:
             initial_signature.requires_grad_()
         return initial_signature

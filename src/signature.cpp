@@ -30,15 +30,24 @@ namespace signatory {
     namespace signature {
         namespace detail {
             struct omp_nested {
-                omp_nested() : omp_was_nested(omp_get_nested()) {
-                   omp_set_nested(true);
+                omp_nested() :
+                was_omp_max_active_levels(omp_get_max_active_levels()), was_omp_in_parallel(omp_in_parallel())
+                {
+                    if (!was_omp_in_parallel) {
+                        // parallelising over batch and stream
+                        omp_set_max_active_levels(2);
+                    }
                 }
                 ~omp_nested() {
-                    omp_set_nested(omp_was_nested);
+                    if (!was_omp_in_parallel) {
+                        omp_set_max_active_levels(was_omp_max_active_levels);
+                    }
                 }
             private:
-                int omp_was_nested;
+                int was_omp_max_active_levels;
+                int was_omp_in_parallel;
             };
+
             struct bool_wrapper { bool value; };
 
             // Takes the path and basepoint and returns the path increments
@@ -162,7 +171,7 @@ namespace signatory {
     }  // namespace signatory::signature
 
     void signature_checkargs(torch::Tensor path, s_size_type depth, bool basepoint, torch::Tensor basepoint_value,
-                             bool initial, torch::Tensor initial_value) {
+                             bool initial, torch::Tensor initial_value, bool scalar_term) {
         if (path.ndimension() == 2) {
             // Friendlier help message for a common mess-up.
             throw std::invalid_argument("Argument 'path' must be a 3-dimensional tensor, with dimensions "
@@ -209,7 +218,7 @@ namespace signatory {
                 throw std::invalid_argument("Argument 'initial' must be a 2-dimensional tensor, corresponding to "
                                             "(batch, signature_channels) respectively.");
             }
-            if (initial_value.size(channel_dim) != signature_channels(path.size(channel_dim), depth) ||
+            if (initial_value.size(channel_dim) != signature_channels(path.size(channel_dim), depth, scalar_term) ||
                 initial_value.size(batch_dim) != path.size(batch_dim)) {
                 throw std::invalid_argument("Argument 'initial' must have correctly sized batch and channel "
                                             "dimensions.");
@@ -222,8 +231,10 @@ namespace signatory {
 
     std::tuple<torch::Tensor, torch::Tensor>
     signature_forward(torch::Tensor path, s_size_type depth, bool stream, bool basepoint, torch::Tensor basepoint_value,
-                      bool inverse, bool initial, torch::Tensor initial_value) {
-        signature_checkargs(path, depth, basepoint, basepoint_value, initial, initial_value);
+                      bool inverse, bool initial, torch::Tensor initial_value, bool scalar_term) {
+        signature_checkargs(path, depth, basepoint, basepoint_value, initial, initial_value, scalar_term);
+
+        py::gil_scoped_release release;
 
         // No sense keeping track of gradients when we have a dedicated backwards function (and in-place operations mean
         // that in any case one cannot autograd through this function)
@@ -231,12 +242,17 @@ namespace signatory {
         basepoint_value = basepoint_value.detach();
         initial_value = initial_value.detach();
 
+        if (scalar_term && initial) {
+            initial_value = initial_value.narrow(/*dim=*/channel_dim, /*start=*/1,
+                                                 /*length=*/initial_value.size(channel_dim) - 1);
+        }
+
         // Some constants to pass around
         int64_t batch_size = path.size(batch_dim);
         int64_t input_stream_size = path.size(stream_dim);
         int64_t input_channel_size = path.size(channel_dim);
         int64_t output_stream_size = path.size(stream_dim) - (basepoint ? 0 : 1);
-        int64_t output_channel_size = signature_channels(input_channel_size, depth);
+        int64_t output_channel_size = signature_channels(input_channel_size, depth, false);
         torch::TensorOptions opts = misc::make_opts(path);
         torch::Tensor reciprocals = misc::make_reciprocals(depth, opts);
 
@@ -247,16 +263,31 @@ namespace signatory {
         // Allocate memory for the computation.
         torch::Tensor first_term;
         torch::Tensor signature;
+        torch::Tensor signature_with_scalar;
         std::vector<torch::Tensor> signature_by_term;
         std::vector<torch::Tensor> signature_by_term_at_stream;
+
+        int64_t output_channel_size_with_scalar = scalar_term ? (output_channel_size + 1) : output_channel_size;
         if (stream) {
             // if stream == true then we want to store all intermediate results
-            signature = torch::empty({output_stream_size, batch_size, output_channel_size}, opts);
+            signature = torch::empty({output_stream_size, batch_size, output_channel_size_with_scalar}, opts);
+        }
+        else {
+            signature = torch::empty({batch_size, output_channel_size_with_scalar}, opts);
+        }
+        if (scalar_term) {
+            signature.narrow(/*dim=*/channel_dim, /*start=*/0, /*length=*/1) = 1;
+            signature_with_scalar = signature;
+            signature = signature.narrow(/*dim=*/channel_dim, /*start=*/1, /*length=*/output_channel_size);
+        }
+        else {
+            signature_with_scalar = signature;
+        }
+        if (stream) {
             first_term = signature[0];
             misc::slice_by_term(signature, signature_by_term, input_channel_size, depth);
         }
         else {
-            signature = torch::empty({batch_size, output_channel_size}, opts);
             first_term = signature;
         }
         misc::slice_by_term(first_term, signature_by_term_at_stream, input_channel_size, depth);
@@ -283,7 +314,7 @@ namespace signatory {
             if (batch_size * output_stream_size * output_channel_size < 81899) {
                 // Don't use parallelism if the problem is small.
                 // The magic number 81899 was chosen as being roughly the point at which the small/large threshold is
-                // crossed. (81899 = batch size 1 * stream size 4096 * signature_channels(channels 4, depth 2) - 1)
+                // crossed. (81899 = batch size 1 * stream size 4096 * signature_channels(channels 4, depth 2) - 1, false)
                 stream_threads = 1;
                 batch_threads = 1;
             }
@@ -318,7 +349,7 @@ namespace signatory {
             // doesn't handle. Furthermore even in the stream==false case, this branch would needlessly allocate extra
             // memory.
 
-            signature::detail::omp_nested {};  // Enable nested OpenMP, so we can parallelise over both stream and batch
+            signature::detail::omp_nested nested;  // Enable nested OpenMP, so we can parallelise over both stream and batch
 
             std::vector<std::vector<torch::Tensor>> omp_results(stream_threads);
             // There's no guarantee that we actually get the maximum number of threads, so we have to check
@@ -371,12 +402,21 @@ namespace signatory {
             }
         }
 
-        return std::tuple<torch::Tensor, torch::Tensor> {signature, path_increments};
+        return std::tuple<torch::Tensor, torch::Tensor> {signature_with_scalar, path_increments};
     }
 
     std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
     signature_backward(torch::Tensor grad_signature, torch::Tensor signature, torch::Tensor path_increments,
-                       s_size_type depth, bool stream, bool basepoint, bool inverse, bool initial) {
+                       s_size_type depth, bool stream, bool basepoint, bool inverse, bool initial, bool scalar_term) {
+
+        py::gil_scoped_release release;
+
+        if (scalar_term) {
+            grad_signature = grad_signature.narrow(/*dim=*/channel_dim, /*start=*/1,
+                                                   /*length=*/grad_signature.size(channel_dim) - 1);
+            signature = signature.narrow(/*dim=*/channel_dim, /*start=*/1, /*length=*/signature.size(channel_dim) - 1);
+        }
+
         grad_signature = grad_signature.detach();
         signature = signature.detach();
         path_increments = path_increments.detach();
@@ -404,14 +444,37 @@ namespace signatory {
         // can just use. In the stream==false case this information must be recomputed.
 
         torch::Tensor grad_signature_at_stream;
+        torch::Tensor grad_initial_value;
         if (stream) {
             grad_signature_at_stream = grad_signature[-1];
         }
         else {
             grad_signature_at_stream = grad_signature;
         }
-        // make sure not to leak changes
-        grad_signature_at_stream = grad_signature_at_stream.clone();
+        if (scalar_term && initial) {
+            // It turns out that grad_signature_at_stream will end up computing the gradient through the initial value.
+            // However as the initial value has a scalar '1' appended to it, the best thing to do is to allocate a
+            // slightly larger block of memory for the gradient through the initial value, set the bit we don't need to
+            // zero (corresponding to this appended 1), and then use the rest of it for grad_signature_at_stream.
+
+            grad_initial_value = torch::empty({grad_signature_at_stream.size(0),
+                                               1 + grad_signature_at_stream.size(1)},
+                                              opts);
+            grad_initial_value.narrow(/*dim=*/channel_dim, /*start=*/0, /*length=*/1).zero_();
+            // Copy in grad_signature_at_stream to avoid leaking changes
+            grad_initial_value.narrow(/*dim=*/channel_dim, /*start=*/1,
+                                      /*length=*/grad_initial_value.size(channel_dim) - 1) = grad_signature_at_stream;
+            grad_signature_at_stream = grad_initial_value.narrow(/*dim=*/channel_dim, /*start=*/1,
+                                                                 /*length=*/grad_initial_value.size(channel_dim) - 1);
+        }
+        else {
+            // make sure not to leak changes
+            grad_signature_at_stream = grad_signature_at_stream.clone();
+            // if !initial then just ignore the grad_initial_value bit, that's not interesting.
+            // if initial then it turns out that grad_signature_at_stream will end up computing the gradient through the
+            // initial value, so for consistency with the above branch, we set it here.
+            grad_initial_value = grad_signature_at_stream;
+        }
 
         misc::slice_by_term(grad_signature_at_stream, grad_signature_by_term_at_stream, input_channel_size, depth);
 
@@ -473,8 +536,8 @@ namespace signatory {
             }
             // Recover initial_value in signature_by_term_at_stream
             ta_ops::mult_fused_restricted_exp(-next, signature_by_term_at_stream, inverse, reciprocals);
-            // grad_signature_by_term_at_stream is using the same memory as grad_signature_at_stream, which represents
-            // the gradient through initial_value.
+            // grad_signature_by_term_at_stream is using the same memory as grad_signature_at_stream, which uses the
+            // same memory as grad_initial_value, which represents the gradient through initial_value.
             ta_ops::mult_fused_restricted_exp_backward(grad_next, grad_signature_by_term_at_stream, next,
                                                        signature_by_term_at_stream, inverse, reciprocals);
         }
@@ -493,6 +556,6 @@ namespace signatory {
                                                                                                    opts);
 
         return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
-               {grad_path, grad_basepoint_value, grad_signature_at_stream};
+               {grad_path, grad_basepoint_value, grad_initial_value};
     }
 }  // namespace signatory

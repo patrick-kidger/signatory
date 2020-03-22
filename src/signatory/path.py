@@ -30,7 +30,7 @@ if False:
 
 class _BackwardShortcut(autograd.Function):
     @staticmethod
-    def forward(ctx, signature, depth, *path_pieces):
+    def forward(ctx, signature, depth, scalar_term, *path_pieces):
         if len(path_pieces) == 0:
             raise ValueError('path_pieces must have nonzero length')
 
@@ -39,6 +39,7 @@ class _BackwardShortcut(autograd.Function):
         save_for_backward.extend(path_pieces)
         ctx.save_for_backward(*save_for_backward)
         ctx.depth = depth
+        ctx.scalar_term = scalar_term
 
         return signature
 
@@ -80,9 +81,10 @@ class _BackwardShortcut(autograd.Function):
                                                   False,  # stream
                                                   False,  # basepoint
                                                   False,  # inverse
-                                                  False)  # initial
+                                                  False,  # initial
+                                                  ctx.scalar_term)
 
-        result = [None, None]
+        result = [None, None, None]
         start = 0
         end = 0
         for elem in path_pieces:
@@ -97,11 +99,11 @@ class _BackwardShortcut(autograd.Function):
 # The already-computed signature is just returned during the forward operation.
 # And the backward operation through signature is not computed in favour of shortcutting through path_pieces. (Which
 # is assumed to be the path which has this signature!)
-def _backward_shortcut(signature, path_pieces, depth):
+def _backward_shortcut(signature, path_pieces, depth, scalar_term):
     # (batch, stream, channel) to (stream, batch, channel)
     path_pieces = [path_piece.transpose(0, 1) for path_piece in path_pieces]
     # .detach() so that no gradients are taken through this argument
-    return _BackwardShortcut.apply(signature.detach(), depth, *path_pieces)
+    return _BackwardShortcut.apply(signature.detach(), depth, scalar_term, *path_pieces)
 
 
 class Path(object):
@@ -122,10 +124,14 @@ class Path(object):
             called with. If True, then it will be accessible as the :code:`.path` attribute. This argument may be set to
             False if it is known that the underlying path is no longer of interest and should not kept in memory just
             because it was passed as an argument here.
+
+        scalar_term (bool, optional): Defaults to False. Whether to include the scalar '1' when calling the
+            :meth:`signatory.Path.signature` method; see also the equivalent argument for :func:`signatory.signature`.
     """
-    def __init__(self, path, depth, basepoint=False, remember_path=True, **kwargs):
-        # type: (torch.Tensor, int, Union[bool, torch.Tensor], bool, **Any) -> None
+    def __init__(self, path, depth, basepoint=False, remember_path=True, scalar_term=False, **kwargs):
+        # type: (torch.Tensor, int, Union[bool, torch.Tensor], bool, bool, **Any) -> None
         self._remember_path = remember_path
+        self._scalar_term = scalar_term
         self._depth = depth
 
         self._signature = []
@@ -140,7 +146,7 @@ class Path(object):
 
         self._batch_size = path.size(-3)
         self._channels = path.size(-1)
-        self._signature_channels = smodule.signature_channels(self._channels, self._depth)
+        self._signature_channels = smodule.signature_channels(self._channels, self._depth, self._scalar_term)
         self._logsignature_channels = lmodule.logsignature_channels(self._channels, self._depth)
 
         if remember_path:
@@ -229,7 +235,8 @@ class Path(object):
             inverse_sig_at_start = self._inverse_signature[index_sig_start][:, sig_start, :]
 
             # Find the signature on [start:end]
-            signature = smodule.multi_signature_combine([inverse_sig_at_start, signature], self._channels, self.depth)
+            signature = smodule.multi_signature_combine([inverse_sig_at_start, signature], self._channels, self.depth,
+                                                        scalar_term=self._scalar_term)
 
         # Find path[start:end]
         path_pieces = []
@@ -256,7 +263,7 @@ class Path(object):
         #
         # This obviously isn't desirable if start takes a large value - lots of unnecessary work - so here we insert a
         # custom backwards that shortcuts that whole procedure.
-        return _backward_shortcut(signature, path_pieces, self._depth)
+        return _backward_shortcut(signature, path_pieces, self._depth, self._scalar_term)
 
     @staticmethod
     def _locate(lengths, index):
@@ -284,11 +291,13 @@ class Path(object):
         try:
             signature_to_logsignature_instance = self._signature_to_logsignature_instances[(self._channels,
                                                                                             self._depth,
-                                                                                            mode)]
+                                                                                            mode,
+                                                                                            self._scalar_term)]
         except KeyError:
             signature_to_logsignature_instance = lmodule.SignatureToLogSignature(self._channels, self._depth,
-                                                                                 stream=False, mode=mode)
-            self._signature_to_logsignature_instances[(self._channels, self._depth, mode)] = signature_to_logsignature_instance
+                                                                                 stream=False, mode=mode,
+                                                                                 scalar_term=self._scalar_term)
+            self._signature_to_logsignature_instances[(self._channels, self._depth, mode, self._scalar_term)] = signature_to_logsignature_instance
         return signature_to_logsignature_instance(signature)
 
     def update(self, path):
@@ -313,9 +322,10 @@ class Path(object):
         self._update(path, initial, inverse_initial)
 
     def _update(self, path, initial, inverse_initial):
-        signature = smodule.signature(path, self._depth, stream=True, basepoint=self._end, initial=initial)
+        signature = smodule.signature(path, self._depth, stream=True, basepoint=self._end, initial=initial,
+                                      scalar_term=self._scalar_term)
         inverse_signature = smodule.signature(path, self._depth, stream=True, basepoint=self._end, inverse=True,
-                                              initial=inverse_initial)
+                                              initial=inverse_initial, scalar_term=self._scalar_term)
         self._signature.append(signature)
         self._inverse_signature.append(inverse_signature)
 

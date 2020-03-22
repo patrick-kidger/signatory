@@ -50,11 +50,19 @@ class _IisignatureSignatureFunction(autograd.Function):
                             dtype=ctx.dtype), None
 
 
-def iisignature_signature(path, depth, stream=False, basepoint=False, inverse=False):
+def iisignature_signature(path, depth, stream=False, basepoint=False, inverse=False, scalar_term=False):
     """Duplicates signatory.signature's functionality using iisignature, for testing purposes."""
 
-    return r.iisignature_signature_or_logsignature(_IisignatureSignatureFunction.apply, path, depth, stream, basepoint,
-                                                   inverse)
+    def fn(path, depth):
+        signature = _IisignatureSignatureFunction.apply(path, depth)
+        if scalar_term:
+            out = torch.ones(signature.size(0), 1 + signature.size(1), dtype=signature.dtype,
+                             device=signature.device)
+            out[:, 1:] = signature
+            signature = out
+        return signature
+
+    return r.iisignature_signature_or_logsignature(fn, path, depth, stream, basepoint, inverse)
 
 
 def test_forward():
@@ -67,31 +75,32 @@ def test_forward():
                     for input_channels in (1, 2, 6):
                         for depth in (1, 2, 4, 6):
                             for inverse in (False, True):
-                                _test_forward(signature_combine, signature_grad, amount, device, batch_size,
-                                              input_stream, input_channels, depth, inverse)
+                                for scalar_term in (False, True):
+                                    _test_forward(signature_combine, signature_grad, amount, device, batch_size,
+                                                  input_stream, input_channels, depth, inverse, scalar_term)
 
 
 def _test_forward(signature_combine, signature_grad, amount, device, batch_size, input_stream, input_channels, depth,
-                  inverse):
+                  inverse, scalar_term):
     paths = []
     for _ in range(amount):
         paths.append(torch.rand(batch_size, input_stream, input_channels, device=device, dtype=torch.double))
     signatures = []
     basepoint = False
     for path in paths:
-        signature = iisignature_signature(path, depth, basepoint=basepoint, inverse=inverse)
+        signature = iisignature_signature(path, depth, basepoint=basepoint, inverse=inverse, scalar_term=scalar_term)
         if signature_grad:
             signature.requires_grad_()
         signatures.append(signature)
         basepoint = path[:, -1]
     if signature_combine:
         combined_signatures = signatory.signature_combine(signatures[0], signatures[1], input_channels, depth,
-                                                          inverse=inverse)
+                                                          inverse=inverse, scalar_term=scalar_term)
     else:
         combined_signatures = signatory.multi_signature_combine(signatures, input_channels, depth,
-                                                                inverse=inverse)
+                                                                inverse=inverse, scalar_term=scalar_term)
     combined_paths = torch.cat(paths, dim=1)
-    true_combined_signatures = iisignature_signature(combined_paths, depth, inverse=inverse)
+    true_combined_signatures = iisignature_signature(combined_paths, depth, inverse=inverse, scalar_term=scalar_term)
     h.diff(combined_signatures, true_combined_signatures)
 
     if signature_grad:
@@ -107,17 +116,19 @@ def _test_forward(signature_combine, signature_grad, amount, device, batch_size,
 
 
 def test_backward():
-    """Tests that the backwards calculation for combing signatures produces the correct values."""
+    """Tests that the backwards calculation for combining signatures produces the correct values."""
     for signature_combine, amount in ((True, 2), (False, 1), (False, 2), (False, 3), (False, 10)):
         for device in h.get_devices():
             for batch_size, input_stream, input_channels in h.random_sizes():
                 for depth in (1, 2, 4, 6):
-                    inverse = random.choice([False, True])
-                    _test_backward(signature_combine, amount, device, batch_size, input_stream, input_channels,
-                                   depth, inverse)
+                    for scalar_term in (False, True):
+                        inverse = random.choice([False, True])
+                        _test_backward(signature_combine, amount, device, batch_size, input_stream, input_channels,
+                                       depth, inverse, scalar_term)
 
 
-def _test_backward(signature_combine, amount, device, batch_size, input_stream, input_channels, depth, inverse):
+def _test_backward(signature_combine, amount, device, batch_size, input_stream, input_channels, depth, inverse,
+                   scalar_term):
     paths = []
     for _ in range(amount):
         paths.append(torch.rand(batch_size, input_stream, input_channels, device=device, dtype=torch.double,
@@ -125,7 +136,7 @@ def _test_backward(signature_combine, amount, device, batch_size, input_stream, 
     signatures = []
     basepoint = False
     for path in paths:
-        signature = iisignature_signature(path, depth, basepoint=basepoint, inverse=inverse)
+        signature = iisignature_signature(path, depth, basepoint=basepoint, inverse=inverse, scalar_term=scalar_term)
         signatures.append(signature)
         basepoint = path[:, -1]
 
@@ -146,16 +157,17 @@ def _test_backward(signature_combine, amount, device, batch_size, input_stream, 
 
     if signature_combine:
         combined_signatures = signatory.signature_combine(signatures[0], signatures[1], input_channels, depth,
-                                                          inverse=inverse)
+                                                          inverse=inverse, scalar_term=scalar_term)
     else:
-        combined_signatures = signatory.multi_signature_combine(signatures, input_channels, depth, inverse=inverse)
+        combined_signatures = signatory.multi_signature_combine(signatures, input_channels, depth, inverse=inverse,
+                                                                scalar_term=scalar_term)
     grad = torch.rand_like(combined_signatures)
     combined_signatures.backward(grad)
     path_grads = [path.grad.clone() for path in paths]
     for path in paths:
         path.grad.zero_()
 
-    true_signature = iisignature_signature(torch.cat(paths, dim=1), depth, inverse=inverse)
+    true_signature = iisignature_signature(torch.cat(paths, dim=1), depth, inverse=inverse, scalar_term=scalar_term)
     true_signature.backward(grad)
     for path_grad, path in zip(path_grads, paths):
         h.diff(path_grad, path.grad)
@@ -169,12 +181,13 @@ def test_no_adjustments():
                 for batch_size, input_stream, input_channels in h.random_sizes():
                     for depth in (1, 2, 5):
                         for inverse in (False, True):
-                            _test_no_adjustments(signature_combine, amount, device, batch_size, input_stream,
-                                                 input_channels, depth, inverse, signature_grad)
+                            for scalar_term in (False, True):
+                                _test_no_adjustments(signature_combine, amount, device, batch_size, input_stream,
+                                                     input_channels, depth, inverse, signature_grad, scalar_term)
 
 
 def _test_no_adjustments(signature_combine, amount, device, batch_size, input_stream, input_channels, depth, inverse,
-                         signature_grad):
+                         signature_grad, scalar_term):
     paths = []
     for _ in range(amount):
         paths.append(torch.rand(batch_size, input_stream, input_channels, device=device, dtype=torch.double))
@@ -183,7 +196,7 @@ def _test_no_adjustments(signature_combine, amount, device, batch_size, input_st
     signatures_clone = []
     basepoint = False
     for path in paths:
-        signature = iisignature_signature(path, depth, basepoint=basepoint, inverse=inverse)
+        signature = iisignature_signature(path, depth, basepoint=basepoint, inverse=inverse, scalar_term=scalar_term)
         signatures_clone.append(signature.clone())
         if signature_grad:
             signature.requires_grad_()
@@ -191,10 +204,10 @@ def _test_no_adjustments(signature_combine, amount, device, batch_size, input_st
         basepoint = path[:, -1]
     if signature_combine:
         combined_signatures = signatory.signature_combine(signatures[0], signatures[1], input_channels, depth,
-                                                          inverse=inverse)
+                                                          inverse=inverse, scalar_term=scalar_term)
     else:
         combined_signatures = signatory.multi_signature_combine(signatures, input_channels, depth,
-                                                                inverse=inverse)
+                                                                inverse=inverse, scalar_term=scalar_term)
 
     if signature_grad:
         grad = torch.rand_like(combined_signatures)
@@ -217,12 +230,13 @@ def test_memory_leaks():
             for batch_size, input_stream, input_channels in h.random_sizes():
                 for depth in (1, 2, 5):
                     for inverse in (False, True):
-                        _test_memory_leaks(signature_combine, amount, batch_size, input_stream, input_channels, depth,
-                                           inverse, signature_grad)
+                        for scalar_term in (False, True):
+                            _test_memory_leaks(signature_combine, amount, batch_size, input_stream, input_channels,
+                                               depth, inverse, signature_grad, scalar_term)
 
 
 def _test_memory_leaks(signature_combine, amount, batch_size, input_stream, input_channels, depth, inverse,
-                       signature_grad):
+                       signature_grad, scalar_term):
 
     def one_iteration():
         gc.collect()
@@ -234,16 +248,17 @@ def _test_memory_leaks(signature_combine, amount, batch_size, input_stream, inpu
         signatures = []
         basepoint = False
         for path in paths:
-            signature = iisignature_signature(path, depth, basepoint=basepoint, inverse=inverse)
+            signature = iisignature_signature(path, depth, basepoint=basepoint, inverse=inverse,
+                                              scalar_term=scalar_term)
             if signature_grad:
                 signature.requires_grad_()
             signatures.append(signature)
         if signature_combine:
             combined_signatures = signatory.signature_combine(signatures[0], signatures[1], input_channels, depth,
-                                                              inverse=inverse)
+                                                              inverse=inverse, scalar_term=scalar_term)
         else:
             combined_signatures = signatory.multi_signature_combine(signatures, input_channels, depth,
-                                                                    inverse=inverse)
+                                                                    inverse=inverse, scalar_term=scalar_term)
         if signature_grad:
             grad = torch.rand_like(combined_signatures)
             combined_signatures.backward(grad)

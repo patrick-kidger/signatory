@@ -44,17 +44,18 @@ def _interpret_mode(mode):
 
 class _SignatureToLogsignatureFunction(autograd.Function):
     @staticmethod
-    def forward(ctx, signature, channels, depth, stream, mode, lyndon_info):
+    def forward(ctx, signature, channels, depth, stream, mode, lyndon_info, scalar_term):
         mode = _interpret_mode(mode)
 
         logsignature_, lyndon_info_capsule = impl.signature_to_logsignature_forward(signature, channels, depth, stream,
-                                                                                     mode, lyndon_info)
+                                                                                     mode, lyndon_info, scalar_term)
         ctx.save_for_backward(signature.detach())
         ctx.channels = channels
         ctx.depth = depth
         ctx.stream = stream
         ctx.mode = mode
         ctx.lyndon_info_capsule = lyndon_info_capsule
+        ctx.scalar_term = scalar_term
 
         return logsignature_
 
@@ -64,22 +65,24 @@ class _SignatureToLogsignatureFunction(autograd.Function):
         signature, = ctx.saved_tensors
 
         grad_signature = impl.signature_to_logsignature_backward(grad_logsignature, signature, ctx.channels, ctx.depth,
-                                                                 ctx.stream, ctx.mode, ctx.lyndon_info_capsule)
+                                                                 ctx.stream, ctx.mode, ctx.lyndon_info_capsule,
+                                                                 ctx.scalar_term)
 
-        return grad_signature, None, None, None, None, None
+        return grad_signature, None, None, None, None, None, None
 
 
-def _signature_to_logsignature(signature, channels, depth, stream, mode, lyndon_info):
+def _signature_to_logsignature(signature, channels, depth, stream, mode, lyndon_info, scalar_term):
     if stream:
         signature = signature.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
-    logsignature_ = _SignatureToLogsignatureFunction.apply(signature, channels, depth, stream, mode, lyndon_info)
+    logsignature_ = _SignatureToLogsignatureFunction.apply(signature, channels, depth, stream, mode, lyndon_info,
+                                                           scalar_term)
     if stream:
         logsignature_ = logsignature_.transpose(0, 1)  # (stream, batch, channel) to (batch, stream, channel)
     return logsignature_
 
 
-def signature_to_logsignature(signature, channels, depth, stream=False, mode="words"):
-    # type: (torch.Tensor, int, int, bool, str) -> torch.Tensor
+def signature_to_logsignature(signature, channels, depth, stream=False, mode="words", scalar_term=False):
+    # type: (torch.Tensor, int, int, bool, str, bool) -> torch.Tensor
     """Calculates the logsignature corresponding to a signature.
 
     Arguments:
@@ -94,6 +97,9 @@ def signature_to_logsignature(signature, channels, depth, stream=False, mode="wo
             called with.
 
         mode (str, optional): Defaults to :code:`"words"`. As :func:`signatory.logsignature`.
+
+        scalar_term (bool, optional): Defaults to False. The value of :attr:`scalar_term` that
+            :func:`signatory.signature` was called with.
 
     Example:
         .. code-block:: python
@@ -111,7 +117,7 @@ def signature_to_logsignature(signature, channels, depth, stream=False, mode="wo
         :func:`signatory.logsignature`.
     """
     # Go via the class so that it uses a cached lyndon info capsule, if we have one already for some reason.
-    return SignatureToLogSignature(channels, depth, stream, mode)(signature)
+    return SignatureToLogSignature(channels, depth, stream, mode, scalar_term)(signature)
 
 
 class SignatureToLogSignature(nn.Module):
@@ -130,6 +136,8 @@ class SignatureToLogSignature(nn.Module):
         stream (bool, optional): as :func:`signatory.signature_to_logsignature`.
 
         mode (str, optional): as :func:`signatory.signature_to_logsignature`.
+
+        scalar_term (bool, optional): as :func:`signatory.signature_to_logsignature`.
     """
 
     _lyndon_info_capsule_cache = weakref.WeakValueDictionary()
@@ -139,14 +147,21 @@ class SignatureToLogSignature(nn.Module):
         def __init__(self, item):
             self.item = item
 
-    def __init__(self, channels, depth, stream=False, mode="words", **kwargs):
-        # type: (int, int, bool, str, **Any) -> None
+        def __copy__(self):
+            return self
+
+        def __deepcopy__(self, memodict):
+            return self
+
+    def __init__(self, channels, depth, stream=False, mode="words", scalar_term=False, **kwargs):
+        # type: (int, int, bool, str, bool, **Any) -> None
         super(SignatureToLogSignature, self).__init__(**kwargs)
 
         self._channels = channels
         self._depth = depth
         self._stream = stream
         self._mode = mode
+        self._scalar_term = scalar_term
 
         self._lyndon_info_capsule = self._get_lyndon_info(channels, depth, mode)
 
@@ -176,11 +191,11 @@ class SignatureToLogSignature(nn.Module):
                           "slow to calculate, and the GPU offers no speedup. Consider mode='words' instead.")
 
         return _signature_to_logsignature(signature, self._channels, self._depth, self._stream, self._mode,
-                                          self._lyndon_info_capsule.item)
+                                          self._lyndon_info_capsule.item, self._scalar_term)
 
     def extra_repr(self):
-        return ('channels={channels}, depth={depth}, stream={stream}, mode{mode}'
-                .format(channels=self._channels, depth=self._depth, stream=self._stream, mode=self._mode))
+        return ('channels={channels}, depth={depth}, stream={stream}, mode={mode}'
+                .format(channels=self._channels, depth=self._depth, stream=self._stream, mode=repr(self._mode)))
 
 
 # Alias
@@ -325,8 +340,8 @@ class LogSignature(nn.Module):
         return self._get_signature_to_logsignature_instance(path.size(-1))(signature)
 
     def extra_repr(self):
-        return ('depth={depth}, stream={stream}, inverse={inverse}, mode{mode}'
-                .format(depth=self._depth, stream=self._stream, inverse=self._inverse, mode=self._mode))
+        return ('depth={depth}, stream={stream}, inverse={inverse}, mode={mode}'
+                .format(depth=self._depth, stream=self._stream, inverse=self._inverse, mode=repr(self._mode)))
 
 
 # Alias

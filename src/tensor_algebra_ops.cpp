@@ -1055,25 +1055,29 @@ namespace signatory {
 
     torch::Tensor signature_combine_forward(std::vector<torch::Tensor> sigtensors, // copy not reference as we modify it
                                             int64_t input_channels,
-                                            s_size_type depth) {
+                                            s_size_type depth,
+                                            bool scalar_term) {
         // Perform a bunch of argument checking
 
         misc::checkargs_channels_depth(input_channels, depth);
         if (sigtensors.size() == 0) {
             throw std::invalid_argument("sigtensors must be of nonzero length.");
         }
-        int64_t expected_signature_channels = signature_channels(input_channels, depth);
+        int64_t expected_signature_channels = signature_channels(input_channels, depth, scalar_term);
         if (sigtensors[0].ndimension() != 2) {
             throw std::invalid_argument("An element of sigtensors is not two-dimensional. Every element must have "
                                         "two dimensions, corresponding to "
-                                        "(batch, signature_channels(input_channels, depth))");
+                                        "(batch, signature_channels(input_channels, depth, scalar_term))");
         }
+
+        py::gil_scoped_release release;
+
         int64_t batch_size = sigtensors[0].size(batch_dim);
         for (auto& elem : sigtensors) {
             if (elem.ndimension() != 2) {
                 throw std::invalid_argument("An element of sigtensors is not two-dimensional. Every element must have "
                                             "two dimensions, corresponding to "
-                                            "(batch, signature_channels(input_channels, depth))");
+                                            "(batch, signature_channels(input_channels, depth, scalar_term))");
             }
             if (elem.size(batch_dim) != batch_size) {
                 throw std::invalid_argument("Not every element of sigtensors has the same number of batch dimensions.");
@@ -1087,24 +1091,41 @@ namespace signatory {
 
         // Actually do the computation
 
-        torch::Tensor out = sigtensors[0].clone();
+        torch::Tensor out;
+        torch::Tensor out_with_scalar = sigtensors[0].clone();
+        if (scalar_term) {
+            out = out_with_scalar.narrow(/*dim=*/channel_dim, /*start=*/1,
+                                         /*length=*/out_with_scalar.size(channel_dim) - 1);
+        }
+        else {
+            out = out_with_scalar;
+        }
         std::vector<torch::Tensor> out_vector;
         misc::slice_by_term(out, out_vector, input_channels, depth);
         for (s_size_type sigtensor_index = 1;
              sigtensor_index < static_cast<s_size_type>(sigtensors.size());
              ++sigtensor_index) {
             std::vector<torch::Tensor> sigtensor_vector;
-            misc::slice_by_term(sigtensors[sigtensor_index], sigtensor_vector, input_channels, depth);
+            torch::Tensor sigtensor = sigtensors[sigtensor_index];
+            if (scalar_term) {
+                sigtensor = sigtensor.narrow(/*dim=*/channel_dim, /*start=*/1,
+                                             /*length=*/sigtensor.size(channel_dim) - 1);
+            }
+            misc::slice_by_term(sigtensor, sigtensor_vector, input_channels, depth);
             ta_ops::mult(out_vector, sigtensor_vector, /*inverse=*/false);
         }
-        return out;
+        return out_with_scalar;
     }
 
     std::vector<torch::Tensor> signature_combine_backward(torch::Tensor grad_out,
                                                           // copy not reference as we modify it
                                                           std::vector<torch::Tensor> sigtensors,
                                                           int64_t input_channels,
-                                                          s_size_type depth) {
+                                                          s_size_type depth,
+                                                          bool scalar_term) {
+
+        py::gil_scoped_release release;
+
         grad_out = grad_out.detach();
         for (auto& elem : sigtensors) {
             elem = elem.detach();
@@ -1112,12 +1133,26 @@ namespace signatory {
 
         // Allocate memory for the output gradients
         std::vector<torch::Tensor> grad_sigtensors;
+        std::vector<torch::Tensor> grad_sigtensors_with_scalars;
         grad_sigtensors.reserve(sigtensors.size());
+        grad_sigtensors_with_scalars.reserve(sigtensors.size());
         grad_sigtensors.emplace_back();  // we'll fill in the first slot at the very end
+        grad_sigtensors_with_scalars.emplace_back();
         for (s_size_type sigtensors_index = 1;
              sigtensors_index < static_cast<s_size_type>(sigtensors.size());
              ++sigtensors_index) {
-            grad_sigtensors.push_back(torch::empty_like(sigtensors[sigtensors_index]));
+            torch::Tensor grad_sigtensor_with_scalar = torch::empty_like(sigtensors[sigtensors_index]);
+            torch::Tensor grad_sigtensor;
+            if (scalar_term) {
+                grad_sigtensor_with_scalar.narrow(/*dim=*/channel_dim, /*start=*/0, /*length=*/1).zero_();
+                grad_sigtensor = grad_sigtensor_with_scalar.narrow(/*dim=*/channel_dim, /*start=*/1,
+                                                                   /*length=*/grad_sigtensor_with_scalar.size(channel_dim) - 1);
+            }
+            else {
+                grad_sigtensor = grad_sigtensor_with_scalar;
+            }
+            grad_sigtensors.push_back(grad_sigtensor);
+            grad_sigtensors_with_scalars.push_back(grad_sigtensor_with_scalar);
         }
 
         // Recompute the inputs to each tensor multiplication
@@ -1131,6 +1166,9 @@ namespace signatory {
         }
         scratch_vector_vector.reserve(reserve_amount);
         torch::Tensor scratch = sigtensors[0];  // no clone necessary here, we're going to do it in the loop below
+        if (scalar_term) {
+            scratch = scratch.narrow(/*dim=*/channel_dim, /*start=*/1, /*length=*/scratch.size(channel_dim) - 1);
+        }
         // -1 to the size because we don't need to store the final output
         for (s_size_type sigtensor_index = 1;
              sigtensor_index < static_cast<s_size_type>(sigtensors.size()) - 1;
@@ -1140,14 +1178,28 @@ namespace signatory {
             misc::slice_by_term(scratch, scratch_vector, input_channels, depth);
 
             std::vector<torch::Tensor> sigtensor_vector;
-            misc::slice_by_term(sigtensors[sigtensor_index], sigtensor_vector, input_channels, depth);
+            torch::Tensor sigtensor = sigtensors[sigtensor_index];
+            if (scalar_term) {
+                sigtensor = sigtensor.narrow(/*dim=*/channel_dim, /*start=*/1,
+                                             /*length=*/sigtensor.size(channel_dim) - 1);
+            }
+            misc::slice_by_term(sigtensor, sigtensor_vector, input_channels, depth);
             ta_ops::mult(scratch_vector, sigtensor_vector, /*inverse=*/false);
 
             scratch_vector_vector.push_back(scratch_vector);
         }
 
         // Allocate memory for the gradient when computing backward through the tensor multiplications
-        torch::Tensor grad_scratch = grad_out.clone();
+        torch::Tensor grad_scratch_with_scalar = grad_out.clone();
+        torch::Tensor grad_scratch;
+        if (scalar_term) {
+            grad_scratch_with_scalar.narrow(/*dim=*/channel_dim, /*start=*/0, /*length=*/1).zero_();
+            grad_scratch = grad_scratch_with_scalar.narrow(/*dim=*/channel_dim, /*start=*/1,
+                                                           /*length=*/grad_out.size(channel_dim) - 1);
+        }
+        else {
+            grad_scratch = grad_scratch_with_scalar;
+        }
         std::vector<torch::Tensor> grad_scratch_vector;
         misc::slice_by_term(grad_scratch, grad_scratch_vector, input_channels, depth);
 
@@ -1155,7 +1207,12 @@ namespace signatory {
         for (s_size_type sigtensors_index = sigtensors.size() - 1; sigtensors_index >= 2; --sigtensors_index) {
             // Recompute the inputs of each multiplication
             std::vector<torch::Tensor> sigtensor_vector;
-            misc::slice_by_term(sigtensors[sigtensors_index], sigtensor_vector, input_channels, depth);
+            torch::Tensor sigtensor = sigtensors[sigtensors_index];
+            if (scalar_term) {
+                sigtensor = sigtensor.narrow(/*dim=*/channel_dim, /*start=*/1,
+                                             /*length=*/sigtensor.size(channel_dim) - 1);
+            }
+            misc::slice_by_term(sigtensor, sigtensor_vector, input_channels, depth);
 
             // Actually perform the backward operation
             std::vector<torch::Tensor> grad_sigtensor_vector;
@@ -1173,17 +1230,28 @@ namespace signatory {
             // Correponds to sigtensors_index == 1
             // This iteration pulled out because we don't need to do the final division
             std::vector<torch::Tensor> sigtensor_vector;
-            misc::slice_by_term(sigtensors[1], sigtensor_vector, input_channels, depth);
+            torch::Tensor sigtensor_one = sigtensors[1];
+            if (scalar_term) {
+                sigtensor_one = sigtensor_one.narrow(/*dim=*/channel_dim, /*start=*/1,
+                                                     /*length=*/sigtensor_one.size(channel_dim) - 1);
+            }
+            misc::slice_by_term(sigtensor_one, sigtensor_vector, input_channels, depth);
             std::vector<torch::Tensor> first_sigtensor_vector;
-            misc::slice_by_term(sigtensors[0], first_sigtensor_vector, input_channels, depth);
+            torch::Tensor sigtensor_zero = sigtensors[0];
+            if (scalar_term) {
+                sigtensor_zero = sigtensor_zero.narrow(/*dim=*/channel_dim, /*start=*/1,
+                                                       /*length=*/sigtensor_zero.size(channel_dim) - 1);
+            }
+            misc::slice_by_term(sigtensor_zero, first_sigtensor_vector, input_channels, depth);
             std::vector<torch::Tensor> grad_sigtensor_vector;
             misc::slice_by_term(grad_sigtensors[1], grad_sigtensor_vector, input_channels, depth);
             ta_ops::mult_backward</*add_not_copy=*/false>(grad_scratch_vector, grad_sigtensor_vector,
                                                           first_sigtensor_vector, sigtensor_vector);
         }
         // Fill in the gradient for the very first sigtensor.
-        grad_sigtensors[0] = grad_scratch;
+        grad_sigtensors_with_scalars[0] = grad_scratch_with_scalar;
+        grad_sigtensors[0] = grad_scratch;  // unnecessary, I'm pretty sure. TODO: remove this + shorten grad_sigtensors by one?
 
-        return grad_sigtensors;
+        return grad_sigtensors_with_scalars;
     }
 }  // namespace signatory
