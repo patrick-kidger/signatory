@@ -2,7 +2,7 @@
 
 Installation
 ############
-Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7 and Linux, Mac, Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.2.0 or 1.3.0.
+Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7 and Linux, Mac, Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.2.0, 1.3.0 or 1.3.1.
 
 Install via:
 
