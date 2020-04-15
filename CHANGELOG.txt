@@ -1,4 +1,4 @@
-1.1.7
+1.2.0
 -----
 Added support for PyTorch 1.4.0
 Added 'scalar_term' argument to the 'signature' function (and by extension many other functions that take signatures as arguments.)
@@ -7,6 +7,7 @@ Made SignatureToLogSignature and LogSignature classes deepcopyable.
 Fixed the repr for LogSignature and SignatureToLogSignature.
 Fixed some parallelism to achieve even greater speedups.
 Released the Global Interpreter Lock during execution of Signatory's functions.
+Bumped the minor version because frankly we've changed a lot since the 1.1.0 release!
 
 1.1.6
 -----
