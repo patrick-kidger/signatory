@@ -21,10 +21,6 @@
 
 namespace signatory {
     namespace misc {
-        torch::TensorOptions make_opts(torch::Tensor tensor) {
-            return torch::TensorOptions().dtype(tensor.dtype()).device(tensor.device());
-        }
-
         torch::Tensor make_reciprocals(s_size_type depth, torch::TensorOptions opts) {
             if (depth > 1) {
                 return torch::linspace(2, depth, depth - 1, opts).reciprocal();

@@ -197,7 +197,7 @@ namespace signatory {
             // Don't need to track gradients when we have a custom backward
             signature = signature.detach();
 
-            torch::TensorOptions opts = misc::make_opts(signature);
+            torch::TensorOptions opts = signature.options();
             torch::Tensor reciprocals = misc::make_reciprocals(depth, opts);
             int64_t output_stream_size = stream ? signature.size(stream_dim) : -1;
 
@@ -298,7 +298,7 @@ namespace signatory {
         grad_logsignature = grad_logsignature.detach();
         signature = signature.detach();
 
-        torch::TensorOptions opts = misc::make_opts(signature);
+        torch::TensorOptions opts = signature.options();
         torch::Tensor reciprocals = misc::make_reciprocals(depth, opts);
         int64_t output_stream_size = stream ? signature.size(stream_dim) : -1;
         int64_t output_channel_size = signature.size(channel_dim);

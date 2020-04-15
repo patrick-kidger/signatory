@@ -29,6 +29,28 @@
 namespace signatory {
     namespace signature {
         namespace detail {
+            // Check if we're using MSVC, which still only uses OpenMP v2.0, which was defined when the dinosaurs still
+            // roamed the earth.
+            #if _OPENMP == 200203
+            struct omp_nested {
+                omp_nested() :
+                was_omp_nested(omp_get_nested()), was_omp_in_parallel(omp_in_parallel())
+                {
+                    if (!was_omp_in_parallel) {
+                        // parallelising over batch and stream
+                        omp_set_nested(true);
+                    }
+                }
+                ~omp_nested() {
+                    if (!was_omp_in_parallel) {
+                        omp_set_nested(was_omp_nested);
+                    }
+                }
+            private:
+                int was_omp_nested;
+                int was_omp_in_parallel;
+            };
+            #else
             struct omp_nested {
                 omp_nested() :
                 was_omp_max_active_levels(omp_get_max_active_levels()), was_omp_in_parallel(omp_in_parallel())
@@ -47,6 +69,7 @@ namespace signatory {
                 int was_omp_max_active_levels;
                 int was_omp_in_parallel;
             };
+            #endif
 
             struct bool_wrapper { bool value; };
 
@@ -197,7 +220,6 @@ namespace signatory {
         if (!path.is_floating_point()) {
             throw std::invalid_argument("Argument 'path' must be of floating point type.");
         }
-        torch::TensorOptions path_opts = misc::make_opts(path);
         if (basepoint) {
             if (basepoint_value.ndimension() != 2) {
                 throw std::invalid_argument("Argument 'basepoint' must be a 2-dimensional tensor, corresponding to "
@@ -208,9 +230,11 @@ namespace signatory {
                 throw std::invalid_argument("Arguments 'basepoint' and 'path' must have dimensions of the same "
                                             "size.");
             }
-            if (path_opts != misc::make_opts(basepoint_value)) {
-                throw std::invalid_argument("Argument 'basepoint' does not have the same dtype or device as "
-                                            "'path'.");
+            if (path.device() != basepoint_value.device()) {
+                throw std::invalid_argument("Argument 'basepoint' does not have the same device as 'path'.");
+            }
+            if (path.dtype() != basepoint_value.dtype()) {
+                throw std::invalid_argument("Argument 'basepoint' does not have the same dtype as 'path'.");
             }
         }
         if (initial) {
@@ -223,8 +247,11 @@ namespace signatory {
                 throw std::invalid_argument("Argument 'initial' must have correctly sized batch and channel "
                                             "dimensions.");
             }
-            if (path_opts != misc::make_opts(initial_value)) {
-                throw std::invalid_argument("Argument 'initial' does not have the same dtype or device as 'path'.");
+            if (path.device() != initial_value.device()) {
+                throw std::invalid_argument("Argument 'initial' does not have the same device as 'path'.");
+            }
+            if (path.dtype() != initial_value.dtype()) {
+                throw std::invalid_argument("Argument 'initial' does not have the same dtype as 'path'.");
             }
         }
     }
@@ -253,7 +280,7 @@ namespace signatory {
         int64_t input_channel_size = path.size(channel_dim);
         int64_t output_stream_size = path.size(stream_dim) - (basepoint ? 0 : 1);
         int64_t output_channel_size = signature_channels(input_channel_size, depth, false);
-        torch::TensorOptions opts = misc::make_opts(path);
+        torch::TensorOptions opts = path.options();
         torch::Tensor reciprocals = misc::make_reciprocals(depth, opts);
 
         // Compute path increments. Obviously.
@@ -421,7 +448,7 @@ namespace signatory {
         signature = signature.detach();
         path_increments = path_increments.detach();
 
-        torch::TensorOptions opts = misc::make_opts(signature);
+        torch::TensorOptions opts = signature.options();
         torch::Tensor reciprocals = misc::make_reciprocals(depth, opts);
         int64_t output_stream_size = path_increments.size(stream_dim);
         int64_t input_channel_size = path_increments.size(channel_dim);
