@@ -379,8 +379,6 @@ namespace signatory {
     std::vector<py::object> lyndon_brackets(int64_t channels, int64_t depth) {
         misc::checkargs_channels_depth(channels, depth);
 
-        py::gil_scoped_release release;
-
         lyndon::LyndonWords lyndon_words(channels, depth, lyndon::LyndonWords::bracket_tag);
 
         std::vector<py::object> lyndon_words_as_brackets;
