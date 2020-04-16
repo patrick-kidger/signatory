@@ -52,7 +52,7 @@ def interpret_initial(initial):
 
 class _SignatureFunction(autograd.Function):
     @staticmethod
-    def forward(ctx, path, depth, stream, basepoint, inverse, initial):
+    def forward(ctx, path, depth, stream, basepoint, inverse, initial, scalar_term):
 
         ctx.basepoint_is_tensor = isinstance(basepoint, torch.Tensor)
         ctx.initial_is_tensor = isinstance(initial, torch.Tensor)
@@ -61,13 +61,14 @@ class _SignatureFunction(autograd.Function):
         initial, initial_value = interpret_initial(initial)
 
         signature_, path_increments = impl.signature_forward(path, depth, stream, basepoint, basepoint_value, inverse,
-                                                             initial, initial_value)
+                                                             initial, initial_value, scalar_term)
         ctx.save_for_backward(signature_, path_increments)
         ctx.depth = depth
         ctx.stream = stream
         ctx.basepoint = basepoint
         ctx.inverse = inverse
         ctx.initial = initial
+        ctx.scalar_term = scalar_term
 
         return signature_
 
@@ -78,24 +79,24 @@ class _SignatureFunction(autograd.Function):
 
         grad_path, grad_basepoint, grad_initial = impl.signature_backward(grad_result, signature_, path_increments,
                                                                           ctx.depth, ctx.stream, ctx.basepoint,
-                                                                          ctx.inverse, ctx.initial)
+                                                                          ctx.inverse, ctx.initial, ctx.scalar_term)
 
         if not ctx.basepoint_is_tensor:
             grad_basepoint = None
         if not ctx.initial_is_tensor:
             grad_initial = None
 
-        return grad_path, None, None, grad_basepoint, None, grad_initial, None
+        return grad_path, None, None, grad_basepoint, None, grad_initial, None, None
 
 
-def _signature_checkargs(path, depth, basepoint, initial):
+def _signature_checkargs(path, depth, basepoint, initial, scalar_term):
     path = path.transpose(0, 1)  # (batch, stream, channel) to (stream, batch, channel)
     basepoint, basepoint_value = interpret_basepoint(basepoint, path.size(-2), path.size(-1), path.dtype, path.device)
     initial, initial_value = interpret_initial(initial)
-    impl.signature_checkargs(path, depth, basepoint, basepoint_value, initial, initial_value)
+    impl.signature_checkargs(path, depth, basepoint, basepoint_value, initial, initial_value, scalar_term)
 
 
-def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
+def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial, scalar_term):
     if stream:
         # We can't use this trick in this case
         return
@@ -147,7 +148,8 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
     basepoint = ends.view(batch_size * mult, channel_size)
 
     # noinspection PyUnresolvedReferences
-    result_bulk = _SignatureFunction.apply(path_bulk.transpose(0, 1), depth, stream, basepoint, inverse, None)
+    result_bulk = _SignatureFunction.apply(path_bulk.transpose(0, 1), depth, stream, basepoint, inverse, None,
+                                           scalar_term)
     result_bulk = result_bulk.view(batch_size, mult, result_bulk.size(-1))
     chunks = []
     if isinstance(initial, torch.Tensor):
@@ -158,14 +160,14 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial):
         # (stream, batch, channel)
         # noinspection PyUnresolvedReferences
         result_remainder = _SignatureFunction.apply(path_remainder.transpose(0, 1), depth, stream, basepoint_remainder,
-                                                    inverse, None)
+                                                    inverse, None, scalar_term)
         chunks.append(result_remainder)
 
-    return multi_signature_combine(chunks, channel_size, depth, inverse)
+    return multi_signature_combine(chunks, channel_size, depth, inverse, scalar_term)
 
 
-def signature(path, depth, stream=False, basepoint=False, inverse=False, initial=None):
-    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], bool, Union[None, torch.Tensor]) -> torch.Tensor
+def signature(path, depth, stream=False, basepoint=False, inverse=False, initial=None, scalar_term=False):
+    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], bool, Union[None, torch.Tensor], bool) -> torch.Tensor
 
     r"""Applies the signature transform to a stream of data.
 
@@ -212,6 +214,10 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
             Then this signature is pre-tensor-multiplied on to the signature of :attr:`path`. For a more thorough
             explanation, see :ref:`this example<examples-online>`.
 
+        scalar_term (bool, optional): Defaults to False. If True then the first channel of the computed signature will
+            be filled with the constant 1 (in accordance with the usual mathematical definition). If False then this
+            channel is omitted (in accordance with useful machine learning practice).
+
     Returns:
         A :class:`torch.Tensor`. Given an input :class:`torch.Tensor` of shape :math:`(N, L, C)`, and input arguments
         :attr:`depth`, :attr:`basepoint`, :attr:`stream`, then the return value is, in pseudocode:
@@ -237,11 +243,11 @@ def signature(path, depth, stream=False, basepoint=False, inverse=False, initial
                       "    https://signatory.readthedocs.io/en/latest/pages/examples/online.html\n"
                       "for more information.")
 
-    _signature_checkargs(path, depth, basepoint, initial)
+    _signature_checkargs(path, depth, basepoint, initial, scalar_term)
 
-    result = _signature_batch_trick(path, depth, stream, basepoint, inverse, initial)
+    result = _signature_batch_trick(path, depth, stream, basepoint, inverse, initial, scalar_term)
     if result is None:  # Either because we disabled use of the batch trick, or because the batch trick doesn't apply
-        result = _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial)
+        result = _SignatureFunction.apply(path.transpose(0, 1), depth, stream, basepoint, inverse, initial, scalar_term)
 
     # We have to do the transpose outside of autograd.Function.apply to avoid PyTorch bug 24413
     if stream:
@@ -259,14 +265,17 @@ class Signature(nn.Module):
         stream (bool, optional): as :func:`signatory.signature`.
 
         inverse (bool, optional): as :func:`signatory.signature`.
+
+        scalar_term (bool, optional): as :func:`signatory.signature`.
     """
 
-    def __init__(self, depth, stream=False, inverse=False, **kwargs):
-        # type: (int, bool, bool, **Any) -> None
+    def __init__(self, depth, stream=False, inverse=False, scalar_term=False, **kwargs):
+        # type: (int, bool, bool, bool, **Any) -> None
         super(Signature, self).__init__(**kwargs)
         self.depth = depth
         self.stream = stream
         self.inverse = inverse
+        self.scalar_term = scalar_term
 
     def forward(self, path, basepoint=False, initial=None):
         # type: (torch.Tensor, Union[bool, torch.Tensor], Union[None, torch.Tensor]) -> torch.Tensor
@@ -283,7 +292,7 @@ class Signature(nn.Module):
             As :func:`signatory.signature`.
         """
         return signature(path, self.depth, stream=self.stream, basepoint=basepoint, inverse=self.inverse,
-                         initial=initial)
+                         initial=initial, scalar_term=self.scalar_term)
 
     def extra_repr(self):
         return 'depth={depth}, stream={stream}, inverse={inverse}'.format(depth=self.depth, stream=self.stream,
@@ -291,8 +300,8 @@ class Signature(nn.Module):
 
 
 # A wrapper for the sake of consistent documentation
-def signature_channels(channels, depth):
-    # type: (int, int) -> int
+def signature_channels(channels, depth, scalar_term=False):
+    # type: (int, int, bool) -> int
     r"""Computes the number of output channels from a signature call. Specifically, it computes
 
     .. math::
@@ -304,15 +313,18 @@ def signature_channels(channels, depth):
 
         depth (int): The depth of the signature that is being computed.
 
+        scalar_term (bool, optional): Defaults to False. Whether to include the constant '1' scalar that may be
+            included.
+
     Returns:
         An int specifying the number of channels in the signature of the path.
     """
 
-    return impl.signature_channels(channels, depth)
+    return impl.signature_channels(channels, depth, scalar_term)
 
 
-def extract_signature_term(sigtensor, channels, depth):
-    # type: (torch.Tensor, int, int) -> torch.Tensor
+def extract_signature_term(sigtensor, channels, depth, scalar_term=False):
+    # type: (torch.Tensor, int, int, bool) -> torch.Tensor
     r"""Extracts a particular term from a signature.
 
     The signature to depth :math:`d` of a batch of paths in :math:`\mathbb{R}^\text{C}` is a tensor with
@@ -327,6 +339,8 @@ def extract_signature_term(sigtensor, channels, depth):
 
         depth (int): The depth of the term to be extracted from the signature.
 
+        scalar_term (bool, optional): Whether the signature was called with scalar_term=True or not.
+
     Returns:
         The :class:`torch.Tensor` corresponding to the :attr:`depth` term of the signature.
     """
@@ -335,29 +349,30 @@ def extract_signature_term(sigtensor, channels, depth):
         raise ValueError("in_channels must be at least 1")
 
     if depth == 1:
-        start = 0
+        start = int(scalar_term)
     else:
-        start = signature_channels(channels, depth - 1)
+        start = signature_channels(channels, depth - 1, scalar_term)
     return sigtensor.narrow(dim=-1, start=start, length=channels ** depth)
 
 
 class _SignatureCombineFunction(autograd.Function):
     @staticmethod
-    def forward(ctx, input_channels, depth, *sigtensors):
+    def forward(ctx, input_channels, depth, scalar_term, *sigtensors):
         ctx.input_channels = input_channels
         ctx.depth = depth
+        ctx.scalar_term = scalar_term
         ctx.save_for_backward(*sigtensors)
-        return impl.signature_combine_forward(list(sigtensors), input_channels, depth)
+        return impl.signature_combine_forward(list(sigtensors), input_channels, depth, scalar_term)
 
     @staticmethod
     def backward(ctx, grad):
         sigtensors = ctx.saved_tensors
-        grad = impl.signature_combine_backward(grad, list(sigtensors), ctx.input_channels, ctx.depth)
-        return (None, None) + tuple(grad)
+        grad = impl.signature_combine_backward(grad, list(sigtensors), ctx.input_channels, ctx.depth, ctx.scalar_term)
+        return (None, None, None) + tuple(grad)
 
 
-def signature_combine(sigtensor1, sigtensor2, input_channels, depth, inverse=False):
-    # type: (torch.Tensor, torch.Tensor, int, int, bool) -> torch.Tensor
+def signature_combine(sigtensor1, sigtensor2, input_channels, depth, inverse=False, scalar_term=False):
+    # type: (torch.Tensor, torch.Tensor, int, int, bool, bool) -> torch.Tensor
     r"""Combines two signatures into a single signature.
 
     Usage is most clear by example. See :ref:`examples-combine`.
@@ -382,6 +397,9 @@ def signature_combine(sigtensor1, sigtensor2, input_channels, depth, inverse=Fal
         inverse (bool, optional): Defaults to False. Whether :attr:`sigtensor1` and :attr:`sigtensor2` were created
             with :attr:`inverse=True`. This must be the same for both :attr:`sigtensor1` and :attr:`sigtensor2`.
 
+        scalar_term (bool, optional): Defaults to False. Whether :attr:`sigtensor1` and :attr:`sigtensor2` were created
+            with :attr:`scalar_term=True`. This must the same for both :attr:`sigtensor1` and :attr:`sigtensor2`.
+
     Returns:
         Let :attr:`path1` be the path whose signature is :attr:`sigtensor1`. Let :attr:`path2` be the path whose
         signature is :attr:`sigtensor2`. Then this function returns the signature of the concatenation of :attr:`path1`
@@ -394,11 +412,11 @@ def signature_combine(sigtensor1, sigtensor2, input_channels, depth, inverse=Fal
 
         If this is not done then the return value of this function will be essentially meaningless numbers.
     """
-    return multi_signature_combine([sigtensor1, sigtensor2], input_channels, depth, inverse)
+    return multi_signature_combine([sigtensor1, sigtensor2], input_channels, depth, inverse, scalar_term)
 
 
-def multi_signature_combine(sigtensors, input_channels, depth, inverse=False):
-    # type: (List[torch.Tensor], int, int, bool) -> torch.Tensor
+def multi_signature_combine(sigtensors, input_channels, depth, inverse=False, scalar_term=False):
+    # type: (List[torch.Tensor], int, int, bool, bool) -> torch.Tensor
     r"""Combines multiple signatures into a single signature.
 
     See also :func:`signatory.signature_combine` for a simpler version.
@@ -413,6 +431,8 @@ def multi_signature_combine(sigtensors, input_channels, depth, inverse=False):
 
         inverse (bool, optional): As :func:`signatory.signature_combine`.
 
+        scalar_term (bool, optional): As :func:`signatory.signature_combine`.
+
     Returns:
         Let :attr:`sigtensors` be a list of tensors, call them :math:`\text{sigtensor}_i` for
         :math:`i = 0, 1, \ldots, k`. Let :math:`\text{path}_i` be the path whose signature is
@@ -426,4 +446,4 @@ def multi_signature_combine(sigtensors, input_channels, depth, inverse=False):
     """
     if inverse:
         sigtensors = reversed(sigtensors)
-    return _SignatureCombineFunction.apply(input_channels, depth, *sigtensors)
+    return _SignatureCombineFunction.apply(input_channels, depth, scalar_term, *sigtensors)

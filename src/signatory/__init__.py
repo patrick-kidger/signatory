@@ -14,8 +14,8 @@
 # =========================================================================
 """Signatory: Differentiable computations of the signature and logsignature transforms, on both CPU and GPU.
 
-Project homepage: github.com/patrick-kidger/signatory
-Documentation: signatory.readthedocs.io
+Project homepage: https://github.com/patrick-kidger/signatory
+Documentation: https://signatory.readthedocs.io
 """
 
 
@@ -56,6 +56,6 @@ from .utility import (lyndon_words,
                       all_words)
 
 
-__version__ = "1.1.6"
+__version__ = "1.2.0"
 
 del torch

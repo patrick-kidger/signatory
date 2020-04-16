@@ -30,11 +30,13 @@ depends = ['signature', 'logsignature']
 signatory = v.validate_tests(tests, depends)
 
 
-def signatory_signature_to_logsignature(class_, signature, input_channels, depth, stream, mode):
+def signatory_signature_to_logsignature(class_, signature, input_channels, depth, stream, mode, scalar_term):
     if class_:
-        return signatory.SignatureToLogsignature(input_channels, depth, stream=stream, mode=mode)(signature)
+        return signatory.SignatureToLogsignature(input_channels, depth, stream=stream, mode=mode,
+                                                 scalar_term=scalar_term)(signature)
     else:
-        return signatory.signature_to_logsignature(signature, input_channels, depth, stream=stream, mode=mode)
+        return signatory.signature_to_logsignature(signature, input_channels, depth, stream=stream, mode=mode,
+                                                   scalar_term=scalar_term)
 
 def test_forward():
     """Tests that the forward calculations produce the correct values."""
@@ -45,19 +47,22 @@ def test_forward():
                     for stream in (False, True):
                         for mode in h.all_modes:
                             for signature_grad in (False, True):
-                                _test_forward(class_, device, batch_size, input_stream, input_channels, depth, stream,
-                                              mode, signature_grad)
+                                for scalar_term in (False, True):
+                                    _test_forward(class_, device, batch_size, input_stream, input_channels, depth,
+                                                  stream, mode, signature_grad, scalar_term)
 
 
-def _test_forward(class_, device, batch_size, input_stream, input_channels, depth, stream, mode, signature_grad):
+def _test_forward(class_, device, batch_size, input_stream, input_channels, depth, stream, mode, signature_grad,
+                  scalar_term):
     path = h.get_path(batch_size, input_stream, input_channels, device, path_grad=False)
-    signature = signatory.signature(path, depth, stream=stream)
+    signature = signatory.signature(path, depth, stream=stream, scalar_term=scalar_term)
     if signature_grad:
         signature.requires_grad_()
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', message="The logsignature with mode='brackets' has been requested on the "
                                                   "GPU.", category=UserWarning)
-        logsignature = signatory_signature_to_logsignature(class_, signature, input_channels, depth, stream, mode)
+        logsignature = signatory_signature_to_logsignature(class_, signature, input_channels, depth, stream, mode,
+                                                           scalar_term=scalar_term)
         true_logsignature = signatory.logsignature(path, depth, stream=stream, mode=mode)
     h.diff(logsignature, true_logsignature)
 
@@ -83,8 +88,9 @@ def test_backward_expand_words():
                 for depth in (1, 2, 4, 6):
                     for stream in (False, True):
                         for mode in (h.expand_mode, h.words_mode):
-                            _test_backward(class_, device, batch_size, input_stream, input_channels, depth, stream,
-                                           mode)
+                            for scalar_term in (False, True):
+                                _test_backward(class_, device, batch_size, input_stream, input_channels, depth, stream,
+                                               mode, scalar_term)
 
 
 @pytest.mark.slow
@@ -96,12 +102,14 @@ def test_backward_brackets():
                 for depth in (1, 2, 4, 6):
                     for stream in (False, True):
                         for mode in (h.brackets_mode,):
-                            _test_backward(class_, device, batch_size, input_stream, input_channels, depth, stream,
-                                           mode)
+                            for scalar_term in (False, True):
+                                _test_backward(class_, device, batch_size, input_stream, input_channels, depth, stream,
+                                               mode, scalar_term)
 
 
-def _test_backward(class_, device, batch_size, input_stream, input_channels, depth, stream, mode):
-    # This test runs out of memory! So we don't do this, and do something else instead.
+def _test_backward(class_, device, batch_size, input_stream, input_channels, depth, stream, mode, scalar_term):
+
+    # This test (in the comment below) runs out of memory! So we don't do this, and do something else instead.
     #
     # path = h.get_path(batch_size, input_stream, input_channels, device, path_grad=False)
     # signature = signatory.signature(path, depth, stream=stream)
@@ -118,11 +126,12 @@ def _test_backward(class_, device, batch_size, input_stream, input_channels, dep
     #     pytest.fail()
 
     path = h.get_path(batch_size, input_stream, input_channels, device, path_grad=True)
-    signature = signatory.signature(path, depth, stream=stream)
+    signature = signatory.signature(path, depth, stream=stream, scalar_term=scalar_term)
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', message="The logsignature with mode='brackets' has been requested on the "
                                                   "GPU.", category=UserWarning)
-        logsignature = signatory_signature_to_logsignature(class_, signature, input_channels, depth, stream, mode)
+        logsignature = signatory_signature_to_logsignature(class_, signature, input_channels, depth, stream, mode,
+                                                           scalar_term)
 
     grad = torch.rand_like(logsignature)
     logsignature.backward(grad)
@@ -147,20 +156,23 @@ def test_no_adjustments():
                     for stream in (False, True):
                         for mode in h.all_modes:
                             for signature_grad in (False, True):
-                                _test_no_adjustments(class_, device, batch_size, input_stream, input_channels, depth,
-                                                     stream, mode, signature_grad)
+                                for scalar_term in (False, True):
+                                    _test_no_adjustments(class_, device, batch_size, input_stream, input_channels,
+                                                         depth, stream, mode, signature_grad, scalar_term)
 
 
-def _test_no_adjustments(class_, device, batch_size, input_stream, input_channels, depth, stream, mode, signature_grad):
+def _test_no_adjustments(class_, device, batch_size, input_stream, input_channels, depth, stream, mode, signature_grad,
+                         scalar_term):
     path = h.get_path(batch_size, input_stream, input_channels, device, path_grad=False)
-    signature = signatory.signature(path, depth, stream=stream)
+    signature = signatory.signature(path, depth, stream=stream, scalar_term=scalar_term)
     signature_clone = signature.clone()
     if signature_grad:
         signature.requires_grad_()
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', message="The logsignature with mode='brackets' has been requested on the "
                                                   "GPU.", category=UserWarning)
-        logsignature = signatory_signature_to_logsignature(class_, signature, input_channels, depth, stream, mode)
+        logsignature = signatory_signature_to_logsignature(class_, signature, input_channels, depth, stream, mode,
+                                                           scalar_term)
 
     if signature_grad:
         grad = torch.rand_like(logsignature)
@@ -191,21 +203,22 @@ def test_repeat_and_memory_leaks():
                 for stream in (False, True):
                     for mode in h.all_modes:
                         for signature_grad in (False, True):
-                            _test_repeat_and_memory_leaks(class_, batch_size, input_stream, input_channels, depth,
-                                                          stream, mode, signature_grad)
+                            for scalar_term in (False, True):
+                                _test_repeat_and_memory_leaks(class_, batch_size, input_stream, input_channels, depth,
+                                                              stream, mode, signature_grad, scalar_term)
 
 
 def _test_repeat_and_memory_leaks(class_, batch_size, input_stream, input_channels, depth, stream, mode,
-                                  signature_grad):
+                                  signature_grad, scalar_term):
     cpu_path = h.get_path(batch_size, input_stream, input_channels, device='cpu', path_grad=False)
-    cpu_signature = signatory.signature(cpu_path, depth, stream=stream)
+    cpu_signature = signatory.signature(cpu_path, depth, stream=stream, scalar_term=scalar_term)
     if class_:
         signature_to_logsignature_instance = signatory.SignatureToLogsignature(input_channels, depth, stream=stream,
-                                                                               mode=mode)
+                                                                               mode=mode, scalar_term=scalar_term)
         cpu_logsignature = signature_to_logsignature_instance(cpu_signature)
     else:
         cpu_logsignature = signatory.signature_to_logsignature(cpu_signature, input_channels, depth, stream=stream,
-                                                               mode=mode)
+                                                               mode=mode, scalar_term=scalar_term)
     cpu_grad = torch.rand_like(cpu_logsignature)
 
     def one_iteration():
@@ -222,7 +235,8 @@ def _test_repeat_and_memory_leaks(class_, batch_size, input_stream, input_channe
                 cuda_logsignature = signature_to_logsignature_instance(cuda_signature)
             else:
                 cuda_logsignature = signatory.signature_to_logsignature(cuda_signature, input_channels, depth,
-                                                                        stream=stream, mode=mode)
+                                                                        stream=stream, mode=mode,
+                                                                        scalar_term=scalar_term)
 
         h.diff(cuda_logsignature.cpu(), cpu_logsignature)
 

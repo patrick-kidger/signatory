@@ -34,7 +34,7 @@ namespace signatory {
         }
     }  // namespace signatory::misc
 
-    int64_t signature_channels(int64_t input_channel_size, int64_t depth) {
+    int64_t signature_channels(int64_t input_channel_size, int64_t depth, bool scalar_term) {
         if (input_channel_size < 1) {
             throw std::invalid_argument("input_channels must be at least 1");
         }
@@ -43,7 +43,12 @@ namespace signatory {
         }
 
         if (input_channel_size == 1) {
-            return depth;
+            if (scalar_term) {
+                return depth + 1;
+            }
+            else {
+                return depth;
+            }
         }
         else {
             // In theory it'd probably be slightly quicker to calculate this via the geometric formula, but that
@@ -61,7 +66,12 @@ namespace signatory {
                 }
                 output_channels += input_channel_size;
             }
-            return output_channels;
+            if (scalar_term) {
+                return output_channels + 1;
+            }
+            else {
+                return output_channels;
+            }
         }
     }
 }  // namespace signatory

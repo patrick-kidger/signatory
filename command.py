@@ -66,7 +66,9 @@ def main():
                              help="All other arguments are forwarded on to pytest.")
 
     benchmark_parser.add_argument('-e', '--noesig', action='store_false', dest='test_esig',
-                                  help="Skip esig tests as esig is typically very slow.")
+                                  help="Skip esig tests.")
+    benchmark_parser.add_argument('-i', '--noiisignature', action='store_false', dest='test_iisignature',
+                                  help="Skip iisignature tests.")
     benchmark_parser.add_argument('-g', '--nogpu', action='store_false', dest='test_signatory_gpu',
                                   help="Skip Signatory GPU tests.")
     benchmark_parser.add_argument('-m', '--measure', choices=('time', 'memory'), default='time',
@@ -195,6 +197,7 @@ def benchmark(args):
     try:
         runner = bench.BenchmarkRunner(type_=type_,
                                        test_esig=args.test_esig,
+                                       test_iisignature=args.test_iisignature,
                                        test_signatory_gpu=args.test_signatory_gpu,
                                        measure=measure,
                                        fns=fns)

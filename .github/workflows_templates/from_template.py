@@ -147,7 +147,8 @@ py37 = '3.7.0',
 pytorch12 = '1.2.0',
 pytorch13 = '1.3.0',
 pytorch131 = '1.3.1',
-pytorch_all = '[<<pytorch12>>, <<pytorch13>>, <<pytorch131>>]',
+pytorch14 = '1.4.0',
+pytorch_all = '[<<pytorch12>>, <<pytorch13>>, <<pytorch131>>, <<pytorch14>>]',
 
 # A strategy for every operating system and version of Python
 # Note that every possible combination must be specified in action_os and action_pv to have repository_dispatch work
@@ -163,6 +164,9 @@ strategy:
       # PyTorch doesn't support this combination
       - os: <<windows>>
         python-version: <<py27>>
+      - os: <<windows>>
+        python-version: <<py35>>
+        pytorch-version: <<pytorch14>>
   fail-fast: false""",
 
 # A single Linux strategy

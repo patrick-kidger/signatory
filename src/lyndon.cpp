@@ -359,6 +359,9 @@ namespace signatory {
 
     std::vector<std::vector<int64_t>> lyndon_words(int64_t channels, int64_t depth) {
         misc::checkargs_channels_depth(channels, depth);
+
+        py::gil_scoped_release release;
+
         lyndon::LyndonWords lyndon_words(channels, depth, lyndon::LyndonWords::bracket_tag);
 
         std::vector<std::vector<int64_t>> lyndon_words_as_words;
@@ -375,6 +378,7 @@ namespace signatory {
 
     std::vector<py::object> lyndon_brackets(int64_t channels, int64_t depth) {
         misc::checkargs_channels_depth(channels, depth);
+
         lyndon::LyndonWords lyndon_words(channels, depth, lyndon::LyndonWords::bracket_tag);
 
         std::vector<py::object> lyndon_words_as_brackets;
@@ -412,6 +416,9 @@ namespace signatory {
                                                                                                     int64_t depth)
     {
         misc::checkargs_channels_depth(channels, depth);
+
+        py::gil_scoped_release release;
+
         lyndon::LyndonWords lyndon_words(channels, depth, lyndon::LyndonWords::bracket_tag);
         std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>> transforms;
         std::vector<std::vector<std::tuple<int64_t, int64_t, int64_t>>> transforms_backward;

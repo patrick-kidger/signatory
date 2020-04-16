@@ -50,11 +50,12 @@ def test_path():
                                                          (False, True, h.without_grad, h.with_grad))):
                 for input_channels in (1, 2):
                     for depth in (1, 2):
-                        path_grad = random.choice([False, True])
-                        basepoint = random.choice(basepoints)
-                        update_lengths, update_grads = _update_lengths_update_grads(3)
-                        _test_path(device, path_grad, batch_size, input_stream, input_channels, depth,
-                                   basepoint, update_lengths, update_grads, extrarandom=False)
+                        for scalar_term in (True, False):
+                            path_grad = random.choice([False, True])
+                            basepoint = random.choice(basepoints)
+                            update_lengths, update_grads = _update_lengths_update_grads(3)
+                            _test_path(device, path_grad, batch_size, input_stream, input_channels, depth,
+                                       basepoint, update_lengths, update_grads, scalar_term, extrarandom=False)
 
     # Randomly test larger cases
     for _ in range(50):
@@ -66,20 +67,22 @@ def test_path():
         basepoint = random.choice([False, True, h.without_grad, h.with_grad])
         path_grad = random.choice([False, True])
         update_lengths, update_grads = _update_lengths_update_grads(10)
+        scalar_term = random.choice([False, True])
         _test_path(device, path_grad, batch_size, input_stream, input_channels, depth,
-                   basepoint, update_lengths, update_grads, extrarandom=True)
+                   basepoint, update_lengths, update_grads, scalar_term, extrarandom=True)
 
     # Do at least one large test
     for device in h.get_devices():
         _test_path(device, path_grad=True, batch_size=5, input_stream=10, input_channels=6, depth=6,
-                   basepoint=True, update_lengths=[5, 6], update_grads=[False, True], extrarandom=False)
+                   basepoint=True, update_lengths=[5, 6], update_grads=[False, True], scalar_term=False,
+                   extrarandom=False)
 
 
 def _test_path(device, path_grad, batch_size, input_stream, input_channels, depth, basepoint, update_lengths,
-               update_grads, extrarandom):
+               update_grads, scalar_term, extrarandom):
     path = h.get_path(batch_size, input_stream, input_channels, device, path_grad)
     basepoint = h.get_basepoint(batch_size, input_channels, device, basepoint)
-    path_obj = signatory.Path(path, depth, basepoint=basepoint)
+    path_obj = signatory.Path(path, depth, basepoint=basepoint, scalar_term=scalar_term)
 
     if isinstance(basepoint, torch.Tensor):
         full_path = torch.cat([basepoint.unsqueeze(1), path], dim=1)
@@ -90,7 +93,7 @@ def _test_path(device, path_grad, batch_size, input_stream, input_channels, dept
         full_path = path
 
     # First of all test a Path with no updates
-    _test_signature(path_obj, full_path, depth, extrarandom)
+    _test_signature(path_obj, full_path, depth, scalar_term, extrarandom)
     _test_logsignature(path_obj, full_path, depth, extrarandom)
     assert path_obj.depth == depth
 
@@ -102,17 +105,17 @@ def _test_path(device, path_grad, batch_size, input_stream, input_channels, dept
             path_obj.update(new_path)
             full_path = torch.cat([full_path, new_path], dim=1)
 
-        _test_signature(path_obj, full_path, depth, extrarandom)
+        _test_signature(path_obj, full_path, depth, scalar_term, extrarandom)
         _test_logsignature(path_obj, full_path, depth, extrarandom)
         assert path_obj.depth == depth
 
 
-def _test_signature(path_obj, full_path, depth, extrarandom):
+def _test_signature(path_obj, full_path, depth, scalar_term, extrarandom):
     def candidate(start=None, end=None):
         return path_obj.signature(start, end)
 
     def true(start, end):
-        return signatory.signature(full_path[:, start:end], depth)
+        return signatory.signature(full_path[:, start:end], depth, scalar_term=scalar_term)
 
     def extra(true_signature):
         assert (path_obj.signature_size(-3), path_obj.signature_size(-1)) == true_signature.shape

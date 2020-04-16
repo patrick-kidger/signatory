@@ -136,7 +136,7 @@ class Types(helpers.Container):
 class BenchmarkRunner(object):
     """Runs all functions across all libraries and records their times or memory usage for multiple sizes and depths."""
 
-    def __init__(self, type_, test_esig, test_signatory_gpu, measure, fns, **kwargs):
+    def __init__(self, type_, test_esig, test_iisignature, test_signatory_gpu, measure, fns, **kwargs):
         assert type_ in Types
         assert measure in Measurables
         assert fns in Functions
@@ -151,6 +151,7 @@ class BenchmarkRunner(object):
         self.sizes = type_.sizes
         self.depths = type_.depths
         self.test_esig = test_esig
+        self.test_iisignature = test_iisignature
         self.test_signatory_gpu = test_signatory_gpu
         self.measure = measure
         self.fns = fns
@@ -199,6 +200,8 @@ class BenchmarkRunner(object):
                 continue
             if (not self.test_signatory_gpu) and (library_name is Columns.signatory_gpu_str):
                 continue
+            if (not self.test_iisignature) and (library_name is Columns.iisignature_str):
+                continue
 
             result = math.inf
             if running:
@@ -214,7 +217,9 @@ class BenchmarkRunner(object):
                     running = False
             column_results[library_name] = result
 
-        other_best = column_results[Columns.iisignature_str]
+        other_best = math.inf
+        if self.test_iisignature:
+            other_best = min(column_results[Columns.iisignature_str], other_best)
         if self.test_esig:
             other_best = min(column_results[Columns.esig_str], other_best)
         try:

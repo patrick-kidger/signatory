@@ -47,30 +47,34 @@ class _IisignatureSignatureFunction(autograd.Function):
                             dtype=ctx.dtype), None
 
 
-def iisignature_signature(path, depth, stream, basepoint, inverse, initial):
+def iisignature_signature(path, depth, stream, basepoint, inverse, initial, scalar_term):
     """Duplicates signatory.signature's functionality using iisignature, for testing purposes."""
 
-    if isinstance(initial, torch.Tensor):
-        def fn(path, depth):
-            return signatory.signature_combine(initial, _IisignatureSignatureFunction.apply(path, depth), path.size(-1),
-                                               depth, inverse)
-    else:
-        fn = _IisignatureSignatureFunction.apply
+    def fn(path, depth):
+        signature = _IisignatureSignatureFunction.apply(path, depth)
+        if scalar_term:
+            out = torch.ones(signature.size(0), 1 + signature.size(1), dtype=signature.dtype,
+                             device=signature.device)
+            out[:, 1:] = signature
+            signature = out
+        if isinstance(initial, torch.Tensor):
+            signature = signatory.signature_combine(initial, signature, path.size(-1), depth, inverse, scalar_term)
+        return signature
 
     return r.iisignature_signature_or_logsignature(fn, path, depth, stream, basepoint, inverse)
 
 
-def signatory_signature(class_, path, depth, stream, basepoint, inverse, initial):
+def signatory_signature(class_, path, depth, stream, basepoint, inverse, initial, scalar_term):
     """Wraps signatory.Signature and signatory.signature and filters out warnings, for convenience."""
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', message="Argument 'initial' has been set but argument 'basepoint' has "
                                                   "not.", category=UserWarning)
         if class_:
-            return signatory.Signature(depth, stream=stream, inverse=inverse)(path, basepoint=basepoint,
-                                                                              initial=initial)
+            return signatory.Signature(depth, stream=stream, inverse=inverse,
+                                       scalar_term=scalar_term)(path,basepoint=basepoint, initial=initial)
         else:
             return signatory.signature(path, depth, stream=stream, basepoint=basepoint, inverse=inverse,
-                                       initial=initial)
+                                       initial=initial, scalar_term=scalar_term)
 
 
 def test_forward():
@@ -88,21 +92,22 @@ def test_forward():
                                     for basepoint in (False, True, h.without_grad, h.with_grad):
                                         for inverse in (False, True):
                                             for initial in (None, h.without_grad, h.with_grad):
-                                                _test_forward(class_, device, path_grad, batch_size, input_stream,
-                                                              input_channels, depth, stream, basepoint, inverse,
-                                                              initial)
+                                                for scalar_term in (False, True):
+                                                    _test_forward(class_, device, path_grad, batch_size, input_stream,
+                                                                  input_channels, depth, stream, basepoint, inverse,
+                                                                  initial, scalar_term)
 
 
 def _test_forward(class_, device, path_grad, batch_size, input_stream, input_channels, depth, stream, basepoint,
-                  inverse, initial):
+                  inverse, initial, scalar_term):
     path = h.get_path(batch_size, input_stream, input_channels, device, path_grad)
     basepoint = h.get_basepoint(batch_size, input_channels, device, basepoint)
 
     expected_exception = (batch_size < 1) or (input_channels < 1) or (basepoint is False and input_stream < 2) or \
                          (input_stream < 1)
     try:
-        initial = h.get_initial(batch_size, input_channels, device, depth, initial)
-        signature = signatory_signature(class_, path, depth, stream, basepoint, inverse, initial)
+        initial = h.get_initial(batch_size, input_channels, device, depth, initial, scalar_term)
+        signature = signatory_signature(class_, path, depth, stream, basepoint, inverse, initial, scalar_term)
     except ValueError:
         if expected_exception:
             return
@@ -111,8 +116,8 @@ def _test_forward(class_, device, path_grad, batch_size, input_stream, input_cha
     else:
         assert not expected_exception
 
-    _test_shape(signature, stream, basepoint, batch_size, input_stream, input_channels, depth)
-    h.diff(signature, iisignature_signature(path, depth, stream, basepoint, inverse, initial))
+    _test_shape(signature, stream, basepoint, batch_size, input_stream, input_channels, depth, scalar_term)
+    h.diff(signature, iisignature_signature(path, depth, stream, basepoint, inverse, initial, scalar_term))
 
     if path_grad or (isinstance(basepoint, torch.Tensor) and basepoint.requires_grad) or \
             (isinstance(initial, torch.Tensor) and initial.requires_grad):
@@ -129,9 +134,9 @@ def _test_forward(class_, device, path_grad, batch_size, input_stream, input_cha
         assert signature.grad_fn is None
 
 
-def _test_shape(signature, stream, basepoint, batch_size, input_stream, input_channels, depth):
+def _test_shape(signature, stream, basepoint, batch_size, input_stream, input_channels, depth, scalar_term):
     """Tests the the signature is of the expected shape."""
-    correct_channels = signatory.signature_channels(input_channels, depth)
+    correct_channels = signatory.signature_channels(input_channels, depth, scalar_term)
     if stream:
         if isinstance(basepoint, torch.Tensor) or basepoint is True:
             correct_shape = (batch_size,
@@ -165,12 +170,18 @@ def test_batch_trick():
                             for basepoint in (False, True, h.without_grad, h.with_grad):
                                 for inverse in (False, True):
                                     for initial in (None, h.without_grad, h.with_grad):
-                                        _test_batch_trick(class_, device, path_grad, batch_size, input_stream,
-                                                          input_channels, depth, stream, basepoint, inverse, initial)
+                                        for scalar_term in (False, True):
+                                            _test_batch_trick(class_, device, path_grad, batch_size, input_stream,
+                                                              input_channels, depth, stream, basepoint, inverse,
+                                                              initial, scalar_term)
+
+
+def _no_batch_trick(path, depth, stream, basepoint, inverse, initial, scalar_term):
+    return
 
 
 def _test_batch_trick(class_, device, path_grad, batch_size, input_stream, input_channels, depth, stream, basepoint,
-                      inverse, initial):
+                      inverse, initial, scalar_term):
     if device == 'cuda':
         threshold = 512
     else:
@@ -182,21 +193,23 @@ def _test_batch_trick(class_, device, path_grad, batch_size, input_stream, input
 
     path = h.get_path(batch_size, input_stream, input_channels, device, path_grad)
     basepoint = h.get_basepoint(batch_size, input_channels, device, basepoint)
-    initial = h.get_initial(batch_size, input_channels, device, depth, initial)
+    initial = h.get_initial(batch_size, input_channels, device, depth, initial, scalar_term)
 
-    current_parallelism = torch.get_num_threads()
+    _signature_batch_trick = signatory.signature.__globals__['_signature_batch_trick']
     try:
-        torch.set_num_threads(1)  # disable batch trick
-        signature = signatory_signature(class_, path, depth, stream, basepoint, inverse, initial)
+        # disable batch trick
+        signatory.signature.__globals__['_signature_batch_trick'] = _no_batch_trick
+        signature = signatory_signature(class_, path, depth, stream, basepoint, inverse, initial, scalar_term)
     finally:
-        torch.set_num_threads(current_parallelism)  # enable batch trick
+        signatory.signature.__globals__['_signature_batch_trick'] = _signature_batch_trick
 
     batch_trick_signature = signatory.signature.__globals__['_signature_batch_trick'](path,
                                                                                       depth,
                                                                                       stream=stream,
                                                                                       basepoint=basepoint,
                                                                                       inverse=inverse,
-                                                                                      initial=initial)
+                                                                                      initial=initial,
+                                                                                      scalar_term=scalar_term)
 
     assert batch_trick_signature is not None  # that the batch trick is viable in this case
 
@@ -243,15 +256,16 @@ def test_backward():
                     for stream in (False, True):
                         for inverse in (False, True):
                             for initial in (None, h.without_grad, h.with_grad):
-                                _test_backward(class_, device, batch_size, input_stream, input_channels, depth, stream,
-                                               basepoint, inverse, initial)
+                                for scalar_term in (False, True):
+                                    _test_backward(class_, device, batch_size, input_stream, input_channels, depth,
+                                                   stream, basepoint, inverse, initial, scalar_term)
 
 
 def _test_backward(class_, device, batch_size, input_stream, input_channels, depth, stream, basepoint, inverse,
-                   initial):
+                   initial, scalar_term):
     path = h.get_path(batch_size, input_stream, input_channels, device, path_grad=True)
     basepoint = h.get_basepoint(batch_size, input_channels, device, basepoint)
-    initial = h.get_initial(batch_size, input_channels, device, depth, initial)
+    initial = h.get_initial(batch_size, input_channels, device, depth, initial, scalar_term)
 
     # This is the test we'd like to run. Unfortunately it takes forever, so we do something else instead.
     #
@@ -268,7 +282,7 @@ def _test_backward(class_, device, batch_size, input_stream, input_channels, dep
     # except RuntimeError:
     #     pytest.fail()
 
-    signature = signatory_signature(class_, path, depth, stream, basepoint, inverse, initial)
+    signature = signatory_signature(class_, path, depth, stream, basepoint, inverse, initial, scalar_term)
 
     grad = torch.rand_like(signature)
     signature.backward(grad)
@@ -282,7 +296,7 @@ def _test_backward(class_, device, batch_size, input_stream, input_channels, dep
         initial_grad = initial.grad.clone()
         initial.grad.zero_()
 
-    iisignature_signature_result = iisignature_signature(path, depth, stream, basepoint, inverse, initial)
+    iisignature_signature_result = iisignature_signature(path, depth, stream, basepoint, inverse, initial, scalar_term)
     iisignature_signature_result.backward(grad)
 
     # iisignature uses float32 for this calculation so we need a lower tolerance
@@ -304,15 +318,17 @@ def test_no_adjustments():
                         for stream in (False, True):
                             for inverse in (False, True):
                                 for initial in (None, h.without_grad, h.with_grad):
-                                    _test_no_adjustments(class_, device, batch_size, input_stream, input_channels,
-                                                         depth, stream, basepoint, inverse, initial, path_grad)
+                                    for scalar_term in (False, True):
+                                        _test_no_adjustments(class_, device, batch_size, input_stream, input_channels,
+                                                             depth, stream, basepoint, inverse, initial, path_grad,
+                                                             scalar_term)
 
 
 def _test_no_adjustments(class_, device, batch_size, input_stream, input_channels, depth, stream, basepoint,
-                         inverse, initial, path_grad):
+                         inverse, initial, path_grad, scalar_term):
     path = h.get_path(batch_size, input_stream, input_channels, device, path_grad)
     basepoint = h.get_basepoint(batch_size, input_channels, device, basepoint)
-    initial = h.get_initial(batch_size, input_channels, device, depth, initial)
+    initial = h.get_initial(batch_size, input_channels, device, depth, initial, scalar_term)
 
     path_clone = path.clone()
     if isinstance(basepoint, torch.Tensor):
@@ -320,7 +336,7 @@ def _test_no_adjustments(class_, device, batch_size, input_stream, input_channel
     if isinstance(initial, torch.Tensor):
         initial_clone = initial.clone()
 
-    signature = signatory_signature(class_, path, depth, stream, basepoint, inverse, initial)
+    signature = signatory_signature(class_, path, depth, stream, basepoint, inverse, initial, scalar_term)
 
     can_backward = path_grad or (isinstance(basepoint, torch.Tensor) and basepoint.requires_grad) or \
                    (isinstance(initial, torch.Tensor) and initial.requires_grad)
@@ -360,26 +376,28 @@ def test_repeat_and_memory_leaks():
                     for stream in (False, True):
                         for inverse in (False, True):
                             for initial in (None, h.without_grad, h.with_grad):
-                                _test_repeat_and_memory_leaks(class_, path_grad, batch_size, input_stream,
-                                                              input_channels, depth, stream, basepoint, inverse,
-                                                              initial)
+                                for scalar_term in (False, True):
+                                    _test_repeat_and_memory_leaks(class_, path_grad, batch_size, input_stream,
+                                                                  input_channels, depth, stream, basepoint, inverse,
+                                                                  initial, scalar_term)
 
 
 def _test_repeat_and_memory_leaks(class_, path_grad, batch_size, input_stream, input_channels, depth, stream, basepoint,
-                                  inverse, initial):
+                                  inverse, initial, scalar_term):
     cpu_path = h.get_path(batch_size, input_stream, input_channels, device='cpu', path_grad=False)
     cpu_basepoint = h.get_basepoint(batch_size, input_channels, device='cpu', basepoint=basepoint)
-    cpu_initial = h.get_initial(batch_size, input_channels, device='cpu', depth=depth, initial=initial)
+    cpu_initial = h.get_initial(batch_size, input_channels, device='cpu', depth=depth, initial=initial,
+                                scalar_term=scalar_term)
 
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', message="Argument 'initial' has been set but argument 'basepoint' has "
                                                   "not.", category=UserWarning)
         if class_:
-            signature_instance = signatory.Signature(depth, stream=stream, inverse=inverse)
+            signature_instance = signatory.Signature(depth, stream=stream, inverse=inverse, scalar_term=scalar_term)
             cpu_signature = signature_instance(cpu_path, basepoint=cpu_basepoint, initial=cpu_initial)
         else:
             cpu_signature = signatory.signature(cpu_path, depth, stream=stream, basepoint=cpu_basepoint,
-                                                inverse=inverse, initial=cpu_initial)
+                                                inverse=inverse, initial=cpu_initial, scalar_term=scalar_term)
     cpu_grad = torch.rand_like(cpu_signature)
 
     def one_iteration():
@@ -409,7 +427,7 @@ def _test_repeat_and_memory_leaks(class_, path_grad, batch_size, input_stream, i
                 cuda_signature = signature_instance(cuda_path, basepoint=cuda_basepoint, initial=cuda_initial)
             else:
                 cuda_signature = signatory.signature(cuda_path, depth, stream=stream, basepoint=cuda_basepoint,
-                                                     inverse=inverse, initial=cuda_initial)
+                                                     inverse=inverse, initial=cuda_initial, scalar_term=scalar_term)
 
         h.diff(cuda_signature.cpu(), cpu_signature)
 

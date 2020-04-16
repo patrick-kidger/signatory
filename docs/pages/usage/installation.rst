@@ -2,7 +2,7 @@
 
 Installation
 ############
-Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7 and Linux, Mac, Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.2.0, 1.3.0 or 1.3.1.
+Available for Python 2.7, Python 3.5, Python 3.6, Python 3.7 and Linux, Mac, Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.2.0, 1.3.0, 1.3.1, or 1.4.0.
 
 Install via:
 
@@ -97,3 +97,9 @@ If you choose the second option then tests, benchmarking code, and code to build
     depending on the choice of installation method.
 
 A helpful point of reference for getting this to work might be the `official build scripts <https://github.com/patrick-kidger/signatory/blob/master/.github/workflows/build.yml>`__ for Signatory.
+
+
+Note that PyTorch does not support the following combinations, so Signatory doesn't either:
+
+- Windows and Python 2.7
+- Windows and Python 3.5 and PyTorch 1.4

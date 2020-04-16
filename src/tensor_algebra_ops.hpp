@@ -113,13 +113,14 @@ namespace signatory {
 
     // See signatory.signature_combine
     torch::Tensor signature_combine_forward(std::vector<torch::Tensor> sigtensors, int64_t input_channels,
-                                            s_size_type depth);
+                                            s_size_type depth, bool scalar_term);
 
     // See signatory.signature_combine
     std::vector<torch::Tensor> signature_combine_backward(torch::Tensor grad_out,
                                                           std::vector<torch::Tensor> sigtensors,
                                                           int64_t input_channels,
-                                                          s_size_type depth);
+                                                          s_size_type depth,
+                                                          bool scalar_term);
 }  // namespace signatory
 
 #endif //SIGNATORY_TENSOR_ALGEBRA_OPS_HPP

@@ -100,11 +100,14 @@ def test_signature_channels():
     """Tests the signature_channels function"""
     for channels in range(1, 16):
         for depth in range(1, 15):
-            result = signatory.signature_channels(channels, depth)
-            sum_over = sum(channels ** i for i in range(1, depth + 1))
-            print('channels=' + str(channels))
-            print('depth=' + str(depth))
-            assert result == sum_over
+            for scalar_term in (True, False):
+                result = signatory.signature_channels(channels, depth, scalar_term)
+                sum_over = sum(channels ** i for i in range(1, depth + 1))
+                if scalar_term:
+                    sum_over += 1
+                print('channels=' + str(channels))
+                print('depth=' + str(depth))
+                assert result == sum_over
 
 
 def test_logsignature_channels():

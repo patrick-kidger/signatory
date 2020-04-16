@@ -2,7 +2,7 @@
 
 Citation
 ########
-If you found this library useful in your research, please consider citing
+If you found this library useful in your research, please consider citing `the paper <https://arxiv.org/abs/2001.00706>`__.
 
 .. code-block:: bibtex
 
