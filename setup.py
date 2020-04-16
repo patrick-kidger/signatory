@@ -32,10 +32,8 @@ if not sys.platform.startswith('win'):  # linux or mac
 
 if sys.platform.startswith('win'):  # windows
     extra_compile_args.append('/openmp')
-    define_macros = [('NOMINMAX', None)]
 else:  # linux or mac
     extra_compile_args.append('-fopenmp')
-    define_macros = []
 
 ext_modules = [cpp.CppExtension(name='_impl',
                                 sources=['src/logsignature.cpp',
@@ -49,8 +47,7 @@ ext_modules = [cpp.CppExtension(name='_impl',
                                          'src/misc.hpp',
                                          'src/signature.hpp',
                                          'src/tensor_algebra_ops.hpp'],
-                                extra_compile_args=extra_compile_args,
-                                define_macros=define_macros)]
+                                extra_compile_args=extra_compile_args)]
 
 
 setuptools.setup(name=metadata.project,

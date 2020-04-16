@@ -164,6 +164,9 @@ strategy:
       # PyTorch doesn't support this combination
       - os: <<windows>>
         python-version: <<py27>>
+      - os: <<windows>>
+        python-version: <<py35>>
+        pytorch-version: <<pytorch14>>
   fail-fast: false""",
 
 # A single Linux strategy

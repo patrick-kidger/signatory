@@ -149,6 +149,9 @@ jobs:
           # PyTorch doesn't support this combination
           - os: windows-2016
             python-version: 2.7.13
+          - os: windows-2016
+            python-version: 3.5.4
+            pytorch-version: 1.4.0
       fail-fast: false
     needs: [check_version, check_readme, check_workflows]
     steps:
