@@ -102,6 +102,6 @@ A helpful point of reference for getting this to work might be the `official bui
 Note that PyTorch does not support the following combinations, so Signatory doesn't either:
 
 - Windows and Python 2.7
-- Windows and Python 3.5 and PyTorch 1.4
+- Windows and Python 3.5 and PyTorch 1.4, 1.5
 - Python 2.7 and PyTorch 1.5
 - Python 3.8 and PyTorch 1.2, 1.3, 1.3.1

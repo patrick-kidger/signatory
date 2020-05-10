@@ -30,6 +30,9 @@ jobs:
           - os: windows-2016
             python-version: 3.5.4
             pytorch-version: 1.4.0
+          - os: windows-2016
+            python-version: 3.5.4
+            pytorch-version: 1.5.0
           - python-version: 2.7.13
             pytorch-version: 1.5.0
           - python-version: 3.8.0

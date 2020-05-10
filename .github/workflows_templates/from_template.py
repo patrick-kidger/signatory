@@ -170,6 +170,9 @@ strategy:
       - os: <<windows>>
         python-version: <<py35>>
         pytorch-version: <<pytorch14>>
+      - os: <<windows>>
+        python-version: <<py35>>
+        pytorch-version: <<pytorch15>>
       - python-version: <<py27>>
         pytorch-version: <<pytorch15>>
       - python-version: <<py38>>
