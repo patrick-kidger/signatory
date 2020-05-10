@@ -16,7 +16,7 @@ This appears to be caused by using old versions of Python, e.g. ``3.6.6`` instea
 
 * I get an ``Import Error: ... Symbol not found: ...`` when I try to import Signatory.
 
-This occurs when the version of PyTorch you have installed is different to the version of PyTorch that your copy of Signatory is compiled for. Make sure that you have specified the correct version of PyTorch when downloading Signatory; see :ref:`the installation instructions<usage-installation>`.
+This occurs when the version of Python or PyTorch you have installed is different to the version of Python or PyTorch that your copy of Signatory is compiled for. Make sure that you have specified the correct version of PyTorch when downloading Signatory; see :ref:`the installation instructions<usage-installation>`, and that you include the extra ``--no-cache-dir --force-reinstall`` flags as described there.
 
 .. _miscellaneous-faq-other:
 
