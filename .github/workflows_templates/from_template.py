@@ -252,6 +252,9 @@ with:
   python-version: '3.7'""",
 
 # Performs the necessary set-up for Windows.
+# Needs the cpuonly package because Windows is a bit weird. (Specifically this seems necessary when using Python 3.8 or
+# PyTorch 1.5.) I don't have a Windows machine with a GPU to test that this doesn't break anything, but compiling
+# Signatory on Linux with cpuonly installed, will still allow for Signatory to run on the GPU, so this is probably fine.
 setup_windows = \
 r"""name: Windows
 <<if_>> && (matrix.os == '<<windows>>')
@@ -266,7 +269,7 @@ run: >
   %CONDA%/Scripts/conda create -n myenv python=%PYTHON_VERSION% -y &&
   %CONDA%/Scripts/activate myenv &&
   python -m pip install --upgrade pip &&
-  conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y &&
+  conda install pytorch==${{ matrix.pytorch-version }} cpuonly -c pytorch -y &&
   python command.py should_not_import &&""",
 
 # Builds a bdist_wheel on Windows

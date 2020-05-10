@@ -186,7 +186,7 @@ jobs:
         %CONDA%/Scripts/conda create -n myenv python=%PYTHON_VERSION% -y &&
         %CONDA%/Scripts/activate myenv &&
         python -m pip install --upgrade pip &&
-        conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y &&
+        conda install pytorch==${{ matrix.pytorch-version }} cpuonly -c pytorch -y &&
         python command.py should_not_import &&
         python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" bdist_wheel &&
         python command.py should_not_import &&
