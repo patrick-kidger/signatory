@@ -15,6 +15,8 @@
 """Provides the Path class, a high-level object capable of giving signatures over intervals."""
 
 import bisect
+import copy
+import numpy as np
 import torch
 from torch import autograd
 from torch.autograd import function as autograd_function
@@ -25,7 +27,7 @@ from . import impl
 
 # noinspection PyUnreachableCode
 if False:
-    from typing import Any, List, Union
+    from typing import Any, Dict, List, Union
 
 
 class _BackwardShortcut(autograd.Function):
@@ -113,6 +115,9 @@ class Path(object):
     path. This is particularly useful if you need the signature or logsignature of a path over many different intervals:
     using this class will be much faster than computing the signature or logsignature of each sub-path each time.
 
+    May be efficiently sliced and indexed along its batch dimension via [] syntax. This will return a new Path without
+    copying the underlying data.
+
     Arguments:
         path (torch.Tensor): As :func:`signatory.signature`.
 
@@ -128,26 +133,38 @@ class Path(object):
         scalar_term (bool, optional): Defaults to False. Whether to include the scalar '1' when calling the
             :meth:`signatory.Path.signature` method; see also the equivalent argument for :func:`signatory.signature`.
     """
+
+    # !! If you change this, make sure to adjust __eq__ and __copy__ accordingly.
+    __slots__ = ('_remember_path', '_scalar_term', '_depth', '_signature', '_inverse_signature', '_path',
+                 '_length', '_signature_length', '_lengths', '_signature_lengths', '_batch_size', '_channels',
+                 '_device', '_signature_channels', '_logsignature_channels', '_end',
+                 '_signature_to_logsignature_instances')
+
     def __init__(self, path, depth, basepoint=False, remember_path=True, scalar_term=False, **kwargs):
         # type: (torch.Tensor, int, Union[bool, torch.Tensor], bool, bool, **Any) -> None
-        self._remember_path = remember_path
-        self._scalar_term = scalar_term
-        self._depth = depth
+        self._remember_path = remember_path  # type: bool
+        self._scalar_term = scalar_term  # type: bool
+        self._depth = depth  # type: int
 
-        self._signature = []
-        self._inverse_signature = []
+        self._signature = []  # type: List[torch.Tensor]
+        self._inverse_signature = []  # type: List[torch.Tensor]
 
-        self._path = []
+        self._path = []  # type: List[torch.Tensor]
 
-        self._length = 0
-        self._signature_length = 0
-        self._lengths = []
-        self._signature_lengths = []
+        self._length = 0  # type: int
+        self._signature_length = 0  # type: int
+        self._lengths = []  # type: List[int]
+        self._signature_lengths = []  # type: List[int]
 
-        self._batch_size = path.size(-3)
-        self._channels = path.size(-1)
-        self._signature_channels = smodule.signature_channels(self._channels, self._depth, self._scalar_term)
-        self._logsignature_channels = lmodule.logsignature_channels(self._channels, self._depth)
+        self._batch_size = path.size(-3)  # type: int
+        self._channels = path.size(-1)  # type: int
+        self._device = path.device  # type: torch.device
+        self._signature_channels = smodule.signature_channels(self._channels, self._depth, self._scalar_term)  # type: int
+        self._logsignature_channels = lmodule.logsignature_channels(self._channels, self._depth)  # type: int
+
+        self._end = basepoint  # type: Union[bool, torch.Tensor]
+
+        self._signature_to_logsignature_instances = {}  # type: Dict[Tuple[int, int, str, bool], signatory.SignatureToLogSignature]
 
         if remember_path:
             use_basepoint, basepoint_value = smodule.interpret_basepoint(basepoint, path.size(0), path.size(2),
@@ -157,12 +174,63 @@ class Path(object):
                 self._lengths.append(1)
                 self._path.append(basepoint_value.unsqueeze(-2))  # unsqueeze a stream dimension
 
-        self._end = basepoint
         self._update(path, None, None)
 
-        self._signature_to_logsignature_instances = {}
-
         super(Path, self).__init__(**kwargs)
+
+    def __copy__(self):
+        # Represents copying everything except tensors; i.e. all the cheap stuff to copy.
+
+        # Stupid hackery necessary to "call super().__copy__", which doesn't actually exist
+        copy_method = type(self).__copy__
+        try:
+            del type(self).__copy__
+            new_path = copy.copy(self)
+        finally:
+            type(self).__copy__ = copy_method
+
+        for attr_name in self.__slots__:
+            if attr_name not in ('_end', '_signature_to_logsignature_instances'):
+                attr_value = getattr(self, attr_name)
+                # Many of these objects are immutable so the copy isn't actually important
+                setattr(new_path, attr_name, copy.copy(attr_value))
+        if not isinstance(self._end, torch.Tensor):
+            # copying a bool in this case... completely unnecessary but consistent with what we do above.
+            new_path._end = copy.copy(self._end)
+        # Not really necessary because SignatureToLogSignature has only immutable state, but that's an implementation
+        # detail that we shouldn't rely on.
+        new_path._signature_to_logsignature_instances = copy.deepcopy(self._signature_to_logsignature_instances)
+
+        return new_path
+
+    def __eq__(self, other):
+        if not isinstance(other, Path):
+            return NotImplemented
+        for attr_name in self.__slots__:
+            if attr_name not in ('_signature', '_inverse_signature', '_path', '_end',
+                                 '_signature_to_logsignature_instances'):
+                if getattr(self, attr_name) != getattr(other, attr_name):
+                    return False
+        if not isinstance(self._end, type(other._end)) or not isinstance(other._end, type(self._end)):
+            return False
+        if isinstance(self._end, torch.Tensor):
+            if (self._end != other._end).any():
+                return False
+        else:
+            if self._end != other._end:
+                return False
+        for attr_name in ('_signature', '_inverse_signature', '_path'):
+            self_value = getattr(self, attr_name)
+            other_value = getattr(self, attr_name)
+            if len(self_value) != len(other_value):
+                return False
+            for self_tensor, other_tensor in zip(self_value, other_value):
+                if (self_tensor != other_tensor).any():
+                    return False
+        return True
+
+    def __ne__(self, other):
+        return not self == other
 
     def signature(self, start=None, end=None):
         # type: (Union[int, None], Union[int, None]) -> torch.Tensor
@@ -297,7 +365,10 @@ class Path(object):
             signature_to_logsignature_instance = lmodule.SignatureToLogSignature(self._channels, self._depth,
                                                                                  stream=False, mode=mode,
                                                                                  scalar_term=self._scalar_term)
-            self._signature_to_logsignature_instances[(self._channels, self._depth, mode, self._scalar_term)] = signature_to_logsignature_instance
+            self._signature_to_logsignature_instances[(self._channels,
+                                                       self._depth,
+                                                       mode,
+                                                       self._scalar_term)] = signature_to_logsignature_instance
         return signature_to_logsignature_instance(signature)
 
     def update(self, path):
@@ -440,3 +511,64 @@ class Path(object):
         # type: () -> int
         """The number of logsignature channels; as :func:`signatory.logsignature_channels`."""
         return self._logsignature_channels
+
+    def _getitem_inplace(self, item):
+        # Have to make sure we only allow things that preserve the batch dimension. As a special case we allow integers
+        # by turning them into slices.
+        not_valid = True
+        if isinstance(item, int):
+            item = slice(item, item + 1)
+            not_valid = False
+        elif isinstance(item, slice):
+            not_valid = False
+        elif isinstance(item, torch.Tensor):
+            if item.ndimension() == 1:
+                not_valid = False
+        elif isinstance(item, np.ndarray):
+            if item.ndim == 1:
+                not_valid = False
+        elif isinstance(item, list):
+            if all([isinstance(elem, int) for elem in item]):
+                not_valid = False
+        if not_valid:
+            raise IndexError("Only integers, slices, one dimensional Tensors, one dimensional numpy arrays, and lists "
+                             "of integers, are valid indices.")
+        new_batch_size = self._signature[0][item].size(0)
+        if new_batch_size == 0:
+            raise IndexError("Index corresponds to a batch of size zero, which is disallowed.")
+
+        new_signature = [tensor[item] for tensor in self._signature]
+        new_inverse_signature = [tensor[item] for tensor in self._inverse_signature]
+        new_path = [tensor[item] for tensor in self._path]
+        if isinstance(self._end, torch.Tensor):
+            new_end = self._end[item]
+        else:
+            new_end = self._end
+
+        # Only assign them after we're certain they've all been created successfully, lest we leave self in a
+        # half-modified state.
+        # Probably overkill as I think if an error is going to be thrown as it will always be thrown on the
+        # new_signature line before we assign anything, but it doesn't hurt to be sure.
+        self._signature = new_signature
+        self._inverse_signature = new_inverse_signature
+        self._path = new_path
+        self._end = new_end
+        self._batch_size = new_batch_size
+
+    def shuffle(self):
+        """Randomly permutes the Path along its batch dimension, and returns as a new Path. Returns a tuple of the
+        new Path object, and the random permutation that produced it."""
+        new_path = copy.copy(self)  # shallow copy
+        _, perm = new_path.shuffle_()
+        return new_path, perm
+
+    def shuffle_(self):
+        """In place version of :meth:`signatory.Path.shuffle`."""
+        perm = torch.randperm(self.size(-3), device=self._device)
+        self._getitem_inplace(perm)
+        return self, perm
+
+    def __getitem__(self, item):
+        new_path = copy.copy(self)  # shallow copy
+        new_path._getitem_inplace(item)
+        return new_path
