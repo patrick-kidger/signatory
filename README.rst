@@ -23,9 +23,6 @@ Check out `this <https://arxiv.org/abs/1603.03788>`__ for a primer on the use of
 
 Installation
 ############
-Available for Python 2.7, 3.5, 3.6, 3.7, 3.8 and Linux, Mac, Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.2.0, 1.3.0, 1.3.1, 1.4.0 or 1.5.0.
-
-Install via:
 
 .. code-block:: bash
 
@@ -33,26 +30,31 @@ Install via:
 
 where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.2.1) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
 
-
-    For example, if you are using PyTorch 1.3.0 and want Signatory 1.1.4, then you should run:
-
-    .. code-block:: bash
-
-        pip install signatory==1.1.4.1.3.0 --no-cache-dir --force-reinstall
-
-    Yes, this looks a bit odd. This is needed to work around `limitations of PyTorch <https://github.com/pytorch/pytorch/issues/28754>`__ and `pip <https://www.python.org/dev/peps/pep-0440/>`__.
-
-    Take care **not** to run ``pip install signatory``, as this will likely download the wrong version.
-
-    The ``--no-cache-dir --force-reinstall`` flags are because ``pip`` doesn't expect to need to care about versions quite as much as this, so it will sometimes erroneously use inappropriate caches if not told otherwise.
+Available for Python 2.7, 3.5, 3.6, 3.7, 3.8 and Linux, Mac, Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.2.0, 1.3.0, 1.3.1, 1.4.0 or 1.5.0.
 
 After installation, just ``import signatory`` inside Python.
+
+Take care **not** to run ``pip install signatory``, as this will likely download the wrong version.
+
+Example:
+--------
+
+For example, if you are using PyTorch 1.3.0 and want Signatory 1.1.4, then you should run:
+
+.. code-block:: bash
+
+    pip install signatory==1.1.4.1.3.0 --no-cache-dir --force-reinstall
+        
+Why you need to specify all of this:
+------------------------------------
+
+Yes, this looks a bit odd. This is needed to work around `limitations of PyTorch <https://github.com/pytorch/pytorch/issues/28754>`__ and `pip <https://www.python.org/dev/peps/pep-0440/>`__.
+
+The ``--no-cache-dir --force-reinstall`` flags are because ``pip`` doesn't expect to need to care about versions quite as much as this, so it will sometimes erroneously use inappropriate caches if not told otherwise.
 
 Installation from source is also possible; please consult the `documentation <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__. This also includes information on how to run the tests and benchmarks.
 
 If you have any problems with installation then check the `FAQ <https://signatory.readthedocs.io/en/latest/pages/miscellaneous/faq.html#miscellaneous-faq-importing>`__. If that doesn't help then feel free to `open an issue <https://github.com/patrick-kidger/signatory/issues>`__.
-
-
 
 Documentation
 #############
