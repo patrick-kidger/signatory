@@ -2,34 +2,34 @@
 
 Installation
 ############
-Available for Python 2.7, 3.5, 3.6, 3.7, 3.8 and Linux, Mac, Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.2.0, 1.3.0, 1.3.1, 1.4.0 or 1.5.0.
-
-Install via:
 
 .. code-block:: bash
 
     pip install signatory==<SIGNATORY_VERSION>.<TORCH_VERSION> --no-cache-dir --force-reinstall
 
-where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is |version|) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
+where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.2.1) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
 
-.. command.readme off (GitHub doesn't support using admonitions this way, and just uses indented text instead.)
-.. admonition:: Example
-
-    .. command.readme on
-
-    For example, if you are using PyTorch 1.3.0 and want Signatory 1.1.4, then you should run:
-
-    .. code-block:: bash
-
-        pip install signatory==1.1.4.1.3.0 --no-cache-dir --force-reinstall
-
-    Yes, this looks a bit odd. This is needed to work around `limitations of PyTorch <https://github.com/pytorch/pytorch/issues/28754>`__ and `pip <https://www.python.org/dev/peps/pep-0440/>`__.
-
-    Take care **not** to run ``pip install signatory``, as this will likely download the wrong version.
-
-    The ``--no-cache-dir --force-reinstall`` flags are because ``pip`` doesn't expect to need to care about versions quite as much as this, so it will sometimes erroneously use inappropriate caches if not told otherwise.
+Available for Python 2.7, 3.5, 3.6, 3.7, 3.8 and Linux, Mac, Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.2.0, 1.3.0, 1.3.1, 1.4.0 or 1.5.0.
 
 After installation, just ``import signatory`` inside Python.
+
+Take care **not** to run ``pip install signatory``, as this will likely download the wrong version.
+
+Example:
+--------
+
+For example, if you are using PyTorch 1.3.0 and want Signatory 1.1.4, then you should run:
+
+.. code-block:: bash
+
+    pip install signatory==1.1.4.1.3.0 --no-cache-dir --force-reinstall
+        
+Why you need to specify all of this:
+------------------------------------
+
+Yes, this looks a bit odd. This is needed to work around `limitations of PyTorch <https://github.com/pytorch/pytorch/issues/28754>`__ and `pip <https://www.python.org/dev/peps/pep-0440/>`__.
+
+The ``--no-cache-dir --force-reinstall`` flags are because ``pip`` doesn't expect to need to care about versions quite as much as this, so it will sometimes erroneously use inappropriate caches if not told otherwise.
 
 .. command.readme insert Installation from source is also possible; please consult the `documentation <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#usage-install-from-source>`__. This also includes information on how to run the tests and benchmarks.
 
@@ -40,7 +40,7 @@ If you have any problems with installation then check the `FAQ <https://signator
 .. _usage-install-from-source:
 
 Install from source
-^^^^^^^^^^^^^^^^^^^
+-------------------
 For most use-cases, the prebuilt binaries available as described above should be sufficient. However installing from source is also perfectly feasible, and usually not too tricky.
 
 You'll need to have a C++ compiler installed and known to ``pip``, and furthermore this must be the same compiler that PyTorch uses. (This is ``msvc`` on Windows, ``gcc`` on Linux, and ``clang`` on Macs.) You must have already installed `PyTorch <http://pytorch.org/>`__. (You don't have to compile PyTorch itself from source, though!)
@@ -100,6 +100,9 @@ If you choose the second option then tests, benchmarking code, and code to build
 
 A helpful point of reference for getting this to work might be the `official build scripts <https://github.com/patrick-kidger/signatory/blob/master/.github/workflows/build.yml>`__ for Signatory.
 
+
+Incompatible combinations
+-------------------------
 
 Note that PyTorch does not support the following combinations, so Signatory doesn't either:
 
