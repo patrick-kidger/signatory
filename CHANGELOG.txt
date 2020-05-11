@@ -1,5 +1,6 @@
 1.2.1
 -----
+Added support for Python 3.8
 Added support for PyTorch 1.5.0
 Added support for copying, shuffling, slicing and indexing Path.
 
