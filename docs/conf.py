@@ -2,7 +2,7 @@ import os
 import sys
 
 
-sys.path.extend([os.path.abspath('mock'),     # import torch
+sys.path.extend([os.path.abspath('mock'),     # import torch, numpy
                  os.path.abspath('..'),       # import metadata
                  os.path.abspath('../src')])  # import signatory
 

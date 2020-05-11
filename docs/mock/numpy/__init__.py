@@ -1,0 +1,2 @@
+class ndarray(object):
+    pass

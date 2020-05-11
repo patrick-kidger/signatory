@@ -142,13 +142,16 @@ py27 = '2.7.13',
 py35 = '3.5.4',
 py36 = '3.6.9',
 py37 = '3.7.0',
+py38 = '3.8.2',
+py_all = '[<<py27>>, <<py35>>, <<py36>>, <<py37>>, <<py38>>]',
 
 # Versions of PyTorch
 pytorch12 = '1.2.0',
 pytorch13 = '1.3.0',
 pytorch131 = '1.3.1',
 pytorch14 = '1.4.0',
-pytorch_all = '[<<pytorch12>>, <<pytorch13>>, <<pytorch131>>, <<pytorch14>>]',
+pytorch15 = '1.5.0',
+pytorch_all = '[<<pytorch12>>, <<pytorch13>>, <<pytorch131>>, <<pytorch14>>, <<pytorch15>>]',
 
 # A strategy for every operating system and version of Python
 # Note that every possible combination must be specified in action_os and action_pv to have repository_dispatch work
@@ -158,7 +161,7 @@ strategy = \
 strategy:
   matrix:
     os: [<<windows>>, <<linux>>, <<mac>>]
-    python-version: [<<py27>>, <<py35>>, <<py36>>, <<py37>>]
+    python-version: <<py_all>>
     pytorch-version: <<pytorch_all>>
     exclude:
       # PyTorch doesn't support this combination
@@ -167,6 +170,17 @@ strategy:
       - os: <<windows>>
         python-version: <<py35>>
         pytorch-version: <<pytorch14>>
+      - os: <<windows>>
+        python-version: <<py35>>
+        pytorch-version: <<pytorch15>>
+      - python-version: <<py27>>
+        pytorch-version: <<pytorch15>>
+      - python-version: <<py38>>
+        pytorch-version: <<pytorch12>>
+      - python-version: <<py38>>
+        pytorch-version: <<pytorch13>>
+      - python-version: <<py38>>
+        pytorch-version: <<pytorch131>>
   fail-fast: false""",
 
 # A single Linux strategy
@@ -207,8 +221,9 @@ _action_pv_27 = "(contains(github.event.action, '-pv <<py27>>') && matrix.python
 _action_pv_35 = "(contains(github.event.action, '-pv <<py35>>') && matrix.python-version == '<<py35>>')",
 _action_pv_36 = "(contains(github.event.action, '-pv <<py36>>') && matrix.python-version == '<<py36>>')",
 _action_pv_37 = "(contains(github.event.action, '-pv <<py37>>') && matrix.python-version == '<<py37>>')",
+_action_pv_38 = "(contains(github.event.action, '-pv <<py38>>') && matrix.python-version == '<<py38>>')",
 _action_pv_star = "contains(github.event.action, '-pv *')",
-action_pv = "(<<_action_pv_27>> || <<_action_pv_35>> || <<_action_pv_36>> || <<_action_pv_37>> || <<_action_pv_star>>)",
+action_pv = "(<<_action_pv_27>> || <<_action_pv_35>> || <<_action_pv_36>> || <<_action_pv_37>> || <<_action_pv_38>> || <<_action_pv_star>>)",
 
 # Tests whether a step is triggered via the normal event associated with the workflow
 if_event = "(github.event_name == '<<event_name>>' && (<<event_cond>>))",
@@ -240,6 +255,9 @@ with:
   python-version: '3.7'""",
 
 # Performs the necessary set-up for Windows.
+# Needs the cpuonly package because Windows is a bit weird. (Specifically this seems necessary when using Python 3.8 or
+# PyTorch 1.5.) I don't have a Windows machine with a GPU to test that this doesn't break anything, but compiling
+# Signatory on Linux with cpuonly installed, will still allow for Signatory to run on the GPU, so this is probably fine.
 setup_windows = \
 r"""name: Windows
 <<if_>> && (matrix.os == '<<windows>>')
@@ -254,7 +272,7 @@ run: >
   %CONDA%/Scripts/conda create -n myenv python=%PYTHON_VERSION% -y &&
   %CONDA%/Scripts/activate myenv &&
   python -m pip install --upgrade pip &&
-  conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y &&
+  conda install pytorch==${{ matrix.pytorch-version }} cpuonly -c pytorch -y &&
   python command.py should_not_import &&""",
 
 # Builds a bdist_wheel on Windows
