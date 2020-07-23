@@ -56,6 +56,8 @@ Installation from source is also possible; please consult the `documentation <ht
 
 If you have any problems with installation then check the `FAQ <https://signatory.readthedocs.io/en/latest/pages/miscellaneous/faq.html#miscellaneous-faq-importing>`__. If that doesn't help then feel free to `open an issue <https://github.com/patrick-kidger/signatory/issues>`__.
 
+
+
 Documentation
 #############
 The documentation is available `here <https://signatory.readthedocs.io>`__.
