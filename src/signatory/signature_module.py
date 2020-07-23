@@ -76,6 +76,10 @@ class _SignatureFunction(autograd.Function):
     @autograd_function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
     def backward(ctx, grad_result):
         signature_, path_increments = ctx.saved_tensors
+        # PyTorch 1.5 changed how clone etc. work wrt memory format; this can then throw an error unless we do this.
+        # Ideally we'd go through all the code and make every memory-format-aware op actually create contiguous rather
+        # than format-preserved tensors, but that's a lot more work and won't compile with pre-1.5, when the concept
+        # didn't exist.
         path_increments = path_increments.contiguous()
 
         grad_path, grad_basepoint, grad_initial = impl.signature_backward(grad_result, signature_, path_increments,
