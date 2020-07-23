@@ -31,7 +31,7 @@ Install via:
 
     pip install signatory==<SIGNATORY_VERSION>.<TORCH_VERSION> --no-cache-dir --force-reinstall
 
-where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.2.1) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
+where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.2.2) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
 
 
     For example, if you are using PyTorch 1.3.0 and want Signatory 1.1.4, then you should run:
