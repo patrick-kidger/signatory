@@ -76,6 +76,7 @@ class _SignatureFunction(autograd.Function):
     @autograd_function.once_differentiable  # Our backward function uses in-place operations for memory efficiency
     def backward(ctx, grad_result):
         signature_, path_increments = ctx.saved_tensors
+        path_increments = path_increments.contiguous()
 
         grad_path, grad_basepoint, grad_initial = impl.signature_backward(grad_result, signature_, path_increments,
                                                                           ctx.depth, ctx.stream, ctx.basepoint,
