@@ -152,7 +152,8 @@ pytorch131 = '1.3.1',
 pytorch14 = '1.4.0',
 pytorch15 = '1.5.0',
 pytorch151 = '1.5.1',
-pytorch_all = '[<<pytorch12>>, <<pytorch13>>, <<pytorch131>>, <<pytorch14>>, <<pytorch15>>, <<pytorch151>>]',
+pytorch16 = '1.6.0',
+pytorch_all = '[<<pytorch12>>, <<pytorch13>>, <<pytorch131>>, <<pytorch14>>, <<pytorch15>>, <<pytorch151>>, <<pytorch16>>]',
 
 # A strategy for every operating system and version of Python
 # Note that every possible combination must be specified in action_os and action_pv to have repository_dispatch work
@@ -181,6 +182,10 @@ strategy:
         pytorch-version: <<pytorch151>>
       - python-version: <<py27>>
         pytorch-version: <<pytorch151>>
+      - python-version: <<py27>>
+        pytorch-version: <<pytorch16>>
+      - python-version: <<py35>>
+        pytorch-version: <<pytorch16>>
       - python-version: <<py38>>
         pytorch-version: <<pytorch12>>
       - python-version: <<py38>>
