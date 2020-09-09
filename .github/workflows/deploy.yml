@@ -126,7 +126,7 @@ jobs:
         python -m pip install --upgrade pip &&
         conda install pytorch==${{ matrix.pytorch-version }} cpuonly -c pytorch -y &&
         python command.py should_not_import &&
-        python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" bdist_wheel &&
+        DISTUTILS_USE_SDK=1 python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" bdist_wheel &&
         python command.py should_not_import &&
         pip install twine &&
         twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/* &&

@@ -288,7 +288,7 @@ run: >
 
 # Builds a bdist_wheel on Windows
 build_windows = \
-"""  python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" bdist_wheel &&
+"""  DISTUTILS_USE_SDK=1 python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" bdist_wheel &&
   python command.py should_not_import &&""",
 
 # Install from sdist or bdist_wheel on Windows
