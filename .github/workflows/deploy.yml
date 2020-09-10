@@ -28,7 +28,7 @@ jobs:
       matrix:
         os: [ubuntu-16.04]
         python-version: [3.7.0]
-        pytorch-version: [1.2.0, 1.3.0, 1.3.1, 1.4.0, 1.5.0, 1.5.1]
+        pytorch-version: [1.2.0, 1.3.0, 1.3.1, 1.4.0, 1.5.0, 1.5.1, 1.6.0]
     
     steps:
     - name: Checkout code
@@ -68,7 +68,7 @@ jobs:
       matrix:
         os: [windows-2016, ubuntu-16.04, macOS-latest]
         python-version: [2.7.13, 3.5.4, 3.6.9, 3.7.0, 3.8.2]
-        pytorch-version: [1.2.0, 1.3.0, 1.3.1, 1.4.0, 1.5.0, 1.5.1]
+        pytorch-version: [1.2.0, 1.3.0, 1.3.1, 1.4.0, 1.5.0, 1.5.1, 1.6.0]
         exclude:
           # PyTorch doesn't support this combination
           - os: windows-2016
@@ -86,6 +86,10 @@ jobs:
             pytorch-version: 1.5.1
           - python-version: 2.7.13
             pytorch-version: 1.5.1
+          - python-version: 2.7.13
+            pytorch-version: 1.6.0
+          - python-version: 3.5.4
+            pytorch-version: 1.6.0
           - python-version: 3.8.2
             pytorch-version: 1.2.0
           - python-version: 3.8.2
@@ -117,6 +121,7 @@ jobs:
       # have a nonzero (fail) return code
       run: >
         "C:/Program Files (x86)/Microsoft Visual Studio/2017/Enterprise/VC/Auxiliary/Build/vcvars64.bat" &&
+        SET DISTUTILS_USE_SDK=1 &&
         %CONDA%/Scripts/conda create -n myenv python=%PYTHON_VERSION% -y &&
         %CONDA%/Scripts/activate myenv &&
         python -m pip install --upgrade pip &&

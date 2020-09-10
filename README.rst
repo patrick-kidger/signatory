@@ -28,9 +28,9 @@ Installation
 
     pip install signatory==<SIGNATORY_VERSION>.<TORCH_VERSION> --no-cache-dir --force-reinstall
 
-where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.2.2) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
+where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.2.3) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
 
-Available for Python 2.7, 3.5, 3.6, 3.7, 3.8 and Linux, Mac, Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.2.0, 1.3.0, 1.3.1, 1.4.0 or 1.5.0.
+Available for Python 2.7, 3.5, 3.6, 3.7, 3.8 and Linux, Mac, Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.2.0, 1.3.0, 1.3.1, 1.4.0, 1.5.0, 1.5.1 or 1.6.0.
 
 After installation, just ``import signatory`` inside Python.
 
@@ -39,11 +39,11 @@ Take care **not** to run ``pip install signatory``, as this will likely download
 Example:
 --------
 
-For example, if you are using PyTorch 1.3.0 and want Signatory 1.1.4, then you should run:
+For example, if you are using PyTorch 1.6.0 and want Signatory 1.2.2, then you should run:
 
 .. code-block:: bash
 
-    pip install signatory==1.1.4.1.3.0 --no-cache-dir --force-reinstall
+    pip install signatory==1.2.2.1.6.0 --no-cache-dir --force-reinstall
         
 Why you need to specify all of this:
 ------------------------------------
