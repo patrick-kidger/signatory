@@ -279,7 +279,7 @@ shell: cmd
 # It also means that if any command fails then the step as a whole should correctly
 # have a nonzero (fail) return code
 run: >
-  "C:/Program Files (x86)/Microsoft Visual Studio/2017/Enterprise/VC/Auxiliary/Build/vcvars64.bat" &&
+  DISTUTILS_USE_SDK=1 "C:/Program Files (x86)/Microsoft Visual Studio/2017/Enterprise/VC/Auxiliary/Build/vcvars64.bat" &&
   %CONDA%/Scripts/conda create -n myenv python=%PYTHON_VERSION% -y &&
   %CONDA%/Scripts/activate myenv &&
   python -m pip install --upgrade pip &&
@@ -288,7 +288,7 @@ run: >
 
 # Builds a bdist_wheel on Windows
 build_windows = \
-"""  DISTUTILS_USE_SDK=1 python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" bdist_wheel &&
+"""  python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" bdist_wheel &&
   python command.py should_not_import &&""",
 
 # Install from sdist or bdist_wheel on Windows
