@@ -18,11 +18,11 @@ Take care **not** to run ``pip install signatory``, as this will likely download
 Example:
 --------
 
-For example, if you are using PyTorch 1.6.0 and want Signatory 1.2.2, then you should run:
+For example, if you are using PyTorch 1.6.0 and want Signatory 1.2.3, then you should run:
 
 .. code-block:: bash
 
-    pip install signatory==1.2.2.1.6.0 --no-cache-dir --force-reinstall
+    pip install signatory==1.2.3.1.6.0 --no-cache-dir --force-reinstall
         
 Why you need to specify all of this:
 ------------------------------------
