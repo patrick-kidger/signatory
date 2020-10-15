@@ -15,8 +15,7 @@ author = metadata.author
 version = release = metadata.version
 
 # must have installed py2annotate in order generate docs
-extensions = ['sphinx.ext.napoleon', 'sphinx.ext.autodoc', 'py2annotate', 'sphinx.ext.intersphinx',
-              'sphinx.ext.autosummary']
+extensions = ['sphinx.ext.napoleon', 'sphinx.ext.autodoc', 'sphinx.ext.intersphinx', 'sphinx.ext.autosummary']
 
 napoleon_use_admonition_for_examples = True
 autodoc_mock_imports = ['{}._impl'.format(metadata.project)]
