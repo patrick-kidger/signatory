@@ -112,7 +112,7 @@ def _get_device():
     import torch
     try:
         return 'CUDA device ' + str(torch.cuda.current_device())
-    except AssertionError:
+    except (AssertionError, RuntimeError):
         return 'no CUDA device'
 
 
