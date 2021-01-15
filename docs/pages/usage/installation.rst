@@ -9,7 +9,9 @@ Installation
 
 where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is |version|) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
 
-Available for Python 3.6, 3.7, 3.8 and Linux, Mac, Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.6.0, 1.7.0, or 1.7.1.
+Available for Python 3.6, 3.7, 3.8 on Linux and Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.6.0, 1.7.0, or 1.7.1.
+
+(If you need it, then previous versions of Signatory included support for older versions of Python, PyTorch, and MacOS, see `here <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#older-versions>`__.)
 
 After installation, just ``import signatory`` inside Python.
 
@@ -102,4 +104,6 @@ A helpful point of reference for getting this to work might be the `official bui
 
 Older versions
 --------------
-Older versions of Signatory supported earlier versions of Python and PyTorch. The full list of available combinations can seen `on PyPI <https://pypi.org/project/signatory/#history>`__.
+Older versions of Signatory supported earlier versions of Python and PyTorch. It also included support for MacOS, but this has now been dropped as being difficult to maintain.
+
+The full list of available combinations can seen `on PyPI <https://pypi.org/project/signatory/#history>`__.
