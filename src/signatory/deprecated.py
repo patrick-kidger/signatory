@@ -17,12 +17,15 @@
 
 import warnings
 
+# noinspection PyUnreachableCode
+if False:
+    from typing import Optional
+
 
 max_parallel_value = [8]
 
 
-def max_parallelism(value=None):
-    # type: (Optional[int]) -> int
+def max_parallelism(value: Optional[int] = None) -> int:
     """Deprecated and now does nothing. Use torch.set_num_threads and torch.get_num_threads instead.
 
     Old docstring:

@@ -22,14 +22,13 @@ from . import impl
 
 # noinspection PyUnreachableCode
 if False:
-    from typing import List, Optional, Union
+    from typing import List, Union
     # what we actually want, but can't make sense of in the auto-generated documentation
     # LyndonBracket = Union[int, List['LyndonBracket']]
     LyndonBracket = Union[int, List]
 
 
-def lyndon_words(channels, depth):
-    # type: (int, int) -> List[List[int]]
+def lyndon_words(channels: int, depth: int) -> List[List[int]]:
     r"""Computes the collection of all Lyndon words up to length :attr:`depth` in an alphabet of size
     :attr:`channels`. Each letter is represented by an integer :math:`i` in the range
     :math:`0 \leq i < \text{channels}`.
@@ -49,8 +48,7 @@ def lyndon_words(channels, depth):
     return impl.lyndon_words(channels, depth)
 
 
-def lyndon_brackets(channels, depth):
-    # type: (int, int) -> List[LyndonBracket]
+def lyndon_brackets(channels: int, depth: int) -> List[LyndonBracket]:
     r"""Computes the collection of all Lyndon words, in their standard bracketing, up to length :attr:`depth` in an
     alphabet of size :attr:`channels`. Each letter is represented by an integer :math:`i` in the range
     :math:`0 \leq i < \text{channels}`.
@@ -69,8 +67,7 @@ def lyndon_brackets(channels, depth):
     return impl.lyndon_brackets(channels, depth)
 
 
-def all_words(channels, depth):
-    # type: (int, int) -> List[List[int]]
+def all_words(channels: int, depth: int) -> List[List[int]]:
     r"""Computes the collection of all words up to length :attr:`depth` in an alphabet of size
     :attr:`channels`. Each letter is represented by an integer :math:`i` in the range
     :math:`0 \leq i < \text{channels}`.

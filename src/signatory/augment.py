@@ -21,7 +21,7 @@ from torch.nn import functional as F
 
 # noinspection PyUnreachableCode
 if False:
-    from typing import Any, Callable, Tuple
+    from typing import Callable, Tuple
 
 
 class Augment(nn.Module):
@@ -116,19 +116,17 @@ class Augment(nn.Module):
     """
 
     def __init__(self,
-                 in_channels,            # type: int
-                 layer_sizes,            # type: Tuple[int, ...]
-                 kernel_size,            # type: int
-                 stride=1,               # type: int
-                 padding=0,              # type: int
-                 dilation=1,             # type: int
-                 bias=True,              # type: bool
-                 activation=F.relu,      # type: Callable[[torch.Tensor], torch.Tensor]
-                 include_original=True,  # type: bool
-                 include_time=True,      # type: bool
-                 **kwargs                # type: Any
-                 ):
-        # type: (...) -> None
+                 in_channels: int,
+                 layer_sizes: Tuple[int, ...],
+                 kernel_size: int,
+                 stride: int = 1,
+                 padding: int = 0,
+                 dilation: int = 1,
+                 bias: bool = True,
+                 activation: Callable[[torch.Tensor], torch.Tensor] = F.relu,
+                 include_original: bool = True,
+                 include_time: bool = True,
+                 **kwargs):
         super(Augment, self).__init__(**kwargs)
 
         if isinstance(layer_sizes, int):
@@ -163,8 +161,7 @@ class Augment(nn.Module):
                                             bias=bias))
                 last_layer_channels = augment_channel
 
-    def forward(self, x):
-        # type: (torch.Tensor) -> torch.Tensor
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """The forward operation.
 
         Arguments:

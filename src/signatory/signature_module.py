@@ -26,7 +26,7 @@ from . import impl
 
 # noinspection PyUnreachableCode
 if False:
-    from typing import Any, List, Union
+    from typing import List, Optional, Union
 
 
 def interpret_basepoint(basepoint, batch_size, channel_size, dtype, device):
@@ -171,9 +171,8 @@ def _signature_batch_trick(path, depth, stream, basepoint, inverse, initial, sca
     return multi_signature_combine(chunks, channel_size, depth, inverse, scalar_term)
 
 
-def signature(path, depth, stream=False, basepoint=False, inverse=False, initial=None, scalar_term=False):
-    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], bool, Union[None, torch.Tensor], bool) -> torch.Tensor
-
+def signature(path: torch.Tensor, depth: int, stream: bool = False, basepoint: Union[bool, torch.Tensor] = False,
+              inverse: bool = False, initial: Optional[torch.Tensor] = None, scalar_term: bool = False) -> torch.Tensor:
     r"""Applies the signature transform to a stream of data.
 
     The input :attr:`path` is expected to be a three-dimensional tensor, with dimensions :math:`(N, L, C)`, where
@@ -274,16 +273,15 @@ class Signature(nn.Module):
         scalar_term (bool, optional): as :func:`signatory.signature`.
     """
 
-    def __init__(self, depth, stream=False, inverse=False, scalar_term=False, **kwargs):
-        # type: (int, bool, bool, bool, **Any) -> None
+    def __init__(self, depth: int, stream: bool = False, inverse: bool = False, scalar_term: bool = False, **kwargs):
         super(Signature, self).__init__(**kwargs)
         self.depth = depth
         self.stream = stream
         self.inverse = inverse
         self.scalar_term = scalar_term
 
-    def forward(self, path, basepoint=False, initial=None):
-        # type: (torch.Tensor, Union[bool, torch.Tensor], Union[None, torch.Tensor]) -> torch.Tensor
+    def forward(self, path: torch.Tensor, basepoint: Union[bool, torch.Tensor] = False,
+                initial: Optional[torch.Tensor] = None) -> torch.Tensor:
         """The forward operation.
 
         Arguments:
@@ -305,8 +303,7 @@ class Signature(nn.Module):
 
 
 # A wrapper for the sake of consistent documentation
-def signature_channels(channels, depth, scalar_term=False):
-    # type: (int, int, bool) -> int
+def signature_channels(channels: int, depth: int, scalar_term: bool = False) -> int:
     r"""Computes the number of output channels from a signature call. Specifically, it computes
 
     .. math::
@@ -328,8 +325,8 @@ def signature_channels(channels, depth, scalar_term=False):
     return impl.signature_channels(channels, depth, scalar_term)
 
 
-def extract_signature_term(sigtensor, channels, depth, scalar_term=False):
-    # type: (torch.Tensor, int, int, bool) -> torch.Tensor
+def extract_signature_term(sigtensor: torch.Tensor, channels: int, depth: int,
+                           scalar_term: bool = False) -> torch.Tensor:
     r"""Extracts a particular term from a signature.
 
     The signature to depth :math:`d` of a batch of paths in :math:`\mathbb{R}^\text{C}` is a tensor with
@@ -376,8 +373,8 @@ class _SignatureCombineFunction(autograd.Function):
         return (None, None, None) + tuple(grad)
 
 
-def signature_combine(sigtensor1, sigtensor2, input_channels, depth, inverse=False, scalar_term=False):
-    # type: (torch.Tensor, torch.Tensor, int, int, bool, bool) -> torch.Tensor
+def signature_combine(sigtensor1: torch.Tensor, sigtensor2: torch.Tensor, input_channels: int, depth: int,
+                      inverse: bool = False, scalar_term: bool = False) -> torch.Tensor:
     r"""Combines two signatures into a single signature.
 
     Usage is most clear by example. See :ref:`examples-combine`.
@@ -420,8 +417,8 @@ def signature_combine(sigtensor1, sigtensor2, input_channels, depth, inverse=Fal
     return multi_signature_combine([sigtensor1, sigtensor2], input_channels, depth, inverse, scalar_term)
 
 
-def multi_signature_combine(sigtensors, input_channels, depth, inverse=False, scalar_term=False):
-    # type: (List[torch.Tensor], int, int, bool, bool) -> torch.Tensor
+def multi_signature_combine(sigtensors: List[torch.Tensor], input_channels: int, depth: int, inverse: bool = False,
+                            scalar_term: bool = False) -> torch.Tensor:
     r"""Combines multiple signatures into a single signature.
 
     See also :func:`signatory.signature_combine` for a simpler version.
