@@ -51,9 +51,9 @@ jobs:
       <<terminate_linux>>
 
 # TODO: re-enable mac support
-#    - <<setup_mac>>
-#      <<build_mac>>
-#      <<upload_mac>>
-#      <<install_remote_mac>>
-#      <<test_mac>>
-#      <<terminate_mac>>
+#    - <#<setup_mac>>
+#      <#<build_mac>>
+#      <#<upload_mac>>
+#      <#<install_remote_mac>>
+#      <#<test_mac>>
+#      <#<terminate_mac>>

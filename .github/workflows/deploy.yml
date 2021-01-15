@@ -152,44 +152,9 @@ jobs:
       
 
 # TODO: re-enable mac support
-#    - name: Mac
-       if: ((github.event_name == 'pull_request' && (github.event.pull_request.merged)) || (github.event_name == 'repository_dispatch' && contains(github.event.action, '-trigger deploy ') && ((contains(github.event.action, '-os windows-2016') && matrix.os == 'windows-2016') || (contains(github.event.action, '-os ubuntu-16.04') && matrix.os == 'ubuntu-16.04') || (contains(github.event.action, '-os macOS-latest') && matrix.os == 'macOS-latest') || contains(github.event.action, '-os *')) && ((contains(github.event.action, '-pv 3.6.9') && matrix.python-version == '3.6.9') || (contains(github.event.action, '-pv 3.7.0') && matrix.python-version == '3.7.0') || (contains(github.event.action, '-pv 3.8.2') && matrix.python-version == '3.8.2') || contains(github.event.action, '-pv *')))) && (matrix.os == 'macOS-latest')
-       env:
-         PYTHON_VERSION: ${{ matrix.python-version }}
-       run: |
-         set -x
-         brew update
-         brew install llvm libomp
-         echo 'set -ex
-         . $CONDA/etc/profile.d/conda.sh
-         conda create -n myenv python=$PYTHON_VERSION -y
-         conda activate myenv
-         python -m pip install --upgrade pip
-         conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
-         python command.py should_not_import
-#        export LDFLAGS="-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib"
-         export CPPFLAGS="-I/usr/local/opt/llvm/include"
-         MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" bdist_wheel
-         python command.py should_not_import
-#        pip install twine
-         twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} dist/*
-#        retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
-         SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-         retry python -m pip install signatory==$SIGNATORY_VERSION.${{ matrix.pytorch-version }} --only-binary signatory
-#        git clone https://github.com/bottler/iisignature.git
-         cd iisignature
-         python setup.py install
-         cd ..
-         rm -rf iisignature
-         python -m pip install pytest
-         python -c "import os
-         import subprocess
-         import sys
-         print(sys.version)
-         returncode_test = subprocess.Popen('\''python command.py test'\'', shell=True).wait()
-         returncode_version = sys.version[:5] != os.environ['\''PYTHON_VERSION'\''][:5]
-         sys.exit(max(returncode_test, returncode_version))
-         " 
-#        ' > $GITHUB_WORKSPACE/to_run.sh
-         chmod +x $GITHUB_WORKSPACE/to_run.sh
-         sudo -s -H -E $GITHUB_WORKSPACE/to_run.sh
+#    - <#<setup_mac>>
+#      <#<build_mac>>
+#      <#<upload_mac>>
+#      <#<install_remote_mac>>
+#      <#<test_mac>>
+#      <#<terminate_mac>>
