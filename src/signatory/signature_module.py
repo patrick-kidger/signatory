@@ -24,9 +24,7 @@ import warnings
 
 from . import impl
 
-# noinspection PyUnreachableCode
-if False:
-    from typing import List, Optional, Union
+from typing import List, Optional, Union
 
 
 def interpret_basepoint(basepoint, batch_size, channel_size, dtype, device):

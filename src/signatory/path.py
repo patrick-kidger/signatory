@@ -25,9 +25,7 @@ from . import signature_module as smodule
 from . import logsignature_module as lmodule
 from . import impl
 
-# noinspection PyUnreachableCode
-if False:
-    from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 
 class _BackwardShortcut(autograd.Function):

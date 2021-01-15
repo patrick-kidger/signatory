@@ -17,9 +17,7 @@
 
 import warnings
 
-# noinspection PyUnreachableCode
-if False:
-    from typing import Optional
+from typing import Optional
 
 
 max_parallel_value = [8]

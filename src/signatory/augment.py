@@ -19,9 +19,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-# noinspection PyUnreachableCode
-if False:
-    from typing import Callable, Tuple
+from typing import Callable, Tuple
 
 
 class Augment(nn.Module):

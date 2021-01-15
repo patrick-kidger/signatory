@@ -26,9 +26,7 @@ import weakref
 from . import signature_module as smodule
 from . import impl
 
-# noinspection PyUnreachableCode
-if False:
-    from typing import Union
+from typing import Union
 
 
 def _interpret_mode(mode):

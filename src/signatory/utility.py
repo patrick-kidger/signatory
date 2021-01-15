@@ -20,12 +20,10 @@ import itertools as it
 from . import impl
 
 
-# noinspection PyUnreachableCode
-if False:
-    from typing import List, Union
-    # what we actually want, but can't make sense of in the auto-generated documentation
-    # LyndonBracket = Union[int, List['LyndonBracket']]
-    LyndonBracket = Union[int, List]
+from typing import List, Union
+# what we actually want, but can't make sense of in the auto-generated documentation
+# LyndonBracket = Union[int, List['LyndonBracket']]
+LyndonBracket = Union[int, List]
 
 
 def lyndon_words(channels: int, depth: int) -> List[List[int]]:
