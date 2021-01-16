@@ -25,9 +25,7 @@ from . import signature_module as smodule
 from . import logsignature_module as lmodule
 from . import impl
 
-# noinspection PyUnreachableCode
-if False:
-    from typing import Any, Dict, List, Union
+from typing import Dict, List, Tuple, Union
 
 
 class _BackwardShortcut(autograd.Function):
@@ -108,7 +106,7 @@ def _backward_shortcut(signature, path_pieces, depth, scalar_term):
     return _BackwardShortcut.apply(signature.detach(), depth, scalar_term, *path_pieces)
 
 
-class Path(object):
+class Path:
     """Calculates signatures and logsignatures on intervals of an input path.
 
     By doing some precomputation, it can rapidly calculate the signature or logsignature over any slice of the input
@@ -140,31 +138,32 @@ class Path(object):
                  '_device', '_signature_channels', '_logsignature_channels', '_end',
                  '_signature_to_logsignature_instances')
 
-    def __init__(self, path, depth, basepoint=False, remember_path=True, scalar_term=False, **kwargs):
-        # type: (torch.Tensor, int, Union[bool, torch.Tensor], bool, bool, **Any) -> None
-        self._remember_path = remember_path  # type: bool
-        self._scalar_term = scalar_term  # type: bool
-        self._depth = depth  # type: int
+    def __init__(self, path: torch.Tensor, depth: int, basepoint: Union[bool, torch.Tensor] = False,
+                 remember_path: bool = True, scalar_term: bool = False, **kwargs):
+        self._remember_path: bool = remember_path
+        self._scalar_term: bool = scalar_term
+        self._depth: int = depth
 
-        self._signature = []  # type: List[torch.Tensor]
-        self._inverse_signature = []  # type: List[torch.Tensor]
+        self._signature: List[torch.Tensor] = []
+        self._inverse_signature: List[torch.Tensor] = []
 
-        self._path = []  # type: List[torch.Tensor]
+        self._path: List[torch.Tensor] = []
 
-        self._length = 0  # type: int
-        self._signature_length = 0  # type: int
-        self._lengths = []  # type: List[int]
-        self._signature_lengths = []  # type: List[int]
+        self._length: int = 0
+        self._signature_length: int = 0
+        self._lengths: List[int] = []
+        self._signature_lengths: List[int] = []
 
-        self._batch_size = path.size(-3)  # type: int
-        self._channels = path.size(-1)  # type: int
-        self._device = path.device  # type: torch.device
-        self._signature_channels = smodule.signature_channels(self._channels, self._depth, self._scalar_term)  # type: int
-        self._logsignature_channels = lmodule.logsignature_channels(self._channels, self._depth)  # type: int
+        self._batch_size: int = path.size(-3)
+        self._channels: int = path.size(-1)
+        self._device: torch.device = path.device
+        self._signature_channels: int = smodule.signature_channels(self._channels, self._depth, self._scalar_term)
+        self._logsignature_channels: int = lmodule.logsignature_channels(self._channels, self._depth)
 
-        self._end = basepoint  # type: Union[bool, torch.Tensor]
+        self._end: Union[bool, torch.Tensor] = basepoint
 
-        self._signature_to_logsignature_instances = {}  # type: Dict[Tuple[int, int, str, bool], signatory.SignatureToLogSignature]
+        self._signature_to_logsignature_instances: Dict[Tuple[int, int, str, bool],
+                                                        lmodule.SignatureToLogSignature] = {}
 
         if remember_path:
             use_basepoint, basepoint_value = smodule.interpret_basepoint(basepoint, path.size(0), path.size(2),
@@ -232,8 +231,7 @@ class Path(object):
     def __ne__(self, other):
         return not self == other
 
-    def signature(self, start=None, end=None):
-        # type: (Union[int, None], Union[int, None]) -> torch.Tensor
+    def signature(self, start: Union[int, None] = None, end: Union[int, None] = None) -> torch.Tensor:
         """Returns the signature on a particular interval.
 
         Arguments:
@@ -340,8 +338,8 @@ class Path(object):
             index -= lengths[lengths_index - 1]
         return lengths_index, index
 
-    def logsignature(self, start=None, end=None, mode="words"):
-        # type: (Union[int, None], Union[int, None], str) -> torch.Tensor
+    def logsignature(self, start: Union[int, None] = None, end: Union[int, None] = None,
+                     mode: str = "words") -> torch.Tensor:
         """Returns the logsignature on a particular interval.
 
         Arguments:
@@ -371,8 +369,7 @@ class Path(object):
                                                        self._scalar_term)] = signature_to_logsignature_instance
         return signature_to_logsignature_instance(signature)
 
-    def update(self, path):
-        # type: (torch.Tensor) -> None
+    def update(self, path: torch.Tensor) -> None:
         """Concatenates the given path onto the path already stored.
 
         This means that the signature of the new overall path can now be asked for via :meth:`signatory.Path.signature`.
@@ -410,14 +407,12 @@ class Path(object):
         self._signature_lengths.append(self._signature_length)
 
     @property
-    def remember_path(self):
-        # type: () -> bool
+    def remember_path(self) -> bool:
         """Whether this Path remembers the :attr:`path` argument it was called with."""
         return self._remember_path
 
     @property
-    def path(self):
-        # type: () -> List[torch.Tensor]
+    def path(self) -> List[torch.Tensor]:
         """The path(s) that this Path was created with."""
         if self.remember_path:
             return self._path
@@ -426,13 +421,11 @@ class Path(object):
                                'object must have been initialised with `remember_path=True`.')
 
     @property
-    def depth(self):
-        # type: () -> int
+    def depth(self) -> int:
         """The depth that Path has calculated the signature to."""
         return self._depth
 
-    def size(self, index=None):
-        # type: (Union[int, None]) -> Union[int, torch.Size]
+    def size(self, index: Union[int, None] = None) -> Union[int, torch.Size]:
         """The size of the input path. As :meth:`torch.Tensor.size`.
 
         Arguments:
@@ -447,19 +440,16 @@ class Path(object):
             return self.shape[index]
 
     @property
-    def shape(self):
-        # type: () -> torch.Size
+    def shape(self) -> torch.Size:
         """The shape of the input path. As :attr:`torch.Tensor.shape`."""
         return torch.Size([self._batch_size, self._length, self._channels])
 
     # Method not property for consistency with signature_channels and logsignature_channels
-    def channels(self):
-        # type: () -> int
+    def channels(self) -> int:
         """The number of channels of the input stream."""
         return self._channels
 
-    def signature_size(self, index=None):
-        # type: (Union[int, None]) -> Union[int, torch.Size]
+    def signature_size(self, index: Union[int, None] = None) -> Union[int, torch.Size]:
         """The size of the signature of the path. As :meth:`torch.Tensor.size`.
 
         Arguments:
@@ -474,19 +464,16 @@ class Path(object):
             return self.signature_shape[index]
 
     @property
-    def signature_shape(self):
-        # type: () -> torch.Size
+    def signature_shape(self) -> torch.Size:
         """The shape of the signature of the path. As :attr:`torch.Tensor.shape`."""
         return torch.Size([self._batch_size, self._signature_length, self._signature_channels])
 
     # Method not property for consistency with signatory.signature_channels
-    def signature_channels(self):
-        # type: () -> int
+    def signature_channels(self) -> int:
         """The number of signature channels; as :func:`signatory.signature_channels`."""
         return self._signature_channels
 
-    def logsignature_size(self, index=None):
-        # type: (Union[int, None]) -> Union[int, torch.Size]
+    def logsignature_size(self, index: Union[int, None] = None) -> Union[int, torch.Size]:
         """The size of the logsignature of the path. As :meth:`torch.Tensor.size`.
 
         Arguments:
@@ -501,14 +488,12 @@ class Path(object):
             return self.logsignature_shape[index]
 
     @property
-    def logsignature_shape(self):
-        # type: () -> torch.Size
+    def logsignature_shape(self) -> torch.Size:
         """The shape of the logsignature of the path. As :attr:`torch.Tensor.shape`."""
         return torch.Size([self._batch_size, self._signature_length, self._logsignature_channels])
 
     # Method not property for consistency with signatory.signature_channels
-    def logsignature_channels(self):
-        # type: () -> int
+    def logsignature_channels(self) -> int:
         """The number of logsignature channels; as :func:`signatory.logsignature_channels`."""
         return self._logsignature_channels
 

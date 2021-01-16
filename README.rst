@@ -28,9 +28,11 @@ Installation
 
     pip install signatory==<SIGNATORY_VERSION>.<TORCH_VERSION> --no-cache-dir --force-reinstall
 
-where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.2.3) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
+where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.2.4) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
 
-Available for Python 2.7, 3.5, 3.6, 3.7, 3.8 and Linux, Mac, Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.2.0, 1.3.0, 1.3.1, 1.4.0, 1.5.0, 1.5.1 or 1.6.0.
+Available for Python 3.6, 3.7, 3.8 on Linux and Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.6.0, 1.7.0, or 1.7.1.
+
+(If you need it, then previous versions of Signatory included support for older versions of Python, PyTorch, and MacOS, see `here <https://signatory.readthedocs.io/en/latest/pages/usage/installation.html#older-versions>`__.)
 
 After installation, just ``import signatory`` inside Python.
 
@@ -39,11 +41,11 @@ Take care **not** to run ``pip install signatory``, as this will likely download
 Example:
 --------
 
-For example, if you are using PyTorch 1.6.0 and want Signatory 1.2.3, then you should run:
+For example, if you are using PyTorch 1.7.1 and want Signatory 1.2.4, then you should run:
 
 .. code-block:: bash
 
-    pip install signatory==1.2.3.1.6.0 --no-cache-dir --force-reinstall
+    pip install signatory==1.2.4.1.7.1 --no-cache-dir --force-reinstall
         
 Why you need to specify all of this:
 ------------------------------------
@@ -86,9 +88,9 @@ If you found this library useful in your research, please consider citing `the p
 .. code-block:: bibtex
 
     @article{signatory,
-        title={{Signatory: differentiable computations of the signature and logsignature transforms, on both CPU and GPU}},
+        title={{S}ignatory: differentiable computations of the signature and logsignature transforms, on both {CPU} and {GPU}},
         author={Kidger, Patrick and Lyons, Terry},
-        journal={arXiv:2001.00706},
+        journal={International Conference on Learning Representations},
         url={https://github.com/patrick-kidger/signatory},
-        year={2020}
+        year={2021}
     }

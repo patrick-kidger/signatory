@@ -7,9 +7,9 @@ If you found this library useful in your research, please consider citing `the p
 .. code-block:: bibtex
 
     @article{signatory,
-        title={{Signatory: differentiable computations of the signature and logsignature transforms, on both CPU and GPU}},
+        title={{S}ignatory: differentiable computations of the signature and logsignature transforms, on both {CPU} and {GPU}},
         author={Kidger, Patrick and Lyons, Terry},
-        journal={arXiv:2001.00706},
+        journal={International Conference on Learning Representations},
         url={https://github.com/patrick-kidger/signatory},
-        year={2020}
+        year={2021}
     }

@@ -1,2 +1,1 @@
-py2annotate>=1.1.1
 sphinx>=2.1.1

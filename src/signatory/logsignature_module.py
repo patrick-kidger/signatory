@@ -26,9 +26,7 @@ import weakref
 from . import signature_module as smodule
 from . import impl
 
-# noinspection PyUnreachableCode
-if False:
-    from typing import Any, Union
+from typing import Union
 
 
 def _interpret_mode(mode):
@@ -81,8 +79,8 @@ def _signature_to_logsignature(signature, channels, depth, stream, mode, lyndon_
     return logsignature_
 
 
-def signature_to_logsignature(signature, channels, depth, stream=False, mode="words", scalar_term=False):
-    # type: (torch.Tensor, int, int, bool, str, bool) -> torch.Tensor
+def signature_to_logsignature(signature: torch.Tensor, channels: int, depth: int, stream: bool = False,
+                              mode: str = "words", scalar_term: bool = False) -> torch.Tensor:
     """Calculates the logsignature corresponding to a signature.
 
     Arguments:
@@ -153,8 +151,8 @@ class SignatureToLogSignature(nn.Module):
         def __deepcopy__(self, memodict):
             return self
 
-    def __init__(self, channels, depth, stream=False, mode="words", scalar_term=False, **kwargs):
-        # type: (int, int, bool, str, bool, **Any) -> None
+    def __init__(self, channels: int, depth: int, stream: bool = False, mode: str = "words", scalar_term: bool = False,
+                 **kwargs):
         super(SignatureToLogSignature, self).__init__(**kwargs)
 
         self._channels = channels
@@ -176,8 +174,7 @@ class SignatureToLogSignature(nn.Module):
             cls._lyndon_info_capsule_cache[(in_channels, depth, mode)] = lyndon_info_capsule
             return lyndon_info_capsule
 
-    def forward(self, signature):
-        # type: (torch.Tensor) -> torch.Tensor
+    def forward(self, signature: torch.Tensor) -> torch.Tensor:
         """The forward operation.
 
         Arguments:
@@ -202,8 +199,8 @@ class SignatureToLogSignature(nn.Module):
 SignatureToLogsignature = SignatureToLogSignature
 
 
-def logsignature(path, depth, stream=False, basepoint=False, inverse=False, mode="words"):
-    # type: (torch.Tensor, int, bool, Union[bool, torch.Tensor], bool, str) -> torch.Tensor
+def logsignature(path: torch.Tensor, depth: int, stream: Union[bool, torch.Tensor] = False, basepoint: bool = False,
+                 inverse=False, mode: str = "words") -> torch.Tensor:
     """Applies the logsignature transform to a stream of data.
 
     The :attr:`modes` argument determines how the logsignature is represented.
@@ -288,8 +285,7 @@ class LogSignature(nn.Module):
         mode (str, optional): as :func:`signatory.logsignature`.
     """
 
-    def __init__(self, depth, stream=False, inverse=False, mode="words", **kwargs):
-        # type: (int, bool, bool, str, **Any) -> None
+    def __init__(self, depth: int, stream: bool = False, inverse: bool = False, mode: str = "words", **kwargs):
         super(LogSignature, self).__init__(**kwargs)
         self._depth = depth
         self._stream = stream
@@ -306,8 +302,7 @@ class LogSignature(nn.Module):
                                                                                self._mode)
         return self._signature_to_logsignature_instance
 
-    def prepare(self, in_channels):
-        # type: (int) -> None
+    def prepare(self, in_channels: int) -> None:
         """Prepares for computing logsignatures for paths of the specified number of channels. This will be done
         anyway automatically whenever this :class:`torch.nn.Module` is called, if it hasn't been called already; this
         method simply allows to have it done earlier, for example when benchmarking.
@@ -322,8 +317,7 @@ class LogSignature(nn.Module):
 
     # Deliberately no 'initial' argument. To support that for logsignatures we'd need to be able to expand a
     # (potentially compressed) logsignature into a signature first. (Which is possible in principle.)
-    def forward(self, path, basepoint=False):
-        # type: (torch.Tensor, Union[bool, torch.Tensor]) -> torch.Tensor
+    def forward(self, path: torch.Tensor, basepoint: Union[bool, torch.Tensor] = False) -> torch.Tensor:
         """The forward operation.
 
         Arguments:
@@ -382,8 +376,7 @@ def _mobius_function(x):
         return -1
 
 
-def logsignature_channels(in_channels, depth):
-    # type: (int, int) -> int
+def logsignature_channels(in_channels: int, depth: int) -> int:
     """Computes the number of output channels from a logsignature call with :attr:`mode in ("words", "brackets")`.
 
     Arguments:

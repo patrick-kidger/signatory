@@ -1,3 +1,10 @@
+1.2.4
+-----
+Added support for PyTorch 1.7.0, 1.7.1
+Dropped support for Python 2.7, 3.5
+Dropped support for PyTorch <1.6.0
+Dropped support for MacOS
+
 1.2.3
 -----
 Added support for PyTorch 1.6.0

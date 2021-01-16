@@ -138,22 +138,16 @@ on = \
 on_rd = "on: repository_dispatch",
 
 # Versions of Python
-py27 = '2.7.13',
-py35 = '3.5.4',
 py36 = '3.6.9',
 py37 = '3.7.0',
 py38 = '3.8.2',
-py_all = '[<<py27>>, <<py35>>, <<py36>>, <<py37>>, <<py38>>]',
+py_all = '[<<py36>>, <<py37>>, <<py38>>]',
 
 # Versions of PyTorch
-pytorch12 = '1.2.0',
-pytorch13 = '1.3.0',
-pytorch131 = '1.3.1',
-pytorch14 = '1.4.0',
-pytorch15 = '1.5.0',
-pytorch151 = '1.5.1',
 pytorch16 = '1.6.0',
-pytorch_all = '[<<pytorch12>>, <<pytorch13>>, <<pytorch131>>, <<pytorch14>>, <<pytorch15>>, <<pytorch151>>, <<pytorch16>>]',
+pytorch17 = '1.7.0',
+pytorch171 = '1.7.1',
+pytorch_all = '[<<pytorch16>>, <<pytorch17>>, <<pytorch171>>]',
 
 # A strategy for every operating system and version of Python
 # Note that every possible combination must be specified in action_os and action_pv to have repository_dispatch work
@@ -165,33 +159,6 @@ strategy:
     os: [<<windows>>, <<linux>>, <<mac>>]
     python-version: <<py_all>>
     pytorch-version: <<pytorch_all>>
-    exclude:
-      # PyTorch doesn't support this combination
-      - os: <<windows>>
-        python-version: <<py27>>
-      - os: <<windows>>
-        python-version: <<py35>>
-        pytorch-version: <<pytorch14>>
-      - os: <<windows>>
-        python-version: <<py35>>
-        pytorch-version: <<pytorch15>>
-      - python-version: <<py27>>
-        pytorch-version: <<pytorch15>>
-      - os: <<windows>>
-        python-version: <<py35>>
-        pytorch-version: <<pytorch151>>
-      - python-version: <<py27>>
-        pytorch-version: <<pytorch151>>
-      - python-version: <<py27>>
-        pytorch-version: <<pytorch16>>
-      - python-version: <<py35>>
-        pytorch-version: <<pytorch16>>
-      - python-version: <<py38>>
-        pytorch-version: <<pytorch12>>
-      - python-version: <<py38>>
-        pytorch-version: <<pytorch13>>
-      - python-version: <<py38>>
-        pytorch-version: <<pytorch131>>
   fail-fast: false""",
 
 # A single Linux strategy
@@ -201,7 +168,7 @@ strategy:
   matrix:
     os: [<<linux>>]
     python-version: [<<py37>>]
-    pytorch-version: [<<pytorch131>>]
+    pytorch-version: [<<pytorch171>>]
 """,
 
 # A single Linux strategy except with all PyTorch versions
@@ -228,13 +195,11 @@ _action_os_star = "contains(github.event.action, '-os *')",
 action_os = "(<<_action_os_windows>> || <<_action_os_linux>> || <<_action_os_mac>> || <<_action_os_star>>)",
 
 # Tests whether a repository_dispatch-triggered action is triggered, depending on Python version
-_action_pv_27 = "(contains(github.event.action, '-pv <<py27>>') && matrix.python-version == '<<py27>>')",
-_action_pv_35 = "(contains(github.event.action, '-pv <<py35>>') && matrix.python-version == '<<py35>>')",
 _action_pv_36 = "(contains(github.event.action, '-pv <<py36>>') && matrix.python-version == '<<py36>>')",
 _action_pv_37 = "(contains(github.event.action, '-pv <<py37>>') && matrix.python-version == '<<py37>>')",
 _action_pv_38 = "(contains(github.event.action, '-pv <<py38>>') && matrix.python-version == '<<py38>>')",
 _action_pv_star = "contains(github.event.action, '-pv *')",
-action_pv = "(<<_action_pv_27>> || <<_action_pv_35>> || <<_action_pv_36>> || <<_action_pv_37>> || <<_action_pv_38>> || <<_action_pv_star>>)",
+action_pv = "(<<_action_pv_36>> || <<_action_pv_37>> || <<_action_pv_38>> || <<_action_pv_star>>)",
 
 # Tests whether a step is triggered via the normal event associated with the workflow
 if_event = "(github.event_name == '<<event_name>>' && (<<event_cond>>))",
@@ -468,4 +433,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
