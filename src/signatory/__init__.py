@@ -50,6 +50,7 @@ from .signature_module import (signature,
                                extract_signature_term,
                                signature_combine,
                                multi_signature_combine)
+from .signature_inversion_module import (invert_signature)
 from . import unstable  # make it available as an attribute here, but don't import any unstable objects themselves
 from .utility import (lyndon_words,
                       lyndon_brackets,
