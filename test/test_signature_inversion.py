@@ -47,5 +47,5 @@ def test_inversion_close_original_path():
     signature = signatory.signature(path, depth)
     inverted_path = signatory.invert_signature(signature, depth, input_channels, initial_position=path[:, 0, :])
 
-    assert torch.all(torch.isclose(path[:, :, :], inverted_path[:, :, :], atol=1e-01))
+    assert torch.allclose(path[:, :, :], inverted_path[:, :, :], atol=1e-01)
 
