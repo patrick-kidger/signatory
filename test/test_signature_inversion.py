@@ -8,7 +8,6 @@ depends = ['signature']
 signatory = v.validate_tests(tests, depends)
 
 
-
 def test_inverted_path_shape():
     """Tests that the inverted path is of the right shape"""
     for batch_size in (1, 2, 5):
@@ -34,3 +33,19 @@ def test_initial_position_zero():
         initial_position = torch.rand((batch_size, input_channels))
         inverted_path = signatory.invert_signature(signature, depth, input_channels, initial_position=initial_position)
         assert torch.equal(inverted_path[:, 0, :], initial_position)
+
+
+def test_inversion_close_original_path():
+    """Tests that the the inverted path of a half circle is close to the original one. To be able to compare the two
+    tensors, we take a depth equal to input_stream - 1 to have a reconstructed path that has exactly the same shape as
+    the original one."""
+    input_stream = 10
+    time = torch.linspace(0, 1, input_stream)
+    path = torch.stack([torch.cos(3.14 * time), torch.sin(3.14 * time)]).T.unsqueeze(0)
+    input_channels = 2
+    depth = input_stream - 1
+    signature = signatory.signature(path, depth)
+    inverted_path = signatory.invert_signature(signature, depth, input_channels, initial_position=path[:, 0, :])
+
+    assert torch.all(torch.isclose(path[:, :, :], inverted_path[:, :, :], atol=1e-01))
+
