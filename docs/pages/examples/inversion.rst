@@ -7,13 +7,13 @@ We show below a simple example of signature inversion. A crucial parameter is th
 
 .. code-block:: python
 
-    import numpy as np
+    import math
     import torch
     import signatory
 
     # Create a path consisting in a half circle
-    time = np.linspace(0, 1, 10)
-    path = torch.from_numpy(np.stack([np.cos(np.pi * time), np.sin(np.pi * time)])).T.unsqueeze(0)
+    time = torch.linspace(0, 1, 10)
+    path = torch.stack([torch.cos(math.pi * time), torch.sin(math.pi * time)]).T.unsqueeze(0)
 
     # Compute the signature
     depth = 11
