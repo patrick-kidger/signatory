@@ -37,6 +37,13 @@ For quick reference these are a list of all provided functions, grouped by which
 
     signatory.Path
 
+:ref:`reference-signatures-inversion`
+
+.. autosummary::
+    :nosignatures:
+
+    signatory.invert_signature
+
 :ref:`reference-utilities`
 
 .. autosummary::
@@ -53,4 +60,5 @@ For quick reference these are a list of all provided functions, grouped by which
     /pages/reference/signatures
     /pages/reference/logsignatures
     /pages/reference/path
+    /pages/reference/signatures-inversion
     /pages/reference/utilities

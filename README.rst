@@ -28,7 +28,7 @@ Installation
 
     pip install signatory==<SIGNATORY_VERSION>.<TORCH_VERSION> --no-cache-dir --force-reinstall
 
-where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.2.4) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
+where ``<SIGNATORY_VERSION>`` is the version of Signatory you would like to download (the most recent version is 1.2.5) and ``<TORCH_VERSION>`` is the version of PyTorch you are using.
 
 Available for Python 3.6, 3.7, 3.8 on Linux and Windows. Requires `PyTorch <http://pytorch.org/>`__ 1.6.0, 1.7.0, or 1.7.1.
 

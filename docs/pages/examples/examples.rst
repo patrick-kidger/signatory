@@ -9,3 +9,4 @@ Examples
     /pages/examples/intervals
     /pages/examples/translation
     /pages/examples/neuralnetworks
+    /pages/examples/inversion
