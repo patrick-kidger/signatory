@@ -57,6 +57,6 @@ from .utility import (lyndon_words,
                       all_words)
 
 
-__version__ = "1.2.4"
+__version__ = "1.2.5"
 
 del torch
