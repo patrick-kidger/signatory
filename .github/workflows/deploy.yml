@@ -113,6 +113,7 @@ jobs:
         ret = retry(lambda: not subprocess.run('python -m pip install signatory==' + metadata.version + '.${{ matrix.pytorch-version }} --only-binary signatory').returncode);
         sys.exit(not ret)
         " &&
+        python -m pip install numpy &&
         python -m pip install iisignature pytest &&
         python -c "import os;
         import subprocess;
@@ -140,6 +141,7 @@ jobs:
         retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
         SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
         retry python -m pip install signatory==$SIGNATORY_VERSION.${{ matrix.pytorch-version }} --no-binary signatory
+        python -m pip install numpy
         python -m pip install iisignature pytest
         python -c "import os
         import subprocess

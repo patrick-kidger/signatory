@@ -278,7 +278,8 @@ install_remote_windows = \
 
 # Runs tests on Windows
 test_windows = \
-r"""  python -m pip install iisignature pytest &&
+r"""  python -m pip install numpy &&
+  python -m pip install iisignature pytest &&
   python -c "import os;
   import subprocess;
   import sys;
@@ -329,7 +330,8 @@ install_remote_linux = \
 
 # Runs tests on Linux
 test_linux = \
-r"""  python -m pip install iisignature pytest
+r"""  python -m pip install numpy
+  python -m pip install iisignature pytest
   python -c "import os
   import subprocess
   import sys

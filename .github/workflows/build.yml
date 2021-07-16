@@ -177,6 +177,7 @@ jobs:
         python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" bdist_wheel &&
         python command.py should_not_import &&
         for %%f in (./dist/*) do (python -m pip install ./dist/%%~nxf) &&
+        python -m pip install numpy &&
         python -m pip install iisignature pytest &&
         python -c "import os;
         import subprocess;
@@ -209,6 +210,7 @@ jobs:
         print(x[0])
         sys.exit(len(x) != 1)")
         python -m pip install ./dist/$SIGNATORY_INSTALLED
+        python -m pip install numpy
         python -m pip install iisignature pytest
         python -c "import os
         import subprocess
