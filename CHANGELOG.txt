@@ -1,3 +1,7 @@
+1.2.6
+-----
+Added support for PyTorch 1.8.0, 1.8.1, 1.9.0 and Python 3.9.
+
 1.2.5
 -----
 Added signature inversion

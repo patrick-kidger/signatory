@@ -141,13 +141,17 @@ on_rd = "on: repository_dispatch",
 py36 = '3.6.9',
 py37 = '3.7.0',
 py38 = '3.8.2',
-py_all = '[<<py36>>, <<py37>>, <<py38>>]',
+py39 = '3.9.6',
+py_all = '[<<py36>>, <<py37>>, <<py38>>, <<py39>>]',
 
 # Versions of PyTorch
 pytorch16 = '1.6.0',
 pytorch17 = '1.7.0',
 pytorch171 = '1.7.1',
-pytorch_all = '[<<pytorch16>>, <<pytorch17>>, <<pytorch171>>]',
+pytorch18 = '1.8.0',
+pytorch181 = '1.8.1',
+pytorch19 = '1.9.0',
+pytorch_all = '[<<pytorch16>>, <<pytorch17>>, <<pytorch171>>, <<pytorch18>>, <<pytorch181>>, <<pytorch19>>]',
 
 # A strategy for every operating system and version of Python
 # Note that every possible combination must be specified in action_os and action_pv to have repository_dispatch work
