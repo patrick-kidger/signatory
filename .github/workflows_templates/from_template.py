@@ -163,6 +163,15 @@ strategy:
     os: [<<windows>>, <<linux>>, <<mac>>]
     python-version: <<py_all>>
     pytorch-version: <<pytorch_all>>
+    exclude:
+      - python-version: <<py39>>
+        pytorch-version: <<pytorch16>>
+      - python-version: <<py39>>
+        pytorch-version: <<pytorch17>>
+      - python-version: <<py39>>
+        pytorch-version: <<pytorch171>>
+      - python-version: <<py39>>
+        pytorch-version: <<pytorch18>>
   fail-fast: false""",
 
 # A single Linux strategy
