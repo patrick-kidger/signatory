@@ -141,7 +141,7 @@ on_rd = "on: repository_dispatch",
 py36 = '3.6.9',
 py37 = '3.7.0',
 py38 = '3.8.2',
-py39 = '3.9.6',
+py39 = '3.9.5',
 py_all = '[<<py36>>, <<py37>>, <<py38>>, <<py39>>]',
 
 # Versions of PyTorch
