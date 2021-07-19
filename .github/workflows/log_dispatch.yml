@@ -19,8 +19,17 @@ jobs:
     strategy:
       matrix:
         os: [windows-2016, ubuntu-16.04, macOS-latest]
-        python-version: [3.6.9, 3.7.0, 3.8.2]
-        pytorch-version: [1.6.0, 1.7.0, 1.7.1]
+        python-version: [3.6.9, 3.7.0, 3.8.2, 3.9.5]
+        pytorch-version: [1.6.0, 1.7.0, 1.7.1, 1.8.0, 1.8.1, 1.9.0]
+        exclude:
+          - python-version: 3.9.5
+            pytorch-version: 1.6.0
+          - python-version: 3.9.5
+            pytorch-version: 1.7.0
+          - python-version: 3.9.5
+            pytorch-version: 1.7.1
+          - python-version: 3.9.5
+            pytorch-version: 1.8.0
       fail-fast: false
     steps:
     # Deliberately no 'if' statement: this will trigger on every repository_dispatch

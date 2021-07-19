@@ -21,8 +21,17 @@ jobs:
     strategy:
       matrix:
         os: [windows-2016, ubuntu-16.04, macOS-latest]
-        python-version: [3.6.9, 3.7.0, 3.8.2]
-        pytorch-version: [1.6.0, 1.7.0, 1.7.1]
+        python-version: [3.6.9, 3.7.0, 3.8.2, 3.9.5]
+        pytorch-version: [1.6.0, 1.7.0, 1.7.1, 1.8.0, 1.8.1, 1.9.0]
+        exclude:
+          - python-version: 3.9.5
+            pytorch-version: 1.6.0
+          - python-version: 3.9.5
+            pytorch-version: 1.7.0
+          - python-version: 3.9.5
+            pytorch-version: 1.7.1
+          - python-version: 3.9.5
+            pytorch-version: 1.8.0
       fail-fast: false
     steps:
     - name: Checkout code
@@ -62,6 +71,7 @@ jobs:
         ret = retry(lambda: not subprocess.run('python -m pip install signatory==' + metadata.version + '.${{ matrix.pytorch-version }} --only-binary signatory').returncode);
         sys.exit(not ret)
         " &&
+        python -m pip install numpy &&
         python -m pip install iisignature pytest &&
         python -c "import os;
         import subprocess;
@@ -89,6 +99,7 @@ jobs:
         retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
         SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
         retry python -m pip install signatory==$SIGNATORY_VERSION.${{ matrix.pytorch-version }} --no-binary signatory
+        python -m pip install numpy
         python -m pip install iisignature pytest
         python -c "import os
         import subprocess
