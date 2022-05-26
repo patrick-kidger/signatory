@@ -138,20 +138,20 @@ on = \
 on_rd = "on: repository_dispatch",
 
 # Versions of Python
-py36 = '3.6.9',
 py37 = '3.7.0',
 py38 = '3.8.2',
-py39 = '3.9.5',
-py_all = '[<<py36>>, <<py37>>, <<py38>>, <<py39>>]',
+py39 = '3.9.12',
+py_all = '[<<py37>>, <<py38>>, <<py39>>]',
 
 # Versions of PyTorch
-pytorch16 = '1.6.0',
-pytorch17 = '1.7.0',
-pytorch171 = '1.7.1',
 pytorch18 = '1.8.0',
 pytorch181 = '1.8.1',
 pytorch19 = '1.9.0',
-pytorch_all = '[<<pytorch16>>, <<pytorch17>>, <<pytorch171>>, <<pytorch18>>, <<pytorch181>>, <<pytorch19>>]',
+pytorch191 = '1.9.1',
+pytorch110 = '1.10.0',
+pytorch1101 = '1.10.1',
+pytorch111 = '1.11.0',
+pytorch_all = '[<<pytorch18>>, <<pytorch181>>, <<pytorch19>>, <<pytorch191>>, <<pytorch110>>, <<pytorch1101>>, <<pytorch111>>]',
 
 # A strategy for every operating system and version of Python
 # Note that every possible combination must be specified in action_os and action_pv to have repository_dispatch work
@@ -165,12 +165,6 @@ strategy:
     pytorch-version: <<pytorch_all>>
     exclude:
       - python-version: <<py39>>
-        pytorch-version: <<pytorch16>>
-      - python-version: <<py39>>
-        pytorch-version: <<pytorch17>>
-      - python-version: <<py39>>
-        pytorch-version: <<pytorch171>>
-      - python-version: <<py39>>
         pytorch-version: <<pytorch18>>
   fail-fast: false""",
 
@@ -180,8 +174,8 @@ strategy_single = \
 strategy:
   matrix:
     os: [<<linux>>]
-    python-version: [<<py37>>]
-    pytorch-version: [<<pytorch171>>]
+    python-version: [<<py39>>]
+    pytorch-version: [<<pytorch111>>]
 """,
 
 # A single Linux strategy except with all PyTorch versions
@@ -190,7 +184,7 @@ strategy_single_all_pytorch = \
 strategy:
   matrix:
     os: [<<linux>>]
-    python-version: [<<py37>>]
+    python-version: [<<py39>>]
     pytorch-version: <<pytorch_all>>
 """,
 
@@ -208,11 +202,11 @@ _action_os_star = "contains(github.event.action, '-os *')",
 action_os = "(<<_action_os_windows>> || <<_action_os_linux>> || <<_action_os_mac>> || <<_action_os_star>>)",
 
 # Tests whether a repository_dispatch-triggered action is triggered, depending on Python version
-_action_pv_36 = "(contains(github.event.action, '-pv <<py36>>') && matrix.python-version == '<<py36>>')",
 _action_pv_37 = "(contains(github.event.action, '-pv <<py37>>') && matrix.python-version == '<<py37>>')",
 _action_pv_38 = "(contains(github.event.action, '-pv <<py38>>') && matrix.python-version == '<<py38>>')",
+_action_pv_39 = "(contains(github.event.action, '-pv <<py39>>') && matrix.python-version == '<<py39>>')",
 _action_pv_star = "contains(github.event.action, '-pv *')",
-action_pv = "(<<_action_pv_36>> || <<_action_pv_37>> || <<_action_pv_38>> || <<_action_pv_star>>)",
+action_pv = "(<<_action_pv_37>> || <<_action_pv_38>> || <<_action_pv_39>>  || <<_action_pv_star>>)",
 
 # Tests whether a step is triggered via the normal event associated with the workflow
 if_event = "(github.event_name == '<<event_name>>' && (<<event_cond>>))",
