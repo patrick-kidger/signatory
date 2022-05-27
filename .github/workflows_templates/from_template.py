@@ -124,9 +124,8 @@ def _substitute(filename, **subs):
 global_subs = dict(
 
 # Names of operating systems as GitHub Actions specifies them
-windows = "windows-latest",
+windows = "windows-2016",
 linux = "ubuntu-18.04",
-mac = "macOS-latest",
 
 # Run on repository_dispatch and precisely one other event
 on = \
@@ -144,14 +143,10 @@ py39 = '3.9.12',
 py_all = '[<<py37>>, <<py38>>, <<py39>>]',
 
 # Versions of PyTorch
-pytorch18 = '1.8.0',
-pytorch181 = '1.8.1',
-pytorch19 = '1.9.0',
-pytorch191 = '1.9.1',
 pytorch110 = '1.10.0',
 pytorch1101 = '1.10.1',
 pytorch111 = '1.11.0',
-pytorch_all = '[<<pytorch18>>, <<pytorch181>>, <<pytorch19>>, <<pytorch191>>, <<pytorch110>>, <<pytorch1101>>, <<pytorch111>>]',
+pytorch_all = '[<<pytorch110>>, <<pytorch1101>>, <<pytorch111>>]',
 
 # A strategy for every operating system and version of Python
 # Note that every possible combination must be specified in action_os and action_pv to have repository_dispatch work
@@ -160,12 +155,9 @@ strategy = \
 """runs-on: ${{ matrix.os }}
 strategy:
   matrix:
-    os: [<<windows>>, <<linux>>, <<mac>>]
+    os: [<<windows>>, <<linux>>]
     python-version: <<py_all>>
     pytorch-version: <<pytorch_all>>
-    exclude:
-      - python-version: <<py39>>
-        pytorch-version: <<pytorch18>>
   fail-fast: false""",
 
 # A single Linux strategy
@@ -197,9 +189,8 @@ action_trigger = "contains(github.event.action, '-trigger <<trigger>> ')",
 # only resolve into strings under certain circumstances.
 _action_os_windows = "(contains(github.event.action, '-os <<windows>>') && matrix.os == '<<windows>>')",
 _action_os_linux = "(contains(github.event.action, '-os <<linux>>') && matrix.os == '<<linux>>')",
-_action_os_mac = "(contains(github.event.action, '-os <<mac>>') && matrix.os == '<<mac>>')",
 _action_os_star = "contains(github.event.action, '-os *')",
-action_os = "(<<_action_os_windows>> || <<_action_os_linux>> || <<_action_os_mac>> || <<_action_os_star>>)",
+action_os = "(<<_action_os_windows>> || <<_action_os_linux>> || <<_action_os_star>>)",
 
 # Tests whether a repository_dispatch-triggered action is triggered, depending on Python version
 _action_pv_37 = "(contains(github.event.action, '-pv <<py37>>') && matrix.python-version == '<<py37>>')",
@@ -348,70 +339,6 @@ r"""  python -m pip install numpy
 # but we use it for consistency with the other two OS)
 terminate_linux = "",
 
-# Setup for running on Mac. Need to install LLVM to get OpenMP support. Must happen outside the sudo'd file as Homebrew
-# can't be run as root.
-setup_mac = \
-r"""name: Mac
-<<if_>> && (matrix.os == '<<mac>>')
-env:
-  PYTHON_VERSION: ${{ matrix.python-version }}
-run: |
-  set -x
-  brew update
-  brew install llvm libomp
-  echo 'set -ex
-  . $CONDA/etc/profile.d/conda.sh
-  conda create -n myenv python=$PYTHON_VERSION -y
-  conda activate myenv
-  python -m pip install --upgrade pip
-  conda install pytorch==${{ matrix.pytorch-version }} -c pytorch -y
-  python command.py should_not_import""",
-
-# Builds bdist_wheel on Mac.
-build_mac = \
-"""  export LDFLAGS="-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib"
-  export CPPFLAGS="-I/usr/local/opt/llvm/include"
-  MACOSX_DEPLOYMENT_TARGET=10.9 CC=/usr/local/opt/llvm/bin/clang CXX=/usr/local/opt/llvm/bin/clang++ python setup.py egg_info --tag-build=".${{ matrix.pytorch-version }}" bdist_wheel
-  python command.py should_not_import""",
-
-# Install from sdist or bdist_wheel on Mac
-install_local_mac = \
-"""  SIGNATORY_INSTALLED=$(python -c \"import os
-  import sys
-  x = os.listdir('\\''dist'\\'')
-  print(x[0])
-  sys.exit(len(x) != 1)\")
-  python -m pip install ./dist/$SIGNATORY_INSTALLED""",
-
-# Install from PyPI on Mac
-install_remote_mac = \
-"""  retry () { $* || (sleep 20 && $*) || (sleep 40 && $*) || (sleep 120 && $*) || (sleep 240 && $*); }
-  SIGNATORY_VERSION=$(python -c "import metadata; print(metadata.version)")
-  retry python -m pip install <<install_extras>>signatory==$SIGNATORY_VERSION.${{ matrix.pytorch-version }} --only-binary signatory""",
-
-# Runs tests on Mac
-test_mac = \
-"""  git clone https://github.com/bottler/iisignature.git
-  cd iisignature
-  python setup.py install
-  cd ..
-  rm -rf iisignature
-  python -m pip install pytest
-  python -c "import os
-  import subprocess
-  import sys
-  print(sys.version)
-  returncode_test = subprocess.Popen('\\''python command.py test'\\'', shell=True).wait()
-  returncode_version = sys.version[:5] != os.environ['\\''PYTHON_VERSION'\\''][:5]
-  sys.exit(max(returncode_test, returncode_version))
-  " """,
-
-# Terminate a string of commands on Mac
-terminate_mac = \
-"""  ' > $GITHUB_WORKSPACE/to_run.sh
-  chmod +x $GITHUB_WORKSPACE/to_run.sh
-  sudo -s -H -E $GITHUB_WORKSPACE/to_run.sh""",
-
 # Uploads dist/* to PyPI for Windows
 upload_windows = \
 r"""  pip install twine &&
@@ -422,7 +349,7 @@ upload_unix = \
 """  pip install twine
   twine upload -u patrick-kidger -p ${{ secrets.pypi_password }} <<upload_extras>>dist/*""",
 )  # end of global_subs
-global_subs['upload_mac'] = global_subs['upload_linux'] = global_subs['upload_unix']
+global_subs['upload_linux'] = global_subs['upload_unix']
 
 test = False
 if test:
