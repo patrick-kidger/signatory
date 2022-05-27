@@ -124,8 +124,8 @@ def _substitute(filename, **subs):
 global_subs = dict(
 
 # Names of operating systems as GitHub Actions specifies them
-windows = "windows-2016",
-linux = "ubuntu-16.04",
+windows = "windows-latest",
+linux = "ubuntu-18.04",
 mac = "macOS-latest",
 
 # Run on repository_dispatch and precisely one other event
