@@ -35,10 +35,6 @@
 #include "tensor_algebra_ops.hpp"  // signatory::signature_combine_forward,
                                    // signatory::signature_combine_backward
 
-#ifndef _OPENMP
-    #error OpenMP required
-#endif
-
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("signature_to_logsignature_forward",
           &signatory::signature_to_logsignature_forward);

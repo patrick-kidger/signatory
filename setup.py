@@ -32,7 +32,9 @@ if not sys.platform.startswith('win'):  # linux or mac
 
 if sys.platform.startswith('win'):  # windows
     extra_compile_args.append('/openmp')
-else:  # linux or mac
+if sys.platform.startswith('Dar'):  # MacOS
+    extra_compile_args.append('-Xpreprocessor -fopenmp -lomp')
+else:  # linux
     extra_compile_args.append('-fopenmp')
 
 ext_modules = [cpp.CppExtension(name='_impl',
