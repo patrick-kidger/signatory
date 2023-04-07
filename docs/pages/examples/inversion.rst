@@ -5,6 +5,8 @@ Inversion of signatures
 
 We show below a simple example of signature inversion. A crucial parameter is the :attr:`depth` chosen for the signature: the function :func:`signatory.invert_signature` reconstructs a piecewise linear path with :attr:`depth` + 1 points that approximates the original path the signature was computed on.
 
+We refer to `Fermanian et al. (2023) <https://arxiv.org/pdf/2304.01862.pdf>`_ for details on the algorithm.
+
 .. code-block:: python
 
     import math
