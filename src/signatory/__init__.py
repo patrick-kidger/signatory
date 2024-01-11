@@ -20,6 +20,7 @@ Documentation: https://signatory.readthedocs.io
 
 
 import torch  # must be imported before anything from signatory
+import sklearn
 
 try:
     from . import impl
